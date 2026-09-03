@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -75,6 +76,12 @@ type scope struct {
 }
 
 type nothing struct{}
+
+// stats exists to carry a float64 that JSON cannot represent. NaN is not a
+// contrived value here: it is what an average over no rows is.
+type stats struct {
+	Mean float64 `json:"mean"`
+}
 
 // operatorText is the sort of thing an unexpected error says: a host, a port
 // and a reason, all of it addressed to whoever runs the service. No test may
@@ -143,6 +150,13 @@ func newRegistry(t *testing.T) *services.Registry[deps] {
 		Name: "vague", Kind: services.Query,
 		Run: func(_ services.Ctx[deps], _ authorRef) (author, error) {
 			return author{}, &services.ValidationError{}
+		},
+	})
+
+	services.MustRegister(reg, services.Spec[deps, listIn, stats]{
+		Name: "average", Kind: services.Query,
+		Run: func(_ services.Ctx[deps], _ listIn) (stats, error) {
+			return stats{Mean: math.NaN()}, nil
 		},
 	})
 

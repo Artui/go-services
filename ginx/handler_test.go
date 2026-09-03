@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -173,7 +174,7 @@ func TestBodyProblemsReadTheSameOnBothPaths(t *testing.T) {
 			name: "a body that is not JSON at all",
 			body: `{`,
 			want: `{"errors":{"non_field_errors":` +
-				`["malformed JSON body: unexpected end of JSON input"]}}`,
+				`["malformed JSON body: unexpected EOF"]}}`,
 		},
 		{
 			// Valid JSON of the wrong shape. It is not malformed, so it travels
@@ -413,7 +414,17 @@ func TestHandlerRefusesBadConfiguration(t *testing.T) {
 			call: func() (gin.HandlerFunc, error) {
 				return ginx.Handler(reg, "get_author", staticPrincipal, ginx.WithStatus(42))
 			},
-			want: "42 is not an HTTP status code",
+			want: "42 is not a status a response can be sent with",
+		},
+		{
+			// Asking for status zero is not the same as not asking. It is a
+			// caller computing a status from configuration and getting nothing
+			// back, and answering it with the spec's own status would hide that.
+			name: "a status computed as zero",
+			call: func() (gin.HandlerFunc, error) {
+				return ginx.Handler(reg, "get_author", staticPrincipal, ginx.WithStatus(0))
+			},
+			want: "0 is not a status a response can be sent with",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -426,6 +437,87 @@ func TestHandlerRefusesBadConfiguration(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error = %q, want it to mention %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// Gin's renderer commits the status before it encodes, so a value that cannot
+// be encoded used to leave the client holding a 200 with an empty body while
+// nothing here ever got to answer. The client must get a 500 and the operator
+// must get the reason.
+func TestUnencodableResultIsAnInternalError(t *testing.T) {
+	var observed error
+	e := gin.New()
+	h, err := ginx.Handler(newRegistry(t), "average", staticPrincipal,
+		ginx.WithErrorHandler(func(_ *gin.Context, err error) { observed = err }))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e.GET("/average", h)
+
+	rec := do(e, http.MethodGet, "/average", nil)
+	assertJSON(t, rec, http.StatusInternalServerError, `{"error":"internal server error"}`)
+	if observed == nil {
+		t.Fatal("WithErrorHandler saw nothing, want the encoding failure")
+	}
+	if !strings.Contains(observed.Error(), "NaN") {
+		t.Errorf("error = %q, want the encoding failure", observed)
+	}
+}
+
+// A catch-all's value arrives with the slash Gin matched it from, and net/http
+// yields the same capture without one. The slash is dropped here so that the
+// same declared capture delivers the same string on both adapters -- and this
+// is the field the precedence rule exists to protect, so a difference in it is
+// not cosmetic.
+func TestCatchAllCaptureHasNoLeadingSlash(t *testing.T) {
+	e := gin.New()
+	if err := ginx.Mount(e, newRegistry(t), map[string]ginx.Route{
+		"note_scope": {Method: "PUT", Path: "/notes/*tenant"},
+	}, staticPrincipal); err != nil {
+		t.Fatalf("Mount: %v", err)
+	}
+
+	assertJSON(t, do(e, http.MethodPut, "/notes/acme", nil),
+		http.StatusOK, `{"tenant":"acme"}`)
+	// Only the leading slash goes: the rest of a multi-segment catch-all is the
+	// value the client sent.
+	assertJSON(t, do(e, http.MethodPut, "/notes/acme/eu", nil),
+		http.StatusOK, `{"tenant":"acme/eu"}`)
+}
+
+// The range a success status may take, at both edges.
+//
+// The floor is 200, not 100. A 1xx is an interim response by definition:
+// net/http writes it without committing, so the handler returns and the server
+// commits an implicit 200 behind it. Checked against a real httptest.Server on
+// Gin v1.12.0 -- c.Data(103, ...) puts 103 on the wire as an interim response,
+// drops the body, and the client sees a final 200 with nothing in it. An
+// httptest.ResponseRecorder reports 103 for the same call and hides all of it,
+// which is why this is a refusal at configuration time rather than an
+// assertion about a response.
+func TestSuccessStatusRange(t *testing.T) {
+	reg := newRegistry(t)
+	for _, tc := range []struct {
+		code     int
+		accepted bool
+	}{
+		{code: 99},
+		{code: 100},
+		{code: 103},
+		{code: 199},
+		{code: 200, accepted: true},
+		{code: 599, accepted: true},
+		{code: 600},
+	} {
+		t.Run(strconv.Itoa(tc.code), func(t *testing.T) {
+			_, err := ginx.Handler(reg, "get_author", staticPrincipal, ginx.WithStatus(tc.code))
+			if tc.accepted && err != nil {
+				t.Fatalf("WithStatus(%d) was refused: %v", tc.code, err)
+			}
+			if !tc.accepted && err == nil {
+				t.Fatalf("WithStatus(%d) was accepted, and could not have been served", tc.code)
 			}
 		})
 	}

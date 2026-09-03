@@ -43,6 +43,10 @@
 // dropped: a query string carries noise nobody declared, while a capture was
 // written into the route by hand and is always load-bearing.
 //
+// A catch-all capture ("*rest") arrives without the leading slash Gin matched
+// it from, so it reads the same as the ":rest" form and the same as net/http's
+// "{rest...}".
+//
 // The body is bounded at services.DefaultMaxBodyBytes before it is read.
 //
 // # What comes back

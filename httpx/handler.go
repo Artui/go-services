@@ -65,7 +65,13 @@ func Handler[D any](
 		)
 	}
 	cfg := newConfig(opts)
-	if cfg.status != 0 && !validStatus(cfg.status) {
+	// Zero means "no override", which is why it is tested separately rather
+	// than left to the range check: ValidSuccessStatus deliberately rejects
+	// zero, because "nobody asked" and "somebody computed zero" are different
+	// facts. The range itself is the kernel's, shared with Register and with
+	// the other HTTP adapter -- three copies of it is what let this one and
+	// ginx disagree about the same route table.
+	if cfg.status != 0 && !services.ValidSuccessStatus(cfg.status) {
 		return nil, fmt.Errorf("httpx: %q: %d cannot be sent as a response status", name, cfg.status)
 	}
 	return &handler[D]{reg: reg, entry: entry, principal: principal, cfg: cfg}, nil

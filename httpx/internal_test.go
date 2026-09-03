@@ -10,8 +10,11 @@ import (
 )
 
 // wildcards is exercised through the public API everywhere else. It is tested
-// directly here for the one input a request cannot carry: ServeMux rejects an
-// unterminated brace outright, so only the mount-time check can ever see one.
+// directly here for the inputs no caller can now deliver: Mount reads capture
+// names only after ServeMux has accepted the pattern, and Request.Pattern is
+// one ServeMux accepted, so a malformed brace reaches this function from
+// nowhere but this test. The guard it exercises is the bound on a slice, and
+// this is the only thing holding it.
 func TestWildcards(t *testing.T) {
 	cases := map[string]struct {
 		pattern string
@@ -46,15 +49,6 @@ func TestInternalBodyMatchesItsEncoder(t *testing.T) {
 	}
 	if string(internalBody) != string(want) {
 		t.Errorf("internalBody = %s, want %s", internalBody, want)
-	}
-}
-
-func TestValidStatus(t *testing.T) {
-	cases := map[int]bool{99: false, 100: true, 200: true, 599: true, 600: false}
-	for status, want := range cases {
-		if got := validStatus(status); got != want {
-			t.Errorf("validStatus(%d) = %v, want %v", status, got, want)
-		}
 	}
 }
 

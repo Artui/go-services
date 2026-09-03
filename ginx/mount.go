@@ -16,7 +16,13 @@ type Route struct {
 	Method string
 
 	// Path is the route pattern in Gin's own syntax -- ":id" captures one
-	// segment, "*rest" captures the remainder.
+	// segment, "*rest" captures the remainder. A catch-all's value reaches the
+	// operation without the leading slash Gin matched it from, so that both
+	// forms deliver the same string and so that this agrees with net/http's
+	// "{rest...}".
+	//
+	// A name used twice in one pattern is refused: Gin binds both, and the two
+	// readers of that capture would not agree on which value won.
 	//
 	// A capture's name is matched against the input schema's properties, so
 	// ":id" fills the field whose JSON name is "id". A capture naming a field
@@ -28,6 +34,10 @@ type Route struct {
 	// Status overrides the spec's declared success status for this route. Zero
 	// means the spec's own, which is the right answer unless one operation is
 	// genuinely reachable two ways with different HTTP semantics.
+	//
+	// It must be one services.ValidSuccessStatus accepts, 200 to 599. A 1xx
+	// never commits, so a route asking for one would serve an implicit 200 with
+	// an empty body instead.
 	Status int
 }
 
@@ -130,7 +140,18 @@ func Mount[D any](
 		// Handler placed on somebody else's router has no pattern for anything
 		// here to read. This is the same guarantee moved to startup, where a
 		// route that cannot work once belongs.
-		if err := entry.CheckCaptures(captureNames(route.Path)...); err != nil {
+		names := captureNames(route.Path)
+		if repeated := firstRepeat(names); repeated != "" {
+			// Gin binds both, c.Param returns the first and the payload takes
+			// the last, so a middleware authorising on c.Param and the
+			// operation reading its own field would disagree about which value
+			// is in force. Nothing downstream can tell that happened.
+			problems = append(problems, fmt.Errorf(
+				"ginx: %q captures %q twice in %s, and the two would not agree on a value",
+				name, repeated, route.Path))
+			continue
+		}
+		if err := entry.CheckCaptures(names...); err != nil {
 			// The kernel's message already names the spec.
 			problems = append(problems, fmt.Errorf("ginx: %w", err))
 			continue
@@ -159,6 +180,27 @@ func Mount[D any](
 		planned = append(planned, plannedRoute{method: method, path: route.Path, handler: handler})
 	}
 
+	// Gin's router has path rules this package deliberately does not restate --
+	// an unnamed wildcard, a catch-all that is not last, a path that normalises
+	// onto one already taken -- and it enforces them by panicking from inside
+	// Handle. A panic is a bad way to report configuration: it names one fault
+	// where the joined error names all of them, and it happens midway through
+	// registration, leaving behind exactly the half-mounted router this
+	// function promises never to produce.
+	//
+	// So the table is offered to a throwaway engine first. Whatever Gin objects
+	// to becomes an ordinary problem in the report, generically, without this
+	// package having to keep a copy of Gin's routing rules in step with Gin.
+	//
+	// Only when the table is otherwise sound: a plan with rows missing is not
+	// the table the caller wrote, so Gin's opinion of it would not be about
+	// their table either.
+	if len(problems) == 0 {
+		if err := rehearse(planned); err != nil {
+			problems = append(problems, err)
+		}
+	}
+
 	if len(problems) > 0 {
 		return errors.Join(problems...)
 	}
@@ -166,6 +208,39 @@ func Mount[D any](
 		r.Handle(p.method, p.path, p.handler)
 	}
 	return nil
+}
+
+// rehearse registers the plan on a throwaway engine, turning any panic from
+// Gin's router into an error.
+//
+// The cost is that Gin's debug mode prints each route twice, once for the
+// rehearsal and once for the real thing. Every lever that would silence it --
+// the mode, DefaultWriter, DebugPrintRouteFunc -- is a package-level global,
+// and reaching for one of those to tidy up startup output would be a far worse
+// trade than a duplicated line.
+func rehearse(planned []plannedRoute) (err error) {
+	defer func() {
+		if fault := recover(); fault != nil {
+			err = fmt.Errorf("ginx: Gin rejected the route table: %v", fault)
+		}
+	}()
+	scratch := gin.New()
+	for _, p := range planned {
+		scratch.Handle(p.method, p.path, p.handler)
+	}
+	return nil
+}
+
+// firstRepeat returns the first name that appears more than once, or "".
+func firstRepeat(names []string) string {
+	seen := make(map[string]bool, len(names))
+	for _, name := range names {
+		if seen[name] {
+			return name
+		}
+		seen[name] = true
+	}
+	return ""
 }
 
 // captureNames returns the parameter names Gin will bind from a route pattern:

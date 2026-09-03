@@ -1,6 +1,7 @@
 package mcpx
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"sort"
@@ -28,6 +29,23 @@ import (
 const InternalErrorText = "The service failed unexpectedly. " +
 	"The reason was recorded on the server and is not available here. " +
 	"The arguments were accepted, so changing them is unlikely to help."
+
+// CancelledText and TimedOutText are what a tool result says when the call's
+// own context ended before the service finished.
+//
+// They are a separate answer from InternalErrorText because they are a
+// separate event. A cancelled call did not malfunction: usually the caller
+// walked away, and on a busy mount that is ordinary traffic. Rendering it as an
+// internal failure also hands it to the ErrorReporter, and a log where routine
+// client timeouts outnumber real faults is a log nobody reads.
+//
+// Neither says anything about whether the work took effect. An atomic spec
+// rolls back and a non-atomic one may not, and the mount cannot tell which from
+// here -- so it does not guess.
+const (
+	CancelledText = "The call was cancelled before it completed."
+	TimedOutText  = "The call ran out of time before it completed."
+)
 
 // succeed renders a dispatch that ran.
 //
@@ -65,8 +83,8 @@ func succeed(res services.Result) (*mcp.CallToolResult, error) {
 //
 // The second return reports whether the taxonomy recognised the error, so the
 // caller can decide what to tell its reporter.
-func refuse(err error) (*mcp.CallToolResult, bool) {
-	text, known := explain(err)
+func refuse(ctx context.Context, err error) (*mcp.CallToolResult, bool) {
+	text, known := explain(ctx, err)
 	if !known {
 		text = InternalErrorText
 	}
@@ -87,15 +105,37 @@ func refuse(err error) (*mcp.CallToolResult, bool) {
 // A recognised error's own text goes on the wire verbatim. That is safe in a
 // way an unexpected error's is not, because these errors were written to be
 // declined with -- the spec author chose the words knowing a caller reads them.
-func explain(err error) (string, bool) {
+func explain(ctx context.Context, err error) (string, bool) {
 	var invalid *services.ValidationError
 	switch {
-	case errors.As(err, &invalid):
+	// The nil check is not redundant with errors.As. A helper returning
+	// *ValidationError assigned straight into an error yields a non-nil error
+	// holding a nil pointer, and errors.As matches it -- so without this, a
+	// server-side bug is rendered to a model as "the arguments were rejected"
+	// with nothing listed, inviting it to retry a call that cannot succeed.
+	// Classified as unexpected, it reaches the reporter instead, which is where
+	// a bug of that shape belongs.
+	case errors.As(err, &invalid) && invalid != nil:
 		return explainValidation(invalid), true
+
 	case errors.Is(err, services.ErrPermission),
 		errors.Is(err, services.ErrNotFound),
 		errors.Is(err, services.ErrConflict):
 		return err.Error(), true
+
+	// Interruption is checked last, so a refusal that happens to be returned
+	// while the caller is going away is still reported as the refusal it is.
+	//
+	// Both halves of the condition are load-bearing. Matching the error alone
+	// would also swallow a context error a service produced internally -- a
+	// timed-out call to a third party, with this request's context still live
+	// -- which is a real fault an operator needs to see. Requiring that this
+	// call's own context is done is what separates "the caller left" from
+	// "something inside took too long".
+	case ctx.Err() != nil && errors.Is(err, context.Canceled):
+		return CancelledText, true
+	case ctx.Err() != nil && errors.Is(err, context.DeadlineExceeded):
+		return TimedOutText, true
 	}
 	return "", false
 }
@@ -112,8 +152,16 @@ func explain(err error) (string, bool) {
 // real argument names invites a model to go looking for an argument by that
 // name.
 func explainValidation(e *services.ValidationError) string {
-	names := make([]string, 0, len(e.Fields))
-	for name := range e.Fields {
+	// FieldMap rather than the Fields map directly. It is the kernel's nil-safe
+	// accessor, and reading the struct field is what bypasses that safety: a nil
+	// receiver dereferences here and takes the process down, because the SDK
+	// recovers nowhere and this runs on a goroutine jsonrpc2 spawned. explain
+	// already refuses to call this with a nil receiver; going through the
+	// accessor means neither guarantee depends on the other holding.
+	fields := e.FieldMap()
+
+	names := make([]string, 0, len(fields))
+	for name := range fields {
 		names = append(names, name)
 	}
 	// Sorted so two identical failures read identically. Go map order is not.
@@ -121,7 +169,7 @@ func explainValidation(e *services.ValidationError) string {
 
 	lines := make([]string, 0, len(names))
 	for _, name := range names {
-		for _, message := range e.Fields[name] {
+		for _, message := range fields[name] {
 			if name == services.NonFieldKey {
 				lines = append(lines, message)
 				continue

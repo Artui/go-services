@@ -3,6 +3,7 @@ package httpx_test
 import (
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
@@ -97,6 +98,9 @@ func TestMountRejectsBadConfiguration(t *testing.T) {
 		routes    map[string]httpx.Route
 		principal httpx.Principal
 		want      string
+		// notWant is for the cases where being refused is not the whole point:
+		// the refusal also has to send the reader to the right place.
+		notWant string
 	}{
 		"a name that is not registered": {
 			routes: map[string]httpx.Route{"nope": {Method: http.MethodGet, Pattern: "/nope"}},
@@ -164,9 +168,43 @@ func TestMountRejectsBadConfiguration(t *testing.T) {
 			},
 			want: `"list_authors" and "ping" both claim "GET /shared"`,
 		},
-		"a pattern ServeMux cannot parse": {
-			routes: map[string]httpx.Route{"ping": {Method: http.MethodGet, Pattern: "no-leading-slash"}},
-			want:   "mounting",
+		// ServeMux reads everything before the first slash as a host, so this
+		// is not a parse failure -- it is a route for the host "authors" that
+		// no ordinary request can ever reach, which ServeMux would accept in
+		// silence. The refusal has to name the alternative, or the reader has
+		// no way to tell a typo from a rejected feature.
+		"a pattern missing its leading slash": {
+			routes: map[string]httpx.Route{"get_author": {Method: http.MethodGet, Pattern: "authors/{id}"}},
+			want:   `must begin with "/"; set Route.Host`,
+		},
+		"a pattern with no slash at all": {
+			routes: map[string]httpx.Route{"ping": {Method: http.MethodGet, Pattern: "ping"}},
+			want:   `must begin with "/"`,
+		},
+		"a host carrying a path": {
+			routes: map[string]httpx.Route{
+				"ping": {Method: http.MethodGet, Host: "example.com/v1", Pattern: "/ping"},
+			},
+			want: "must be a bare host name",
+		},
+		// A malformed brace is refused either way. What is asserted here is
+		// which of the two refusals arrives: the pattern is proved before its
+		// captures are read, so the operator is sent to look at the brace and
+		// not at a capture named "" or "{id".
+		"an empty wildcard name": {
+			routes:  map[string]httpx.Route{"get_author": {Method: http.MethodGet, Pattern: "/authors/{}"}},
+			want:    "mounting",
+			notWant: "captures",
+		},
+		"a doubled opening brace": {
+			routes:  map[string]httpx.Route{"get_author": {Method: http.MethodGet, Pattern: "/authors/{{id}"}},
+			want:    "mounting",
+			notWant: "captures",
+		},
+		"an unterminated brace": {
+			routes:  map[string]httpx.Route{"get_author": {Method: http.MethodGet, Pattern: "/authors/{id"}},
+			want:    "mounting",
+			notWant: "captures",
 		},
 		"two patterns that overlap with neither more specific": {
 			routes: map[string]httpx.Route{
@@ -198,7 +236,13 @@ func TestMountRejectsBadConfiguration(t *testing.T) {
 			if !strings.Contains(err.Error(), tc.want) {
 				t.Errorf("error = %v, want it to mention %q", err, tc.want)
 			}
-			// Nothing may be mounted once any check has failed.
+			if tc.notWant != "" && strings.Contains(err.Error(), tc.notWant) {
+				t.Errorf("error = %v, want it NOT to mention %q", err, tc.notWant)
+			}
+			// Every failure in this table is found before anything is
+			// registered. The one that is not -- a clash with a route the
+			// caller had already put on the mux -- has its own test, because
+			// it does mount part of the table.
 			for _, target := range []string{"/ping", "/shared", "/authors", "/a/b/c"} {
 				if rec := serve(mux, http.MethodGet, target, nil); rec.Code != http.StatusNotFound {
 					t.Errorf("a route was mounted anyway: %s answered %d", target, rec.Code)
@@ -280,20 +324,59 @@ func TestMountRefusesAnEmptyRouteTable(t *testing.T) {
 }
 
 // The one conflict Mount cannot prove in advance: a pattern the caller had
-// already put on the mux itself.
+// already put on the mux itself. net/http will not say what a ServeMux already
+// holds, so it is found by the registration panicking.
+//
+// This test also pins the consequence, which the documentation now states
+// rather than glossing: routes that sorted before the clash are mounted. That
+// is a caveat, not a feature, and it is asserted here so it cannot quietly
+// become either broader or false.
 func TestMountReportsAConflictWithTheCallersOwnRoutes(t *testing.T) {
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /authors/{id}", func(http.ResponseWriter, *http.Request) {})
+	mux.HandleFunc("GET /ping", func(http.ResponseWriter, *http.Request) {})
 
 	err := httpx.Mount(mux, newRegistry(), map[string]httpx.Route{
-		"get_author": {Method: http.MethodGet, Pattern: "/authors/{id}"},
+		"get_author": {Method: http.MethodGet, Pattern: "/authors/{id}"}, // sorts first, clean
+		"ping":       {Method: http.MethodGet, Pattern: "/ping"},         // sorts second, clashes
 	}, httpx.Anonymous)
 
 	if err == nil {
 		t.Fatal("want an error for a pattern the caller had already registered")
 	}
-	if !strings.Contains(err.Error(), "/authors/{id}") {
+	if !strings.Contains(err.Error(), "/ping") {
 		t.Errorf("error = %v, want it to name the pattern", err)
+	}
+	// The documented exception. A caller that ignores the error is serving a
+	// partial table, and this is what that looks like.
+	if rec := serve(mux, http.MethodGet, "/authors/7", nil); rec.Code != http.StatusOK {
+		t.Errorf("route sorted before the clash answered %d, want 200 -- "+
+			"the doc comment says it is mounted, so it must be", rec.Code)
+	}
+}
+
+// Host scopes a route the way a ServeMux "[HOST]/[PATH]" pattern does, and is
+// the reason Pattern can insist on a leading slash without losing the feature.
+func TestMountScopesARouteToAHost(t *testing.T) {
+	// Deliberately not "example.com": that is the Host httptest.NewRequest sets
+	// by default, so scoping to it would let this test pass without the Host
+	// ever being applied. It did, on the first draft.
+	mux := mustMount(t, map[string]httpx.Route{
+		"get_author": {Method: http.MethodGet, Host: "books.example", Pattern: "/authors/{id}"},
+	}, httpx.Anonymous)
+
+	get := func(host string) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, "/authors/7", nil)
+		req.Host = host
+		rec := httptest.NewRecorder()
+		mux.ServeHTTP(rec, req)
+		return rec
+	}
+
+	if rec := get("books.example"); rec.Code != http.StatusOK {
+		t.Errorf("the named host got %d, want 200: %s", rec.Code, rec.Body)
+	}
+	if rec := get("other.example"); rec.Code != http.StatusNotFound {
+		t.Errorf("another host got %d, want 404", rec.Code)
 	}
 }
 

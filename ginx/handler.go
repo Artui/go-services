@@ -6,10 +6,34 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/Artui/go-services"
 	"github.com/gin-gonic/gin"
 )
+
+// jsonContentType is what Gin's own JSON renderer sets, repeated here because
+// this package encodes the body itself. Keeping the two in step matters: a
+// consumer switching between c.JSON and this must not see the header change.
+const jsonContentType = "application/json; charset=utf-8"
+
+// unwrap reaches the http.ResponseWriter the server actually handed Gin.
+//
+// net/http's MaxBytesReader tells the connection not to bother draining an
+// oversized body, and it does so through an unexported method on the server's
+// own response value. gin.ResponseWriter embeds http.ResponseWriter as an
+// interface, so that method is not promoted through it and the hint is
+// silently dropped. Unwrap is the convention net/http itself uses for exactly
+// this case (see http.ResponseController), and Gin implements it.
+func unwrap(w http.ResponseWriter) http.ResponseWriter {
+	for {
+		inner, ok := w.(interface{ Unwrap() http.ResponseWriter })
+		if !ok {
+			return w
+		}
+		w = inner.Unwrap()
+	}
+}
 
 // PrincipalFunc authenticates a request and returns the opaque principal the
 // kernel hands to the registry's resolver.
@@ -95,15 +119,31 @@ func Handler[D any](
 		// captured above, so that the override is the only thing this package
 		// decides about the success status.
 		code := res.Status
-		if cfg.status != 0 {
+		if cfg.statusSet {
 			code = cfg.status
 		}
 
-		// c.JSON rather than AbortWithStatusJSON: a handler registered after
-		// this one is a deliberate choice by whoever built the chain, and
-		// success is not a reason to cut it short. The failure paths do abort,
-		// for the opposite reason.
-		c.JSON(code, res.Value)
+		// Encoded before anything is written, and this is the whole reason not
+		// to call c.JSON. Gin's renderer commits the status first and encodes
+		// second, so a value that cannot be encoded leaves the client holding a
+		// 200 with an empty body while nothing here ever gets to answer 500 --
+		// and an unencodable value is not exotic, since a float64 that came out
+		// NaN is what an average over no rows is.
+		//
+		// encoding/json rather than Gin's codec indirection, so that this
+		// adapter and the net/http one put the same bytes on the wire.
+		body, err := json.Marshal(res.Value)
+		if err != nil {
+			fail(c, err, cfg.onError)
+			return
+		}
+
+		// c.Data rather than an aborting write: a handler registered after this
+		// one is a deliberate choice by whoever built the chain, and success is
+		// not a reason to cut it short. The failure paths do abort, for the
+		// opposite reason. Gin still drops the body for a status that forbids
+		// one, so a 204 stays empty.
+		c.Data(code, jsonContentType, body)
 	}, nil
 }
 
@@ -128,7 +168,7 @@ func payload(c *gin.Context, entry services.Entry) (json.RawMessage, error) {
 	// whatever the client chose to send. The ceiling is the kernel's constant
 	// and not an option here, because two transports refusing at different
 	// sizes is a difference no client can predict.
-	limited := http.MaxBytesReader(c.Writer, c.Request.Body, services.DefaultMaxBodyBytes)
+	limited := http.MaxBytesReader(unwrap(c.Writer), c.Request.Body, services.DefaultMaxBodyBytes)
 	body, err := io.ReadAll(limited)
 	if err != nil {
 		// Recognising the transport's own oversize error is this package's job;
@@ -145,12 +185,24 @@ func payload(c *gin.Context, entry services.Entry) (json.RawMessage, error) {
 		return nil, services.Invalid(services.NonFieldKey, services.UnreadableBodyText)
 	}
 
-	// One value per capture, because a Gin route cannot bind the same name
-	// twice. Query() builds a fresh url.Values on every call, so neither map
-	// handed to the kernel is shared with anything.
+	// One value per capture. Gin will bind the same name twice if a pattern
+	// uses it twice, and this keeps the last while c.Param returns the first --
+	// so Mount refuses such a pattern rather than leaving a middleware reading
+	// c.Param and the operation reading its input field to disagree about which
+	// value is in force. A handler placed by hand is not covered, which is the
+	// same boundary every other mount-time check has.
+	//
+	// A catch-all's value arrives with the leading slash Gin matched it from.
+	// It is dropped so that ":tenant" and "*tenant" deliver the same string,
+	// and so that this adapter agrees with net/http's "{tenant...}", which
+	// yields no slash. A ":name" value can never begin with one, because it
+	// matches inside a single segment.
+	//
+	// Query() builds a fresh url.Values on every call, so neither map handed to
+	// the kernel is shared with anything.
 	captures := make(map[string][]string, len(c.Params))
 	for _, p := range c.Params {
-		captures[p.Key] = []string{p.Value}
+		captures[p.Key] = []string{strings.TrimPrefix(p.Value, "/")}
 	}
 	return services.EncodeParams(entry.Input, body, c.Request.URL.Query(), captures)
 }

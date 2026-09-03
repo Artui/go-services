@@ -151,3 +151,30 @@ func TestTheDestructiveHintIsCopiedNotShared(t *testing.T) {
 		t.Error("writing to the spec's bool changed an already-published annotation")
 	}
 }
+
+// TestAnEntryWithNoOutputSchemaAdvertisesNone is the symmetric case to the nil
+// input schema above, and the two are handled differently on purpose.
+//
+// MCP requires an input schema and requires it to be an object, so a missing
+// one is an error worth a message. It makes outputSchema optional, so refusing
+// to mount would be inventing a requirement the protocol does not have. What
+// must not happen is assigning the nil pointer into the SDK's `any` field: a
+// nil inside a non-nil interface is not the absent value AddTool tests for, so
+// it panics exactly as a nil input schema does.
+func TestAnEntryWithNoOutputSchemaAdvertisesNone(t *testing.T) {
+	tool, err := toolFor(services.Entry{
+		Name:  "thing",
+		Kind:  services.Query,
+		Input: &jsonschema.Schema{Type: "object"},
+	})
+	if err != nil {
+		t.Fatalf("toolFor refused an entry with no output schema: %v", err)
+	}
+	// The whole assertion: an untyped nil, not an interface holding a nil
+	// *jsonschema.Schema. staticcheck proves the latter is never == nil
+	// (SA4023), which is why assigning e.Output straight through cannot be
+	// rescued by a nil check inside the SDK and why it panics instead.
+	if tool.OutputSchema != nil {
+		t.Errorf("OutputSchema = %#v, want a genuinely absent value", tool.OutputSchema)
+	}
+}

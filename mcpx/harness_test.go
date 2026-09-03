@@ -86,6 +86,25 @@ type blankIn struct {
 
 func (v blankIn) Validate() error { return &services.ValidationError{} }
 
+// typedNilIn returns a *ValidationError that is nil, which encoding an error
+// interface makes non-nil. It is one forgotten branch away in any helper whose
+// return type is the concrete pointer, and errors.As matches it.
+type typedNilIn struct {
+	Anything string `json:"anything,omitempty"`
+}
+
+func (v typedNilIn) Validate() error {
+	var absent *services.ValidationError
+	return absent
+}
+
+// headerIn carries the property a malformed x-mcp-header extension is written
+// onto. Spec.Schema is the only way to express that MCP feature, so a mount has
+// to survive it being expressed wrongly.
+type headerIn struct {
+	Token string `json:"token"`
+}
+
 type empty struct{}
 
 // truth returns a pointer to b, for the *bool declarations.
@@ -183,6 +202,34 @@ func newRegistry(t *testing.T) *services.Registry[deps] {
 		Name: "fail.blank",
 		Kind: services.Query,
 		Run:  func(services.Ctx[deps], blankIn) (empty, error) { return empty{}, nil },
+	}))
+
+	must(t, services.Register(reg, services.Spec[deps, typedNilIn, empty]{
+		Name: "fail.typednil",
+		Kind: services.Query,
+		Run:  func(services.Ctx[deps], typedNilIn) (empty, error) { return empty{}, nil },
+	}))
+
+	// Blocks until its context ends and then reports why, which is how a test
+	// reaches the interruption path without racing a sleep.
+	must(t, services.Register(reg, services.Spec[deps, empty, empty]{
+		Name: "fail.blocks",
+		Kind: services.Query,
+		Run: func(c services.Ctx[deps], _ empty) (empty, error) {
+			<-c.Context.Done()
+			return empty{}, c.Context.Err()
+		},
+	}))
+
+	// Returns a context error produced inside the service, with this request's
+	// context still live -- a timed-out call to something downstream. It looks
+	// identical to a cancellation if you match only on the error.
+	must(t, services.Register(reg, services.Spec[deps, empty, empty]{
+		Name: "fail.downstream",
+		Kind: services.Query,
+		Run: func(services.Ctx[deps], empty) (empty, error) {
+			return empty{}, fmt.Errorf("calling the billing service: %w", context.DeadlineExceeded)
+		},
 	}))
 
 	// The three taxonomy sentinels, each wrapped the way a service would wrap

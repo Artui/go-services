@@ -3,6 +3,7 @@ package ginx
 import (
 	"fmt"
 
+	"github.com/Artui/go-services"
 	"github.com/gin-gonic/gin"
 )
 
@@ -14,21 +15,30 @@ type Option func(*config)
 // grows knobs is an adapter that has started making decisions the kernel should
 // be making for every transport.
 type config struct {
-	// status overrides the spec's own success status. Zero means "no override",
-	// which is why WithStatus refuses a zero rather than storing it.
-	status int
+	// status overrides the spec's own success status, and statusSet says whether
+	// anything set it.
+	//
+	// A pair rather than a zero sentinel, because "nobody asked for an
+	// override" and "somebody asked for status 0" are different mistakes. The
+	// second is a caller computing a status from configuration and getting
+	// nothing back, and it must be refused rather than quietly becoming the
+	// spec's own status.
+	status    int
+	statusSet bool
 
 	// onError observes an error this package could not map onto a status. It
 	// exists because the 500 response deliberately says nothing.
 	onError func(*gin.Context, error)
 }
 
-// WithStatus overrides the success status the spec declared.
+// WithStatus overrides the success status the spec declared. It must be one
+// services.ValidSuccessStatus accepts, 200 to 599; that function's comment
+// carries the evidence for why the floor is not 100.
 //
 // Passed to Mount it sets the default for every route in the table, and a
 // Route.Status overrides it again for one route.
 func WithStatus(code int) Option {
-	return func(c *config) { c.status = code }
+	return func(c *config) { c.status, c.statusSet = code, true }
 }
 
 // WithErrorHandler registers fn to receive the errors this package answers with
@@ -50,15 +60,12 @@ func newConfig(opts []Option) (config, error) {
 	for _, opt := range opts {
 		opt(&cfg)
 	}
-	if cfg.status != 0 && !validStatus(cfg.status) {
-		return config{}, fmt.Errorf("ginx: %d is not an HTTP status code", cfg.status)
+	// The kernel's answer, not a local one. Register and both HTTP adapters need
+	// this same judgement, and when two of them kept their own copy the two
+	// copies disagreed.
+	if cfg.statusSet && !services.ValidSuccessStatus(cfg.status) {
+		return config{}, fmt.Errorf(
+			"ginx: %d is not a status a response can be sent with; use 200 to 599", cfg.status)
 	}
 	return cfg, nil
 }
-
-// validStatus reports whether code is a status a response may actually carry.
-//
-// net/http panics on a code outside 100-999, and a code in 600-999 is not a
-// status any client understands, so the range is checked here where the answer
-// is a returned error rather than a panic from inside a handler.
-func validStatus(code int) bool { return code >= 100 && code <= 599 }

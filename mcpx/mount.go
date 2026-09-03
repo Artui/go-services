@@ -2,6 +2,8 @@ package mcpx
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
 
 	"github.com/Artui/go-services"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -81,21 +83,77 @@ func Mount[D any](
 	}
 
 	entries := reg.Entries()
-	tools := make([]*mcp.Tool, 0, len(entries))
+	ready := make([]pending, 0, len(entries))
 	for _, e := range entries {
 		tool, err := toolFor(e)
 		if err != nil {
 			return err
 		}
-		tools = append(tools, tool)
+		ready = append(ready, pending{tool: tool, handler: handlerFor(m, reg, e.Name)})
+	}
+	if err := rehearse(ready); err != nil {
+		return err
 	}
 
-	// Registration is a second pass on purpose. AddTool notifies connected
-	// clients of a tool-list change as it goes, so failing partway through the
-	// first pass would already have advertised the tools it got to.
-	for i, tool := range tools {
-		srv.AddTool(tool, handlerFor(m, reg, entries[i].Name))
+	// Registration is the last pass on purpose. AddTool notifies connected
+	// clients of a tool-list change as it goes, so failing partway through an
+	// earlier pass would already have advertised the tools it got to.
+	for _, p := range ready {
+		srv.AddTool(p.tool, p.handler)
 	}
+	return nil
+}
+
+// pending is a tool definition and its handler, checked but not yet registered.
+type pending struct {
+	tool    *mcp.Tool
+	handler mcp.ToolHandler
+}
+
+// rehearse adds every tool to a throwaway server first, so that an AddTool
+// panic becomes an error before the real server has advertised anything.
+//
+// toolFor catches the two conditions worth a good error message -- an unusable
+// name and a non-object input schema -- but AddTool panics on more than those.
+// It also rejects a malformed x-mcp-header extension, which is reachable
+// through Spec.Schema, since writing into jsonschema.Schema.Extra is the only
+// way to express that MCP feature at all. Without this pass, such a spec
+// panics out of Mount with earlier tools already registered and clients already
+// notified, which is the exact outcome the staged registration exists to
+// prevent.
+//
+// Rehearsing rather than reimplementing the SDK's checks is deliberate. Those
+// checks are internal, version-specific and not part of any contract -- the
+// header rules live in the SDK's streamable transport file -- so a copy here
+// would be correct only until the next bump, and wrong silently. Running the
+// SDK's own validation cannot drift from it. The cost is a second AddTool per
+// tool, paid once at wiring.
+func rehearse(ready []pending) error {
+	// The scratch server discards its logs: AddTool logs an invalid name rather
+	// than panicking, and that condition is already an error from toolFor, so
+	// anything it would write here is a duplicate on somebody's stderr.
+	scratch := mcp.NewServer(
+		&mcp.Implementation{Name: "mcpx-rehearsal", Version: "v0"},
+		&mcp.ServerOptions{Logger: slog.New(slog.DiscardHandler)},
+	)
+	for _, p := range ready {
+		if err := addOnce(scratch, p); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// addOnce performs one AddTool, converting a panic into an error naming the
+// spec that caused it. The SDK's panic message says what was wrong but not
+// which spec it came from, and a registry has many.
+func addOnce(srv *mcp.Server, p pending) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("mcpx: %q: the MCP SDK rejected this tool definition: %v", p.tool.Name, r)
+		}
+	}()
+	srv.AddTool(p.tool, p.handler)
 	return nil
 }
 
@@ -146,7 +204,7 @@ func handlerFor[D any](m *mount, reg *services.Registry[D], name string) mcp.Too
 // with IsError set is how a failure reaches the model, and returning a Go error
 // instead would turn it into a JSON-RPC protocol error the model never sees.
 func (m *mount) failed(ctx context.Context, tool string, err error) *mcp.CallToolResult {
-	result, known := refuse(err)
+	result, known := refuse(ctx, err)
 	if !known && m.report != nil {
 		m.report(ctx, tool, err)
 	}

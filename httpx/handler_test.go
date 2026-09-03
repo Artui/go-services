@@ -182,8 +182,14 @@ func TestHandlerRejectsAnUnregisteredName(t *testing.T) {
 	}
 }
 
+// 1xx is in this list for a reason worth keeping: net/http treats WriteHeader
+// with an interim status as a response that has not committed, so the body
+// write that follows commits an implicit 200. A handler that accepted 103 would
+// record 103 and send 200 -- the recorder and the wire disagreeing, which is
+// the divergence hardest to notice. Refusing it at construction is the only
+// place the disagreement can be prevented rather than described.
 func TestHandlerRejectsAnUnsendableStatus(t *testing.T) {
-	for _, status := range []int{99, 600} {
+	for _, status := range []int{99, 100, 103, 199, 600} {
 		_, err := httpx.Handler(newRegistry(), "ping", httpx.Anonymous, httpx.WithStatus(status))
 		if err == nil {
 			t.Errorf("status %d: want an error", status)

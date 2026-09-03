@@ -30,11 +30,21 @@
 //
 // # What is checked, and when
 //
-// Mount refuses at start-up what would otherwise fail at request time: a name
-// no spec is registered under, a method the spec's Kind may not be mounted on,
-// a pattern capturing a segment the input has no field for, two specs claiming
-// one method and path, a status that cannot be sent. It reports every problem
-// in the table at once and mounts nothing unless all of them pass.
+// Mount refuses at start-up what would otherwise fail at request time, or never
+// visibly fail at all: a name no spec is registered under, a method the spec's
+// Kind may not be mounted on, a pattern capturing a segment the input has no
+// field for, a pattern missing its leading slash (which ServeMux would accept
+// as a host and then match nothing), two specs claiming one method and path, a
+// status that cannot be sent. It reports every one of those in the table at
+// once and registers nothing when it finds any.
+//
+// One failure is outside that guarantee, and only one: a pattern that conflicts
+// with a route the caller had already registered on the same mux. net/http
+// offers no way to ask a ServeMux what it already holds, so that cannot be
+// found until the registration panics, by which point the routes sorted before
+// it are mounted. Mount returns the error; a program that ignores it is serving
+// a partial table. Mounting before any hand-written routes, or on a mux of its
+// own, avoids it.
 //
 // The capture check also exists in the kernel, at dispatch, and the two are not
 // duplicates. Mount holds the patterns and can refuse a route that would be

@@ -24,8 +24,7 @@ type Route struct {
 	// route that never matches anything, which is worse.
 	Method string
 
-	// Pattern is the ServeMux pattern with the method left off:
-	// "/authors/{id}", or "example.com/authors/{id}" to scope it to a host.
+	// Pattern is the path, beginning with "/": "/authors/{id}". Required.
 	//
 	// Every {name} capture is bound to the input property of that name --
 	// coerced to the type the schema declares, and taking precedence over both
@@ -34,6 +33,19 @@ type Route struct {
 	// request it could ever serve; the kernel refuses it again at dispatch, for
 	// the handler that never went through Mount.
 	Pattern string
+
+	// Host optionally scopes the route to one host, the way a ServeMux pattern's
+	// own "[HOST]/[PATH]" form does: Host "example.com" with Pattern
+	// "/authors/{id}" answers only requests for that host.
+	//
+	// It is a field of its own rather than a prefix on Pattern because folding
+	// the two together makes a typo indistinguishable from an intention.
+	// ServeMux reads everything before the first slash as a host, so a Pattern
+	// of "authors/{id}" -- one missing slash -- silently registers a route for
+	// the host "authors", which no ordinary request can ever match, and
+	// start-up approves it. Separated, a Pattern that does not begin with "/"
+	// is unambiguously the mistake and is refused as one.
+	Host string
 
 	// Status overrides the success status the spec declared. Zero uses the
 	// spec's own.
@@ -59,12 +71,21 @@ type Route struct {
 // more than one way at once and fixing it one restart at a time is the slowest
 // possible loop.
 //
-// Nothing is registered unless the whole table passes. Patterns are proved
-// against a throwaway ServeMux first, which is the only way to ask net/http
-// whether it will accept one. The single case that cannot be pre-proved is a
-// conflict with a route the caller had already put on mux itself: that is
-// returned as an error too, but by then earlier routes from this table are
-// mounted.
+// Every problem the table can be checked against on its own is found before
+// anything is registered: patterns are proved on a throwaway ServeMux, which is
+// the only way to ask net/http whether it will accept one.
+//
+// Exactly one failure escapes that, and it is worth stating plainly rather than
+// hiding behind "nothing is registered unless the whole table passes", which is
+// what this comment used to say. A pattern here can conflict with a route the
+// caller had already registered on mux, and net/http offers no way to ask a
+// ServeMux what it already holds -- no enumeration, no try-register. So the
+// conflict cannot be found until that registration itself panics, and the
+// routes that sorted before it are mounted by then. Mount returns the error and
+// stops; a program that ignores it is serving a partial table.
+//
+// Calling Mount before adding hand-written routes, or giving it a mux of its
+// own, avoids the case entirely.
 func Mount[D any](
 	mux *http.ServeMux, reg *services.Registry[D], routes map[string]Route,
 	principal Principal, opts ...Option,
@@ -113,7 +134,7 @@ func Mount[D any](
 			continue
 		}
 
-		pattern := normaliseMethod(route.Method) + " " + route.Pattern
+		pattern := normaliseMethod(route.Method) + " " + route.Host + route.Pattern
 		if owner, taken := claimed[pattern]; taken {
 			problems = append(problems, fmt.Errorf(
 				"httpx: %q and %q both claim %q", owner, name, pattern))
@@ -124,6 +145,13 @@ func Mount[D any](
 			continue
 		}
 		claimed[pattern] = name
+
+		// Only now that ServeMux has accepted the pattern is it safe to read
+		// capture names out of it -- see checkCaptures.
+		if err := checkCaptures(entry, route); err != nil {
+			problems = append(problems, err)
+			continue
+		}
 
 		// A fresh slice per route: appending to the caller's opts would let one
 		// route's status leak into the next through a shared backing array.
@@ -147,7 +175,7 @@ func Mount[D any](
 
 	for _, m := range pending {
 		if err := handle(mux, m.pattern, m.handler); err != nil {
-			return err
+			return fmt.Errorf("httpx: %w", err)
 		}
 	}
 	return nil
@@ -160,10 +188,13 @@ func Mount[D any](
 // configuration bugs that Mount exists to report, and Mount reports
 // configuration bugs by returning them. The recover is scoped to the single
 // Handle call so that it cannot swallow anything else.
+// The error is unprefixed because both callers add their own context: one is
+// naming a spec whose pattern will not parse, the other a clash discovered on
+// the caller's mux, and a "httpx:" from here would appear twice in the first.
 func handle(mux *http.ServeMux, pattern string, h http.Handler) (err error) {
 	defer func() {
 		if v := recover(); v != nil {
-			err = fmt.Errorf("httpx: mounting %q: %v", pattern, v)
+			err = fmt.Errorf("mounting %q: %v", pattern, v)
 		}
 	}()
 	mux.Handle(pattern, h)
@@ -199,7 +230,26 @@ func checkRoute(entry services.Entry, route Route) error {
 			entry.Name, route.Pattern,
 		)
 	}
-	if route.Status != 0 && !validStatus(route.Status) {
+	if !strings.HasPrefix(route.Pattern, "/") {
+		// ServeMux would accept this and register it under a host, producing a
+		// route that answers nothing. A refusal naming the alternative is the
+		// difference between a five-second fix and an afternoon.
+		return fmt.Errorf(
+			`httpx: %q: pattern %q must begin with "/"; set Route.Host to scope a route to a host`,
+			entry.Name, route.Pattern,
+		)
+	}
+	if strings.ContainsAny(route.Host, "/ \t") {
+		// A host carrying a path would move part of the route out of Pattern,
+		// where nothing else here is looking for it. Rejected rather than
+		// trimmed, unlike Method: a lowercase method is a style, whitespace in
+		// a host name is a mistake.
+		return fmt.Errorf(
+			"httpx: %q: host %q must be a bare host name, with no path or whitespace",
+			entry.Name, route.Host,
+		)
+	}
+	if route.Status != 0 && !services.ValidSuccessStatus(route.Status) {
 		return fmt.Errorf(
 			"httpx: %q: %d cannot be sent as a response status", entry.Name, route.Status,
 		)
@@ -211,19 +261,31 @@ func checkRoute(entry services.Entry, route Route) error {
 	if err := entry.Kind.AllowsMethod(method); err != nil {
 		return fmt.Errorf("httpx: %q: %w", entry.Name, err)
 	}
-	// Every capture the pattern names has to be one the operation can receive.
-	// The kernel refuses an undeclared capture at dispatch as well, and the two
-	// are not redundant: a route table naming a capture the input has no field
-	// for is broken in every request it will ever serve, so refusing it at
-	// start-up is strictly better than answering 500 forever. Only Mount has a
-	// pattern to read the names out of, which is why the dispatch-time half
-	// still has to exist for a Handler on somebody else's router.
-	//
-	// Pulling the names out of the pattern is this adapter's half of the job,
-	// because path syntax is the one thing two HTTP adapters genuinely cannot
-	// share: net/http writes {name} where Gin writes :name.
-	//
-	// CheckCaptures already names the spec, so this wraps without repeating it.
+	return nil
+}
+
+// checkCaptures requires every capture the pattern names to be one the
+// operation can receive.
+//
+// It is separate from checkRoute, and Mount runs it only after the pattern has
+// been proved on the scratch mux, because wildcards cannot tell a capture from
+// a brace in the wrong place. Run first, "/authors/{}" reports a capture named
+// "" and "/authors/{{id}" reports one named "{id" -- both refusals are correct
+// and both send the reader to look at the wrong thing. Proving the pattern
+// first means a malformed one is reported as malformed.
+//
+// The kernel refuses an undeclared capture at dispatch as well, and the two are
+// not redundant: a route table naming a capture the input has no field for is
+// broken in every request it will ever serve, so refusing it at start-up is
+// strictly better than answering 500 forever. Only Mount has a pattern to read
+// the names out of, which is why the dispatch-time half still has to exist for
+// a Handler on somebody else's router.
+//
+// Pulling the names out of the pattern is this adapter's half of the job,
+// because path syntax is the one thing two HTTP adapters genuinely cannot
+// share: net/http writes {name} where Gin writes :name. CheckCaptures already
+// names the spec, so this wraps without repeating it.
+func checkCaptures(entry services.Entry, route Route) error {
 	if err := entry.CheckCaptures(wildcards(route.Pattern)...); err != nil {
 		return fmt.Errorf("httpx: %w", err)
 	}

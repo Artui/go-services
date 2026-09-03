@@ -10,6 +10,7 @@ import (
 
 	"github.com/Artui/go-services"
 	"github.com/Artui/go-services/mcpx"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -161,5 +162,49 @@ func TestAViewMountsAsItself(t *testing.T) {
 	}
 	if _, ok := advertised["internal.thing"]; ok {
 		t.Error("an untagged spec reached the model")
+	}
+}
+
+// TestMountReportsAnAddToolPanicInsteadOfPanicking covers the failure mode
+// toolFor's own checks cannot see.
+//
+// AddTool panics on a malformed x-mcp-header extension, and Spec.Schema writing
+// into jsonschema.Schema.Extra is the only way to express that MCP feature at
+// all, so it is reachable through the public API. Registering a good spec first
+// is the part that matters: without the rehearsal pass the panic escapes Mount
+// with that one already advertised and connected clients already notified.
+func TestMountReportsAnAddToolPanicInsteadOfPanicking(t *testing.T) {
+	reg := services.New[deps](nil)
+	must(t, services.Register(reg, services.Spec[deps, empty, empty]{
+		Name: "registered.first",
+		Kind: services.Query,
+		Run:  func(services.Ctx[deps], empty) (empty, error) { return empty{}, nil },
+	}))
+	must(t, services.Register(reg, services.Spec[deps, headerIn, empty]{
+		Name: "bad.header",
+		Kind: services.Query,
+		Schema: func(s *jsonschema.Schema) {
+			s.Properties["token"].Extra = map[string]any{"x-mcp-header": ""}
+		},
+		Run: func(services.Ctx[deps], headerIn) (empty, error) { return empty{}, nil },
+	}))
+
+	srv := mcp.NewServer(&mcp.Implementation{Name: "fixture", Version: "v1"}, nil)
+
+	// Not deferred: a panic escaping Mount must fail this test, not be caught
+	// by it. The assertion is that no recover is needed.
+	err := mcpx.Mount(srv, reg, nil)
+	if err == nil {
+		t.Fatal("Mount accepted a tool definition the SDK rejects")
+	}
+	if !strings.Contains(err.Error(), `"bad.header"`) {
+		t.Errorf("Mount: %v\nwant it to name the offending spec", err)
+	}
+	if !strings.Contains(err.Error(), "x-mcp-header") {
+		t.Errorf("Mount: %v\nwant it to carry the SDK's own reason", err)
+	}
+
+	if advertised := tools(t, dial(t, srv)); len(advertised) != 0 {
+		t.Errorf("the panicking mount left %d tools advertised: %v", len(advertised), advertised)
 	}
 }

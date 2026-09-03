@@ -26,10 +26,11 @@ func wildcards(pattern string) []string {
 
 		end := strings.IndexByte(pattern, '}')
 		if end < 0 {
-			// An unterminated brace. ServeMux rejects such a pattern outright,
-			// so a request can never carry one; only the mount-time check can
-			// reach this, and it is better for it to see no captures than to
-			// read to the end of the string.
+			// An unterminated brace, which no caller can now supply: Mount
+			// reads capture names only after ServeMux has accepted the
+			// pattern, and Request.Pattern is a pattern ServeMux accepted. The
+			// guard stays because it is the bound on the slice below, not
+			// because a path reaches it -- TestWildcards is what exercises it.
 			return names
 		}
 		name := pattern[:end]

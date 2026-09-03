@@ -110,9 +110,15 @@ func showAnnotations(a *mcp.ToolAnnotations) string {
 // It is worth doing twice. The SDK decodes an absent annotations object and an
 // empty one into Go values that are easy to confuse and are not the same JSON,
 // and the whole point of omitting the object is a distinction that exists only
-// on the wire. Pinning the frames also means the day the SDK gives
-// IdempotentHint an omitempty, the test that fails is the one carrying the
-// explanation of why the omission logic is shaped like this.
+// on the wire.
+//
+// These frames assume the default encoding. ToolAnnotations has a custom
+// MarshalJSON, and under MCPGODEBUG=hintomitempty=1 both idempotentHint and
+// readOnlyHint regain omitempty -- which drops a false-valued hint from four of
+// the six rows below. That is a different encoding of the same decisions, not a
+// regression: the omission rule in annotationsFor stays correct under it,
+// because nothing starts asserting more than was declared. If this test fails
+// on exactly those rows, check the environment before the code.
 func TestAnnotationsOnTheWireAreExactlyTheseFrames(t *testing.T) {
 	cs, tap := tapped(t, newRegistry(t))
 	if _, err := cs.ListTools(t.Context(), nil); err != nil {

@@ -39,11 +39,27 @@ func toolFor(e services.Entry) (*mcp.Tool, error) {
 		// This is the library's central claim made structural: no second object
 		// exists that could disagree with the one Dispatch validates against,
 		// because no second object exists.
-		InputSchema:  e.Input,
-		OutputSchema: e.Output,
+		InputSchema: e.Input,
+
+		// Set only when there is one. AddTool panics on an OutputSchema field
+		// holding a typed-nil *jsonschema.Schema, the same way it does on a nil
+		// input schema, because a nil inside a non-nil interface is not the
+		// absent value the SDK tests for. An entry without an output schema is
+		// not an error the way a missing input schema is -- MCP makes
+		// outputSchema optional -- so this omits rather than refusing.
+		OutputSchema: outputSchema(e),
 
 		Annotations: annotationsFor(e),
 	}, nil
+}
+
+// outputSchema returns the schema to advertise, or an untyped nil so the field
+// is genuinely absent rather than an interface wrapping a nil pointer.
+func outputSchema(e services.Entry) any {
+	if e.Output == nil {
+		return nil
+	}
+	return e.Output
 }
 
 // annotationsFor derives the tool hints from what the spec declared, and only
@@ -53,13 +69,22 @@ func toolFor(e services.Entry) (*mcp.Tool, error) {
 // on equal terms:
 //
 //   - readOnlyHint comes from Kind, which is required, so it is always known.
+//
 //   - destructiveHint comes from Destructive, and ToolAnnotations models it as
 //     a *bool with omitempty. Three states in, three states out: this one
 //     survives the trip intact.
+//
 //   - idempotentHint comes from Idempotent, and ToolAnnotations models it as a
 //     plain bool whose JSON tag carries no omitempty as of v1.7.0. Any
 //     annotations block we attach therefore puts "idempotentHint": false on the
 //     wire, declared or not.
+//
+//     That last premise is already conditional: ToolAnnotations has a custom
+//     MarshalJSON, and under MCPGODEBUG=hintomitempty=1 both idempotentHint and
+//     readOnlyHint regain omitempty. The rule below stays correct under it --
+//     nothing starts asserting more than was declared -- but the frames change,
+//     so the wire test pinning them is written to say so rather than to look
+//     like a regression.
 //
 // openWorldHint has no kernel field, so it is never set and takes its MCP
 // default of true. That costs less than the destructive gap did: no approval
@@ -69,12 +94,23 @@ func toolFor(e services.Entry) (*mcp.Tool, error) {
 // only when it carries at least one fact somebody actually declared, and never
 // to let a hint we cannot omit be the reason for attaching it:
 //
-//   - A mutation with nothing declared gets no block at all. Absent, both
-//     hints take the MCP defaults of false, which is precisely "it has side
-//     effects, and nothing was said about repeating it".
+//   - A mutation with nothing declared gets no block at all. Absent,
+//     readOnlyHint and idempotentHint default to false, which is what silence
+//     means for those two.
+//
+//     destructiveHint does NOT default to false. It defaults to TRUE for any
+//     non-read-only tool, so such a mutation is advertised to every approval
+//     gate as possibly destructive. That is the safe direction rather than the
+//     accurate one, and it is not something omitting the block avoids -- there
+//     is no encoding of "undeclared" that reads as harmless. It is why
+//     Destructive is worth treating as required on anything additive rather
+//     than as an optional refinement: a create that says nothing gets prompted
+//     for every time.
+//
 //   - A query needs the block, to carry readOnlyHint: true. The idempotentHint
 //     riding along is not a claim, because the specification defines that hint
 //     as meaningful only while readOnlyHint is false.
+//
 //   - A mutation declaring only one of the two needs the block for the half it
 //     declared. The undeclared idempotentHint: false that comes with it is the
 //     protocol's own default for a hint nobody set, so it asserts nothing a

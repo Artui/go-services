@@ -73,13 +73,6 @@ func errorResponseFor(err error) (int, any) {
 	}
 }
 
-// validStatus reports whether status can be sent as a response status.
-//
-// The range is the one HTTP defines. Outside it, WriteHeader panics, so
-// rejecting a bad one at construction turns a request-time crash into a
-// start-up error.
-func validStatus(status int) bool { return status >= 100 && status <= 599 }
-
 // bodyAllowedForStatus reports whether a response with this status may carry a
 // body.
 //

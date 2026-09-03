@@ -49,7 +49,18 @@ func TestMountRefusesBadConfiguration(t *testing.T) {
 			call: func(e *gin.Engine) error {
 				return ginx.Mount(e, reg, fine, staticPrincipal, ginx.WithStatus(999))
 			},
-			want: "999 is not an HTTP status code",
+			want: "999 is not a status a response can be sent with",
+		},
+		{
+			// A 1xx never commits, so a route asking for one would serve an
+			// implicit 200 with no body. Refused where it can still be fixed.
+			name: "a route status that could only be sent as an interim response",
+			call: func(e *gin.Engine) error {
+				return ginx.Mount(e, reg, map[string]ginx.Route{
+					"get_author": {Method: "GET", Path: "/authors/:id", Status: 103},
+				}, staticPrincipal)
+			},
+			want: "103 is not a status a response can be sent with",
 		},
 		{
 			name: "a route status no response can carry",
@@ -58,7 +69,7 @@ func TestMountRefusesBadConfiguration(t *testing.T) {
 					"get_author": {Method: "GET", Path: "/authors/:id", Status: 42},
 				}, staticPrincipal)
 			},
-			want: "42 is not an HTTP status code",
+			want: "42 is not a status a response can be sent with",
 		},
 		{
 			name: "a name the registry does not know",
@@ -324,6 +335,72 @@ func TestMountChecksCapturesAgainstTheSchema(t *testing.T) {
 				t.Errorf("a refused Mount registered %v", routes)
 			}
 		})
+	}
+}
+
+// Gin enforces its own path rules by panicking from inside Handle, which would
+// report one fault where the joined error reports all of them and would leave
+// behind the half-mounted router Mount promises never to produce. The table is
+// rehearsed on a throwaway engine first, so Gin's objection arrives as an
+// ordinary problem instead.
+func TestMountRefusesPathsGinWouldPanicOn(t *testing.T) {
+	for _, tc := range []struct{ name, spec, method, path string }{
+		// captureNames skips this one, so nothing before the rehearsal sees it.
+		{"a capture with no name", "get_author", "GET", "/authors/:"},
+		{"a catch-all that is not last", "note_scope", "PUT", "/notes/*tenant/x"},
+		{"a catch-all with no slash before it", "note_scope", "PUT", "/notes*tenant"},
+		{"a catch-all sharing a segment", "note_scope", "PUT", "/notes/x*tenant"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			e := gin.New()
+			err := ginx.Mount(e, newRegistry(t), map[string]ginx.Route{
+				tc.spec: {Method: tc.method, Path: tc.path},
+			}, staticPrincipal)
+			if err == nil {
+				t.Fatal("got no error, want a refusal")
+			}
+			if routes := e.Routes(); len(routes) != 0 {
+				t.Errorf("a refused Mount registered %v", routes)
+			}
+		})
+	}
+}
+
+// Gin cleans a path before it reaches the router, so two patterns this package
+// sees as different can be one route by the time Gin has them. The rehearsal
+// catches that without this package having to know how Gin normalises.
+func TestMountRefusesPathsThatCollideOnlyAfterGinCleansThem(t *testing.T) {
+	e := gin.New()
+	err := ginx.Mount(e, newRegistry(t), map[string]ginx.Route{
+		"get_author": {Method: "GET", Path: "/authors/:id"},
+		"refuse":     {Method: "GET", Path: "/authors//:id"},
+	}, staticPrincipal)
+	if err == nil {
+		t.Fatal("got no error, want a refusal")
+	}
+	// The guarantee that matters: the row Gin accepted before it rejected the
+	// other one must not be left behind.
+	if routes := e.Routes(); len(routes) != 0 {
+		t.Errorf("a refused Mount registered %v", routes)
+	}
+}
+
+// Gin will bind the same capture name twice. c.Param returns the first and the
+// payload takes the last, so a middleware authorising on c.Param and the
+// operation reading its own field would disagree with nothing to say so.
+func TestMountRefusesARepeatedCaptureName(t *testing.T) {
+	e := gin.New()
+	err := ginx.Mount(e, newRegistry(t), map[string]ginx.Route{
+		"note_scope": {Method: "PUT", Path: "/a/:tenant/b/:tenant"},
+	}, staticPrincipal)
+	if err == nil {
+		t.Fatal("got no error, want a refusal")
+	}
+	if !strings.Contains(err.Error(), `captures "tenant" twice`) {
+		t.Errorf("error = %q, want the repeated capture named", err)
+	}
+	if routes := e.Routes(); len(routes) != 0 {
+		t.Errorf("a refused Mount registered %v", routes)
 	}
 }
 

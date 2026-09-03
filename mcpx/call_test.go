@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Artui/go-services"
 	"github.com/Artui/go-services/mcpx"
@@ -372,5 +373,126 @@ func TestAResolverRefusalIsMappedToo(t *testing.T) {
 	}
 	if got := text(t, res); got != "services: permission denied" {
 		t.Errorf("%q", got)
+	}
+}
+
+// TestATypedNilValidationErrorIsAServerBugNotABadArgument covers the shape that
+// took the process down before the kernel and this adapter were both hardened.
+//
+// A helper whose return type is *services.ValidationError, assigned straight
+// into an error, produces a non-nil error holding a nil pointer, and errors.As
+// matches it. Rendering that as a validation failure tells a model its
+// arguments were wrong and lists nothing, so the only move it has is to retry a
+// call that cannot succeed. It is a bug on the server, and it belongs where
+// bugs go.
+func TestATypedNilValidationErrorIsAServerBugNotABadArgument(t *testing.T) {
+	var reported error
+	cs := connect(t, newRegistry(t), nil, mcpx.WithErrorReporter(
+		func(_ context.Context, _ string, err error) { reported = err },
+	))
+
+	res := call(t, cs, "fail.typednil", map[string]any{})
+	if !res.IsError {
+		t.Fatal("a typed-nil validation error did not set IsError")
+	}
+	if got := text(t, res); got != mcpx.InternalErrorText {
+		t.Errorf("the client was told %q, want the fixed sentence", got)
+	}
+	if reported == nil {
+		t.Error("a server bug reached the client without reaching the reporter")
+	}
+}
+
+// TestACancelledCallIsNotAnInternalFailure. The reporter exists so that
+// redacting an unexpected error does not lose it. A caller going away loses
+// nothing, and on a busy mount it is the most common thing that happens, so
+// classifying it as a fault makes the log useless exactly when it matters.
+func TestACancelledCallIsNotAnInternalFailure(t *testing.T) {
+	reported := make(chan error, 4)
+	cs := connect(t, newRegistry(t), nil, mcpx.WithErrorReporter(
+		func(_ context.Context, _ string, err error) { reported <- err },
+	))
+
+	// The client gives up while the service is still blocked. The SDK
+	// propagates that, so the handler's own context ends.
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	if _, err := cs.CallTool(ctx, &mcp.CallToolParams{
+		Name: "fail.blocks", Arguments: map[string]any{},
+	}); err == nil {
+		t.Fatal("the client should have given up on this call")
+	}
+
+	select {
+	case err := <-reported:
+		t.Errorf("an ordinary cancellation was reported as a fault: %v", err)
+	case <-time.After(500 * time.Millisecond):
+	}
+}
+
+// TestAContextErrorFromInsideAServiceIsStillAFault is the other half, and the
+// reason the classification checks the call's own context rather than only the
+// error.
+//
+// A service whose downstream call timed out returns a context error while this
+// request is still perfectly alive. Matching on the error alone would file that
+// under "the caller left" and drop it, which is a real fault going quiet.
+func TestAContextErrorFromInsideAServiceIsStillAFault(t *testing.T) {
+	var reported error
+	cs := connect(t, newRegistry(t), nil, mcpx.WithErrorReporter(
+		func(_ context.Context, _ string, err error) { reported = err },
+	))
+
+	res := call(t, cs, "fail.downstream", map[string]any{})
+	if got := text(t, res); got != mcpx.InternalErrorText {
+		t.Errorf("the client was told %q, want the fixed sentence", got)
+	}
+	if reported == nil {
+		t.Fatal("a downstream timeout was mistaken for the caller leaving, and was dropped")
+	}
+	if !strings.Contains(reported.Error(), "billing service") {
+		t.Errorf("the reporter was given %q, not the real error", reported)
+	}
+}
+
+// TestAServerImposedDeadlineTellsTheModelItRanOutOfTime covers the other
+// interruption, which arrives by a different route than a client cancellation.
+//
+// A mount that caps how long a tool may run does it with receiving middleware,
+// so the handler's context carries a deadline rather than being cancelled from
+// the far end. The client is still listening, so unlike a cancellation it does
+// receive the result -- which makes the wording matter: "ran out of time" is
+// something a model can act on, where the internal-failure sentence would have
+// told it the server is broken and to stop trying.
+func TestAServerImposedDeadlineTellsTheModelItRanOutOfTime(t *testing.T) {
+	reported := make(chan error, 4)
+	srv := mcp.NewServer(&mcp.Implementation{Name: "fixture", Version: "v1"}, nil)
+	err := mcpx.Mount(srv, newRegistry(t), nil, mcpx.WithErrorReporter(
+		func(_ context.Context, _ string, err error) { reported <- err },
+	))
+	if err != nil {
+		t.Fatalf("Mount: %v", err)
+	}
+
+	srv.AddReceivingMiddleware(func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			ctx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+			defer cancel()
+			return next(ctx, method, req)
+		}
+	})
+
+	res := call(t, dial(t, srv), "fail.blocks", map[string]any{})
+	if !res.IsError {
+		t.Fatal("a call that ran out of time did not set IsError")
+	}
+	if got := text(t, res); got != mcpx.TimedOutText {
+		t.Errorf("the client was told %q, want %q", got, mcpx.TimedOutText)
+	}
+
+	select {
+	case err := <-reported:
+		t.Errorf("a deadline the mount itself imposed was reported as a fault: %v", err)
+	case <-time.After(200 * time.Millisecond):
 	}
 }
