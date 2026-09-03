@@ -59,6 +59,7 @@ type Entry struct {
 	Description string
 	Kind        Kind
 	Idempotent  *bool
+	Destructive *bool
 	Status      int
 	Tags        []string
 	Metadata    map[string]any
@@ -151,6 +152,7 @@ func Register[D, In, Out any](r *Registry[D], s Spec[D, In, Out]) error {
 			Description: s.Description,
 			Kind:        s.Kind,
 			Idempotent:  s.Idempotent,
+			Destructive: s.Destructive,
 			Status:      status,
 			Tags:        slices.Clone(s.Tags),
 			Metadata:    s.Metadata,

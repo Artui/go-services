@@ -44,6 +44,19 @@ type Spec[D, In, Out any] struct {
 	// false, or every spec ever written starts claiming it is not idempotent.
 	Idempotent *bool
 
+	// Destructive declares whether the operation may remove or overwrite
+	// existing state, as opposed to only adding to it.
+	//
+	// Kind cannot answer this: Mutation covers both a create and a delete, and
+	// the difference is exactly what an approval gate wants to know. MCP's
+	// destructiveHint defaults to TRUE for any non-read-only tool, so without
+	// this a pure create is advertised as possibly destructive and every
+	// approval policy keyed on that hint over-prompts.
+	//
+	// nil means undeclared, matching Idempotent: a transport publishing this as
+	// an annotation must be able to tell silence from a declared false.
+	Destructive *bool
+
 	// Status is an HTTP-ish success hint carried on the Result. Zero means 200.
 	Status int
 

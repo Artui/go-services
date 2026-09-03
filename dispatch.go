@@ -95,7 +95,22 @@ func (r *Registry[D]) Dispatch(
 }
 
 // DispatchValue is Dispatch for a caller that already holds decoded arguments
-// rather than bytes -- the shape the MCP SDK hands a non-generic tool handler.
+// rather than bytes, such as a command line that assembled them from flags.
+//
+// Prefer Dispatch whenever the arguments arrived as JSON, and reach for this
+// only when the map was built in Go.
+//
+// The reason is that a map[string]any produced by unmarshalling JSON has
+// already lost information: encoding/json decodes every number into a float64,
+// so an integer beyond 2^53 is silently rounded before it ever reaches here.
+// The identifier 9007199254740993 arrives at a service as ...992, with a nil
+// error and nothing to indicate a substitution happened. Handing Dispatch the
+// original bytes decodes straight into the input type and keeps it exact.
+//
+// This method previously claimed to be the shape the MCP SDK hands a
+// non-generic tool handler. That was wrong: the SDK's CallToolParamsRaw
+// carries Arguments as a json.RawMessage, so an MCP adapter has the bytes and
+// should use Dispatch.
 func (r *Registry[D]) DispatchValue(
 	ctx context.Context, principal any, name string, args map[string]any,
 ) (Result, error) {

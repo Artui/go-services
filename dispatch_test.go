@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -331,5 +332,49 @@ func TestDispatchDecodeCanFailAfterSchemaValidation(t *testing.T) {
 	}
 	if _, ok := invalid.Fields[NonFieldKey]; !ok {
 		t.Errorf("fields %v, want a %q key", invalid.Fields, NonFieldKey)
+	}
+}
+
+// The sharp edge DispatchValue documents, pinned so it cannot go stale.
+//
+// A map[string]any built by unmarshalling JSON has already rounded every
+// integer past 2^53 to a float64, and nothing reports it. Dispatch takes the
+// client's own bytes and decodes straight into the input type, so it does not.
+func TestDispatchValueRoundsWhatDispatchKeepsExact(t *testing.T) {
+	type idIn struct {
+		N int64 `json:"n"`
+	}
+	var seen int64
+	r := newTestRegistry(t)
+	MustRegister(r, Spec[testDeps, idIn, greetOut]{
+		Name: "id", Kind: Query,
+		Run: func(_ Ctx[testDeps], in idIn) (greetOut, error) {
+			seen = in.N
+			return greetOut{}, nil
+		},
+	})
+
+	const exact int64 = 9007199254740993
+	raw := []byte(`{"n":9007199254740993}`)
+
+	if _, err := r.Dispatch(context.Background(), nil, "id", raw); err != nil {
+		t.Fatal(err)
+	}
+	if seen != exact {
+		t.Errorf("Dispatch gave the service %d, want %d exactly", seen, exact)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(raw, &decoded); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.DispatchValue(context.Background(), nil, "id", decoded); err != nil {
+		t.Fatal(err)
+	}
+	if seen == exact {
+		t.Skip("encoding/json no longer rounds through any; the doc comment can be softened")
+	}
+	if seen != 9007199254740992 {
+		t.Errorf("DispatchValue gave %d; the documented rounding has changed", seen)
 	}
 }
