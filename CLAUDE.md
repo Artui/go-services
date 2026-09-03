@@ -32,7 +32,16 @@ hook ever has to be relaxed, the design has changed and the plan should say so.
 
 - One module per boundary. The kernel is the repo root; each adapter is its own
   module with its own `go.mod`, because Go has no optional dependencies and
-  their Go floors already differ.
+  their Go floors already differ: 1.24 for the kernel and `httpx`, 1.25 for
+  `mcpx` (the SDK's own floor), 1.26 for `ginx` (clearing Gin's transitive
+  advisories pulls in `x/crypto` and `quic-go` releases that require it).
+- **A Go floor can climb without anyone deciding.** `go get` and `go mod tidy`
+  raise the `go` directive when a dependency needs a newer one, and Go then
+  downloads that toolchain rather than failing -- so nothing breaks and the CI
+  matrix does not catch it either, since a leg named for an old Go silently
+  fetches the newer one. `make check-floors` asserts each module's floor against
+  a list with a reason per entry. Raising a floor is fine; raising it by
+  accident is what that refuses.
 - Cohesive file per concept (`spec.go`, `registry.go`, `dispatch.go`), which is
   Go's idiom. **This deliberately differs from the Python siblings'
   one-symbol-per-file layout** -- that convention exists for a language whose

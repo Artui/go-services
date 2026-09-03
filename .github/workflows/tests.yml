@@ -29,6 +29,7 @@ jobs:
       # The workspace file is gitignored, so CI already resolves each module
       # on its own. This makes that a stated check rather than a side effect.
       - run: make verify-modules
+      - run: make check-floors
 
   lint:
     runs-on: ubuntu-latest
