@@ -1,7 +1,3 @@
-github.com/Artui/go-services v0.1.0 h1:ZHh42TfBlMpsVHCXlfOa3KdjG5xgQ0i0ua+ycqT8HWA=
-github.com/Artui/go-services v0.1.0/go.mod h1:AzUZbK8feAV4JvWIlBhVf46nl/4U6ZnakP61K3P9vEA=
-github.com/Artui/go-services v0.2.0 h1:FOR7CBmu3FhwJ4YEudQOIpOVvTkYgOMjqeL8LbmFj58=
-github.com/Artui/go-services v0.2.0/go.mod h1:AzUZbK8feAV4JvWIlBhVf46nl/4U6ZnakP61K3P9vEA=
 github.com/Artui/go-services v0.3.0 h1:ETmUtWriQnBN5etihc7SoWTZDrTgBUehdM+K4SUUoww=
 github.com/Artui/go-services v0.3.0/go.mod h1:AzUZbK8feAV4JvWIlBhVf46nl/4U6ZnakP61K3P9vEA=
 github.com/bytedance/gopkg v0.1.3 h1:TPBSwH8RsouGCBcMBktLt1AymVo2TVsBVCY4b6TnZ/M=

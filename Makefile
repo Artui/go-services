@@ -4,7 +4,7 @@ GO ?= go
 # it and nothing depends on them.
 MODULES := . httpx ginx mcpx
 
-.PHONY: help fmt fmt-check vet lint test test-race cover check tidy verify-modules
+.PHONY: help fmt fmt-check vet lint test test-race cover check tidy verify-modules check-floors
 
 help:
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -45,7 +45,10 @@ verify-modules: ## Prove each module resolves without the workspace
 		(cd $$m && GOWORK=off $(GO) build ./...) || exit 1; \
 	done
 
+check-floors: ## Fail if a module's Go floor moved without a decision
+	@./scripts/check-go-floors.sh
+
 tidy: ## Tidy every module
 	@for m in $(MODULES); do (cd $$m && $(GO) mod tidy); done
 
-check: lint test-race cover verify-modules ## Everything CI runs
+check: lint test-race cover verify-modules check-floors ## Everything CI runs
