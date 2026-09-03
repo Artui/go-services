@@ -113,3 +113,14 @@ func TestValidationErrorToleratesANilReceiver(t *testing.T) {
 		t.Error("Error on a nil receiver must still describe itself")
 	}
 }
+
+func TestValidSuccessStatus(t *testing.T) {
+	for status, want := range map[int]bool{
+		0: false, 99: false, 100: false, 103: false, 199: false,
+		200: true, 204: true, 404: true, 599: true, 600: false, -1: false,
+	} {
+		if got := ValidSuccessStatus(status); got != want {
+			t.Errorf("ValidSuccessStatus(%d) = %v, want %v", status, got, want)
+		}
+	}
+}

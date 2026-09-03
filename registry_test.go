@@ -306,3 +306,34 @@ func TestEntryCheckCaptures(t *testing.T) {
 		t.Error("an entry with no input schema must refuse every capture")
 	}
 }
+
+// Status is the spec author's field, so an adapter checking it could only
+// refuse a registry another adapter had already accepted. A 1xx is the case
+// that matters: it is a real status code, and it is not one a response can end
+// with -- the next write commits an implicit 200 behind it.
+func TestRegisterRefusesAnUndeliverableStatus(t *testing.T) {
+	for _, status := range []int{99, 100, 103, 199, 600} {
+		r := newTestRegistry(t)
+		err := Register(r, Spec[testDeps, greetIn, greetOut]{
+			Name: "x", Kind: Query, Status: status, Run: greet})
+		if err == nil {
+			t.Errorf("Status %d was accepted; it cannot be sent as a final status", status)
+			continue
+		}
+		if !strings.Contains(err.Error(), "cannot be sent") {
+			t.Errorf("Status %d: got %q, want it to say why", status, err)
+		}
+	}
+
+	// Zero still means "use the default", which is a different fact from a
+	// status somebody computed wrongly.
+	r := newTestRegistry(t)
+	if err := Register(r, Spec[testDeps, greetIn, greetOut]{
+		Name: "ok", Kind: Query, Status: 0, Run: greet}); err != nil {
+		t.Errorf("zero must remain the default, got %v", err)
+	}
+	e, _ := r.Lookup("ok")
+	if e.Status != 200 {
+		t.Errorf("Status = %d, want the 200 default", e.Status)
+	}
+}

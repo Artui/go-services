@@ -160,6 +160,17 @@ func Register[D, In, Out any](r *Registry[D], s Spec[D, In, Out]) error {
 		return fmt.Errorf("services: %q output: %w", s.Name, err)
 	}
 
+	// Refused here rather than at each adapter's mount, because Status is the
+	// spec author's field and an adapter checking it would only be able to
+	// refuse a registry another adapter had already accepted. A transport with
+	// no status concept ignores the value entirely, so refusing one that cannot
+	// be delivered costs it nothing.
+	if s.Status != 0 && !ValidSuccessStatus(s.Status) {
+		return fmt.Errorf(
+			"services: %q declares status %d, which cannot be sent as a final "+
+				"response status; use 200 to 599, or zero for the default",
+			s.Name, s.Status)
+	}
 	status := s.Status
 	if status == 0 {
 		status = 200

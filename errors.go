@@ -76,6 +76,25 @@ const (
 	BodyTooLargeText = "request body too large"
 )
 
+// ValidSuccessStatus reports whether a status can actually be delivered as a
+// response's final status.
+//
+// The floor is 200, not 100. A 1xx is an interim response by definition: the
+// server writes it, does not commit, and the next write commits an implicit
+// 200 behind it -- so a handler configured with 103 delivers 200 and the
+// configuration was a promise nothing could keep. Verified over real servers on
+// both HTTP adapters; an httptest.ResponseRecorder reports the 1xx and hides
+// it, which is how it survived review on both.
+//
+// Zero is not a status and is not accepted here. Callers that use zero to mean
+// "unset" test for that themselves, because "nobody asked" and "somebody
+// computed zero" are different facts and only one of them is an error.
+//
+// It lives in the kernel because three places need the same answer: Register,
+// and each HTTP adapter's own route and option validation. Two of them had
+// their own copy and the two disagreed.
+func ValidSuccessStatus(status int) bool { return status >= 200 && status <= 599 }
+
 // StatusFor maps an error to the HTTP status an adapter should answer with.
 //
 // Anything outside the taxonomy is 500, which is the safe direction: an
