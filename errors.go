@@ -21,7 +21,85 @@ var (
 
 	// ErrPermission reports that the acting principal may not do this.
 	ErrPermission = errors.New("services: permission denied")
+
+	// ErrBodyTooLarge reports that the client sent more than an adapter is
+	// willing to read. It lives here rather than in each adapter because the
+	// limit and the answer are one decision: two transports refusing at
+	// different sizes is a difference a client cannot predict.
+	ErrBodyTooLarge = errors.New("services: request body too large")
 )
+
+// DefaultMaxBodyBytes is the request-body ceiling an adapter applies unless it
+// is configured otherwise.
+//
+// Unbounded reads are the default in most Go HTTP code and a denial-of-service
+// waiting to happen. One mebibyte is generous for a JSON operation payload;
+// anything transferring bulk data wants its own endpoint rather than a bigger
+// number here.
+const DefaultMaxBodyBytes int64 = 1 << 20
+
+// The HTTP projection of the taxonomy above.
+//
+// These live here, in a package that imports no transport, for the same reason
+// EncodeParams does: every HTTP-shaped adapter needs them and they are
+// client-visible, so two adapters carrying their own copies is a difference a
+// caller can observe. An adapter on a wire without status codes ignores them,
+// as the MCP one does.
+const (
+	// StatusBodyTooLarge is the status for ErrBodyTooLarge. It is not in the
+	// StatusFor table because an adapter has to recognise its own transport's
+	// oversize error and wrap it; only the answer is shared.
+	StatusBodyTooLarge = 413
+
+	// InternalErrorText is the body for an error outside the taxonomy. An
+	// unexpected error's words are written for an operator, and putting them on
+	// the wire is how internal detail reaches strangers.
+	InternalErrorText = "internal server error"
+
+	// UnreadableBodyText is the body for a request that could not be read to
+	// the end -- a truncated upload rather than a malformed one.
+	UnreadableBodyText = "the request body could not be read"
+
+	// BodyTooLargeText is the body for a request over the size ceiling.
+	BodyTooLargeText = "request body too large"
+)
+
+// StatusFor maps an error to the HTTP status an adapter should answer with.
+//
+// Anything outside the taxonomy is 500, which is the safe direction: an
+// unrecognised error is a bug until proven otherwise, and answering 400 would
+// tell a caller to fix a request that was never the problem.
+func StatusFor(err error) int {
+	var invalid *ValidationError
+	switch {
+	case errors.As(err, &invalid):
+		return 400
+	case errors.Is(err, ErrPermission):
+		return 403
+	case errors.Is(err, ErrNotFound):
+		return 404
+	case errors.Is(err, ErrConflict):
+		return 409
+	case errors.Is(err, ErrBodyTooLarge):
+		return StatusBodyTooLarge
+	default:
+		return 500
+	}
+}
+
+// FieldMap returns the per-field messages, never nil.
+//
+// Fields is an exported field on a constructible struct, so a
+// &ValidationError{} with no map reaches a renderer sooner or later. Rendering
+// that directly puts {"errors": null} on the wire, which a client parsing
+// errors as an object cannot read. Adapters render through this so all of them
+// answer the same shape.
+func (e *ValidationError) FieldMap() map[string][]string {
+	if e.Fields == nil {
+		return map[string][]string{}
+	}
+	return e.Fields
+}
 
 // ValidationError carries per-field messages from any of the three validation
 // layers. Fields is keyed by the JSON name, not the Go field name, because the

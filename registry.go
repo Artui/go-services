@@ -14,6 +14,18 @@ import (
 // payload as a whole rather than to one field.
 const NonFieldKey = "non_field_errors"
 
+// malformedBody builds the error for a payload that is not JSON at all.
+//
+// One helper rather than a string at each site: the kernel rejects a malformed
+// body from two places, and which one fires depends on whether the client
+// happened to append a query parameter. Two wordings for one condition, chosen
+// by something the client cannot see, is not a distinction worth shipping.
+func malformedBody(err error) *ValidationError {
+	return &ValidationError{
+		Fields: map[string][]string{NonFieldKey: {"malformed JSON body: " + err.Error()}},
+	}
+}
+
 // Registry holds a set of specs under their names and is what every adapter
 // reads. D is the per-call dependency type.
 type Registry[D any] struct {
@@ -47,6 +59,7 @@ type Entry struct {
 	Description string
 	Kind        Kind
 	Idempotent  *bool
+	Destructive *bool
 	Status      int
 	Tags        []string
 	Metadata    map[string]any
@@ -138,7 +151,8 @@ func Register[D, In, Out any](r *Registry[D], s Spec[D, In, Out]) error {
 			Name:        s.Name,
 			Description: s.Description,
 			Kind:        s.Kind,
-			Idempotent:  s.Idempotent,
+			Idempotent:  copyFlag(s.Idempotent),
+			Destructive: copyFlag(s.Destructive),
 			Status:      status,
 			Tags:        slices.Clone(s.Tags),
 			Metadata:    s.Metadata,
@@ -176,6 +190,22 @@ func Register[D, In, Out any](r *Registry[D], s Spec[D, In, Out]) error {
 	}
 	r.order = append(r.order, s.Name)
 	return nil
+}
+
+// copyFlag detaches a declared tri-state from the caller's own variable.
+//
+// Register freezes what a spec declares, and an Entry is read by every adapter
+// for the life of the process. Sharing the pointer would let a later write to
+// the author's bool rewrite what clients have already been told, with nothing
+// to announce it -- and a published MCP annotation is exactly that kind of
+// once-read fact. Tags are cloned a few lines above for the same reason; these
+// were missed, which is how a consumer came to defend against it downstream.
+func copyFlag(p *bool) *bool {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
 }
 
 // MustRegister is Register for a package-level declaration, where a

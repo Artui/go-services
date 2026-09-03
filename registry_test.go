@@ -145,6 +145,9 @@ func TestEntryDefaultsAndCarriedFacts(t *testing.T) {
 	if created.Idempotent != nil {
 		t.Error("an undeclared Idempotent must stay nil")
 	}
+	if created.Destructive != nil {
+		t.Error("an undeclared Destructive must stay nil")
+	}
 
 	if _, ok := r.Lookup("absent"); ok {
 		t.Error("Lookup must report a miss")
@@ -213,5 +216,53 @@ func TestSchemaHookEnrichesTheAdvertisedSchema(t *testing.T) {
 		[]byte(`{"name":"a name well over ten characters"}`))
 	if err == nil {
 		t.Error("the enriched constraint must be enforced, not only published")
+	}
+}
+
+// Kind cannot answer this: Mutation covers both a create and a delete, and an
+// approval gate keyed on MCP's destructiveHint -- which defaults to true --
+// over-prompts on every create until the author can say otherwise.
+func TestDestructiveIsThreeState(t *testing.T) {
+	r := newTestRegistry(t)
+	yes, no := true, false
+	MustRegister(r, Spec[testDeps, greetIn, greetOut]{
+		Name: "delete", Kind: Mutation, Destructive: &yes, Run: greet})
+	MustRegister(r, Spec[testDeps, greetIn, greetOut]{
+		Name: "create", Kind: Mutation, Destructive: &no, Run: greet})
+	MustRegister(r, Spec[testDeps, greetIn, greetOut]{
+		Name: "unsaid", Kind: Mutation, Run: greet})
+
+	for name, want := range map[string]*bool{"delete": &yes, "create": &no, "unsaid": nil} {
+		e, _ := r.Lookup(name)
+		switch {
+		case want == nil && e.Destructive != nil:
+			t.Errorf("%s: got %v, want undeclared", name, *e.Destructive)
+		case want != nil && (e.Destructive == nil || *e.Destructive != *want):
+			t.Errorf("%s: got %v, want %v", name, e.Destructive, *want)
+		}
+	}
+}
+
+// An Entry is read by every adapter for the life of the process, and a
+// published MCP annotation is read once and cached by clients. A spec's
+// declared tri-states must therefore not still be the caller's variable.
+func TestRegisterDetachesDeclaredFlags(t *testing.T) {
+	r := newTestRegistry(t)
+	idempotent, destructive := true, true
+	tags := []string{"public"}
+	MustRegister(r, Spec[testDeps, greetIn, greetOut]{
+		Name: "x", Kind: Mutation,
+		Idempotent: &idempotent, Destructive: &destructive, Tags: tags,
+		Run: greet,
+	})
+
+	idempotent, destructive, tags[0] = false, false, "secret"
+
+	e, _ := r.Lookup("x")
+	if !*e.Idempotent || !*e.Destructive {
+		t.Error("a later write to the author's bool must not rewrite what was advertised")
+	}
+	if e.Tags[0] != "public" {
+		t.Error("a later write to the author's slice must not rewrite the tags")
 	}
 }

@@ -2,6 +2,7 @@ package services
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 )
 
@@ -35,5 +36,40 @@ func TestSentinelsAreDistinct(t *testing.T) {
 	}
 	if errors.Is(ErrNotFound, ErrConflict) || errors.Is(ErrConflict, ErrPermission) {
 		t.Error("sentinels must not compare equal")
+	}
+}
+
+func TestValidationErrorFieldMapIsNeverNil(t *testing.T) {
+	// A &ValidationError{} with no map reaches a renderer sooner or later, and
+	// rendering Fields directly would put {"errors": null} on the wire.
+	if got := (&ValidationError{}).FieldMap(); got == nil || len(got) != 0 {
+		t.Errorf("FieldMap = %#v, want an empty non-nil map", got)
+	}
+	populated := Invalid("name", "must not be blank")
+	if got := populated.FieldMap(); len(got["name"]) != 1 {
+		t.Errorf("FieldMap = %#v, want the declared messages", got)
+	}
+}
+
+func TestStatusFor(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		err  error
+		want int
+	}{
+		{"validation", Invalid("name", "bad"), 400},
+		{"wrapped validation", fmt.Errorf("layer: %w", Invalid("n", "bad")), 400},
+		{"permission", ErrPermission, 403},
+		{"not found", fmt.Errorf("looking up: %w", ErrNotFound), 404},
+		{"conflict", ErrConflict, 409},
+		{"too large", ErrBodyTooLarge, StatusBodyTooLarge},
+		// The safe direction: an unrecognised error is a bug until proven
+		// otherwise, and 400 would blame a caller whose request was fine.
+		{"anything else", errors.New("boom"), 500},
+		{"nil", nil, 500},
+	} {
+		if got := StatusFor(tc.err); got != tc.want {
+			t.Errorf("%s: StatusFor = %d, want %d", tc.name, got, tc.want)
+		}
 	}
 }

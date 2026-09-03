@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"reflect"
@@ -32,7 +33,7 @@ func paramsSchema(t *testing.T) *jsonschema.Schema {
 
 func TestEncodeParamsCoercesBySchema(t *testing.T) {
 	s := paramsSchema(t)
-	raw, err := EncodeParams(s, map[string][]string{
+	raw, err := EncodeParams(s, nil, map[string][]string{
 		"name":   {"ada"},
 		"limit":  {"10"},
 		"ratio":  {"1.5"},
@@ -99,7 +100,7 @@ func TestEncodeParamsCoercionFailures(t *testing.T) {
 		{"sizes", "one", "an integer"},
 	} {
 		t.Run(tc.field, func(t *testing.T) {
-			_, err := EncodeParams(s, map[string][]string{tc.field: {tc.value}}, nil)
+			_, err := EncodeParams(s, nil, map[string][]string{tc.field: {tc.value}}, nil)
 			var invalid *ValidationError
 			if !errors.As(err, &invalid) {
 				t.Fatalf("got %v, want a ValidationError", err)
@@ -119,7 +120,7 @@ func TestEncodeParamsCoercionFailures(t *testing.T) {
 
 func TestEncodeParamsPassesBodyThroughWithNoParams(t *testing.T) {
 	body := json.RawMessage(`{"name":"ada"}`)
-	got, err := EncodeParams(paramsSchema(t), nil, body)
+	got, err := EncodeParams(paramsSchema(t), body, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,8 +131,8 @@ func TestEncodeParamsPassesBodyThroughWithNoParams(t *testing.T) {
 
 func TestEncodeParamsOverlaysOntoBody(t *testing.T) {
 	got, err := EncodeParams(paramsSchema(t),
-		map[string][]string{"limit": {"5"}},
-		json.RawMessage(`{"name":"ada","limit":99}`))
+		json.RawMessage(`{"name":"ada","limit":99}`),
+		map[string][]string{"limit": {"5"}}, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -151,7 +152,7 @@ func TestEncodeParamsOverlaysOntoBody(t *testing.T) {
 func TestEncodeParamsIgnoresWhatTheSchemaDoesNotDeclare(t *testing.T) {
 	// A query string carries analytics noise that is none of the operation's
 	// business; rejecting it would break real clients.
-	got, err := EncodeParams(paramsSchema(t), map[string][]string{
+	got, err := EncodeParams(paramsSchema(t), nil, map[string][]string{
 		"utm_source": {"newsletter"},
 		"name":       {"ada"},
 	}, nil)
@@ -174,7 +175,7 @@ func TestEncodeParamsEdgeCases(t *testing.T) {
 	s := paramsSchema(t)
 
 	t.Run("an empty value slice is skipped", func(t *testing.T) {
-		got, err := EncodeParams(s, map[string][]string{"name": {}}, nil)
+		got, err := EncodeParams(s, nil, map[string][]string{"name": {}}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -184,7 +185,7 @@ func TestEncodeParamsEdgeCases(t *testing.T) {
 	})
 
 	t.Run("a repeated scalar takes the first", func(t *testing.T) {
-		got, err := EncodeParams(s, map[string][]string{"name": {"first", "second"}}, nil)
+		got, err := EncodeParams(s, nil, map[string][]string{"name": {"first", "second"}}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -196,7 +197,7 @@ func TestEncodeParamsEdgeCases(t *testing.T) {
 	})
 
 	t.Run("an untyped property passes through as a string", func(t *testing.T) {
-		got, err := EncodeParams(s, map[string][]string{"blob": {"anything"}}, nil)
+		got, err := EncodeParams(s, nil, map[string][]string{"blob": {"anything"}}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -208,7 +209,7 @@ func TestEncodeParamsEdgeCases(t *testing.T) {
 	})
 
 	t.Run("a malformed body is a validation error", func(t *testing.T) {
-		_, err := EncodeParams(s, map[string][]string{"name": {"a"}}, json.RawMessage(`{`))
+		_, err := EncodeParams(s, json.RawMessage(`{`), map[string][]string{"name": {"a"}}, nil)
 		var invalid *ValidationError
 		if !errors.As(err, &invalid) {
 			t.Fatalf("got %v, want a ValidationError", err)
@@ -216,7 +217,7 @@ func TestEncodeParamsEdgeCases(t *testing.T) {
 	})
 
 	t.Run("a nil schema declares nothing", func(t *testing.T) {
-		got, err := EncodeParams(nil, map[string][]string{"name": {"a"}}, nil)
+		got, err := EncodeParams(nil, nil, map[string][]string{"name": {"a"}}, nil)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -233,4 +234,137 @@ func TestEncodeParamsEdgeCases(t *testing.T) {
 			t.Errorf("null-only type = %q, want empty", got)
 		}
 	})
+}
+
+// The precedence is a security rule, not a convenience: an operation mounted at
+// /tenants/{tenant}/reports is scoped by its path, and a merge in the other
+// direction would let a client rescope it with ?tenant=other. The kernel does
+// the merge so an adapter cannot get it backwards.
+func TestEncodeParamsCaptureBeatsQueryBeatsBody(t *testing.T) {
+	s := paramsSchema(t)
+	raw, err := EncodeParams(s,
+		json.RawMessage(`{"name":"from-body"}`),
+		map[string][]string{"name": {"from-query"}},
+		map[string][]string{"name": {"from-capture"}},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["name"] != "from-capture" {
+		t.Errorf("name = %#v, want the route capture to win", got["name"])
+	}
+
+	// And query still beats body when no capture claims the key.
+	raw, err = EncodeParams(s, json.RawMessage(`{"name":"from-body"}`),
+		map[string][]string{"name": {"from-query"}}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = json.Unmarshal(raw, &got)
+	if got["name"] != "from-query" {
+		t.Errorf("name = %#v, want the query to beat the body", got["name"])
+	}
+}
+
+func TestEncodeParamsCoercionFailureInEitherSource(t *testing.T) {
+	s := paramsSchema(t)
+	for _, tc := range []struct {
+		name            string
+		query, captures map[string][]string
+	}{
+		{"query", map[string][]string{"limit": {"ten"}}, nil},
+		{"captures", nil, map[string][]string{"limit": {"ten"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := EncodeParams(s, nil, tc.query, tc.captures)
+			var invalid *ValidationError
+			if !errors.As(err, &invalid) {
+				t.Errorf("got %v, want a ValidationError from the %s source", err, tc.name)
+			}
+		})
+	}
+}
+
+// One condition, one wording. Which of the two kernel sites rejects a malformed
+// body depends on whether the client appended a query parameter, which is not a
+// distinction worth putting on the wire.
+func TestMalformedBodyReadsTheSameFromBothSites(t *testing.T) {
+	r := newTestRegistry(t)
+	MustRegister(r, Spec[testDeps, greetIn, greetOut]{Name: "greet", Kind: Query, Run: greet})
+
+	_, viaDispatch := r.Dispatch(context.Background(), nil, "greet", []byte(`{`))
+	_, viaParams := EncodeParams(paramsSchema(t), json.RawMessage(`{`),
+		map[string][]string{"name": {"a"}}, nil)
+
+	var a, b *ValidationError
+	if !errors.As(viaDispatch, &a) || !errors.As(viaParams, &b) {
+		t.Fatalf("both should be validation errors: %v / %v", viaDispatch, viaParams)
+	}
+	if a.Error() != b.Error() {
+		t.Errorf("two wordings for one condition:\n  dispatch: %s\n  params:   %s", a, b)
+	}
+}
+
+// A query parameter is client-supplied noise; a route capture was written into
+// the pattern by hand and is always load-bearing. Dropping one silently is how
+// /tenants/{tenant}/invoices runs unscoped against a spec with no tenant field.
+func TestEncodeParamsRefusesAnUndeclaredCaptureButDropsAnUndeclaredQuery(t *testing.T) {
+	s := paramsSchema(t)
+
+	if _, err := EncodeParams(s, nil, nil, map[string][]string{"tenant": {"acme"}}); err == nil {
+		t.Error("a capture the operation cannot receive must be refused, not discarded")
+	} else {
+		var invalid *ValidationError
+		if !errors.As(err, &invalid) || len(invalid.Fields["tenant"]) == 0 {
+			t.Errorf("got %v, want a ValidationError naming the capture", err)
+		}
+	}
+
+	got, err := EncodeParams(s, nil, map[string][]string{"utm_source": {"newsletter"}}, nil)
+	if err != nil {
+		t.Fatalf("an undeclared query parameter must still be dropped, got %v", err)
+	}
+	if string(got) != `{}` {
+		t.Errorf("got %s, want the noise dropped", got)
+	}
+}
+
+// The same client mistake must get the same explanation whether or not the
+// route happens to capture anything.
+func TestEncodeParamsPassesAValidNonObjectBodyThroughUnchanged(t *testing.T) {
+	s := paramsSchema(t)
+	body := json.RawMessage(`[1,2,3]`)
+
+	for _, tc := range []struct {
+		name  string
+		query map[string][]string
+	}{
+		{"no parameters", nil},
+		{"with a parameter", map[string][]string{"limit": {"5"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := EncodeParams(s, body, tc.query, nil)
+			if err != nil {
+				t.Fatalf("a valid non-object body is the schema's to reject, got %v", err)
+			}
+			if string(got) != string(body) {
+				t.Errorf("got %s, want the body untouched", got)
+			}
+		})
+	}
+
+	// And the schema is what rejects it, with an accurate message.
+	rs, err := s.Resolve(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var probe any
+	_ = json.Unmarshal(body, &probe)
+	if rs.Validate(probe) == nil {
+		t.Error("the schema should refuse an array where an object is declared")
+	}
 }
