@@ -38,6 +38,55 @@ var (
 // number here.
 const DefaultMaxBodyBytes int64 = 1 << 20
 
+// The HTTP projection of the taxonomy above.
+//
+// These live here, in a package that imports no transport, for the same reason
+// EncodeParams does: every HTTP-shaped adapter needs them and they are
+// client-visible, so two adapters carrying their own copies is a difference a
+// caller can observe. An adapter on a wire without status codes ignores them,
+// as the MCP one does.
+const (
+	// StatusBodyTooLarge is the status for ErrBodyTooLarge. It is not in the
+	// StatusFor table because an adapter has to recognise its own transport's
+	// oversize error and wrap it; only the answer is shared.
+	StatusBodyTooLarge = 413
+
+	// InternalErrorText is the body for an error outside the taxonomy. An
+	// unexpected error's words are written for an operator, and putting them on
+	// the wire is how internal detail reaches strangers.
+	InternalErrorText = "internal server error"
+
+	// UnreadableBodyText is the body for a request that could not be read to
+	// the end -- a truncated upload rather than a malformed one.
+	UnreadableBodyText = "the request body could not be read"
+
+	// BodyTooLargeText is the body for a request over the size ceiling.
+	BodyTooLargeText = "request body too large"
+)
+
+// StatusFor maps an error to the HTTP status an adapter should answer with.
+//
+// Anything outside the taxonomy is 500, which is the safe direction: an
+// unrecognised error is a bug until proven otherwise, and answering 400 would
+// tell a caller to fix a request that was never the problem.
+func StatusFor(err error) int {
+	var invalid *ValidationError
+	switch {
+	case errors.As(err, &invalid):
+		return 400
+	case errors.Is(err, ErrPermission):
+		return 403
+	case errors.Is(err, ErrNotFound):
+		return 404
+	case errors.Is(err, ErrConflict):
+		return 409
+	case errors.Is(err, ErrBodyTooLarge):
+		return StatusBodyTooLarge
+	default:
+		return 500
+	}
+}
+
 // FieldMap returns the per-field messages, never nil.
 //
 // Fields is an exported field on a constructible struct, so a

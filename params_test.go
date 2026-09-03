@@ -308,3 +308,63 @@ func TestMalformedBodyReadsTheSameFromBothSites(t *testing.T) {
 		t.Errorf("two wordings for one condition:\n  dispatch: %s\n  params:   %s", a, b)
 	}
 }
+
+// A query parameter is client-supplied noise; a route capture was written into
+// the pattern by hand and is always load-bearing. Dropping one silently is how
+// /tenants/{tenant}/invoices runs unscoped against a spec with no tenant field.
+func TestEncodeParamsRefusesAnUndeclaredCaptureButDropsAnUndeclaredQuery(t *testing.T) {
+	s := paramsSchema(t)
+
+	if _, err := EncodeParams(s, nil, nil, map[string][]string{"tenant": {"acme"}}); err == nil {
+		t.Error("a capture the operation cannot receive must be refused, not discarded")
+	} else {
+		var invalid *ValidationError
+		if !errors.As(err, &invalid) || len(invalid.Fields["tenant"]) == 0 {
+			t.Errorf("got %v, want a ValidationError naming the capture", err)
+		}
+	}
+
+	got, err := EncodeParams(s, nil, map[string][]string{"utm_source": {"newsletter"}}, nil)
+	if err != nil {
+		t.Fatalf("an undeclared query parameter must still be dropped, got %v", err)
+	}
+	if string(got) != `{}` {
+		t.Errorf("got %s, want the noise dropped", got)
+	}
+}
+
+// The same client mistake must get the same explanation whether or not the
+// route happens to capture anything.
+func TestEncodeParamsPassesAValidNonObjectBodyThroughUnchanged(t *testing.T) {
+	s := paramsSchema(t)
+	body := json.RawMessage(`[1,2,3]`)
+
+	for _, tc := range []struct {
+		name  string
+		query map[string][]string
+	}{
+		{"no parameters", nil},
+		{"with a parameter", map[string][]string{"limit": {"5"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := EncodeParams(s, body, tc.query, nil)
+			if err != nil {
+				t.Fatalf("a valid non-object body is the schema's to reject, got %v", err)
+			}
+			if string(got) != string(body) {
+				t.Errorf("got %s, want the body untouched", got)
+			}
+		})
+	}
+
+	// And the schema is what rejects it, with an accurate message.
+	rs, err := s.Resolve(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var probe any
+	_ = json.Unmarshal(body, &probe)
+	if rs.Validate(probe) == nil {
+		t.Error("the schema should refuse an array where an object is declared")
+	}
+}

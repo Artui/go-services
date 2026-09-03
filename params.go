@@ -39,17 +39,38 @@ func EncodeParams(
 
 	payload := map[string]any{}
 	if len(body) > 0 {
-		if err := json.Unmarshal(body, &payload); err != nil {
+		var decoded any
+		if err := json.Unmarshal(body, &decoded); err != nil {
 			return nil, malformedBody(err)
 		}
+		object, ok := decoded.(map[string]any)
+		if !ok {
+			// Valid JSON that is not an object -- an array, a bare string. There
+			// is nothing to overlay onto, and it is not malformed, so it goes
+			// through untouched for the schema to reject accurately. Reporting
+			// it here would call the same client mistake "malformed" or a type
+			// error depending only on whether the route happens to capture
+			// anything, which is not a distinction the client can see.
+			return body, nil
+		}
+		payload = object
 	}
 
 	// Applied lowest precedence first, so a later source overwrites an earlier
 	// one on the same key.
-	for _, source := range []map[string][]string{query, captures} {
-		if err := overlay(s, payload, source); err != nil {
-			return nil, err
-		}
+	//
+	// An unrecognised key is dropped from the query and refused from the
+	// captures, and the asymmetry is the point. A query string carries
+	// analytics noise nobody declared; a capture was written into the route by
+	// hand, so it is always load-bearing. Dropping one silently is how
+	// /tenants/{tenant}/invoices runs unscoped against a spec with no tenant
+	// field -- the existence half of the hazard whose precedence half this
+	// function already guards.
+	if err := overlay(s, payload, query, false); err != nil {
+		return nil, err
+	}
+	if err := overlay(s, payload, captures, true); err != nil {
+		return nil, err
 	}
 
 	raw, err := json.Marshal(payload)
@@ -61,14 +82,22 @@ func EncodeParams(
 	return raw, nil
 }
 
-// overlay coerces one source's values onto payload.
-func overlay(s *jsonschema.Schema, payload map[string]any, source map[string][]string) error {
+// overlay coerces one source's values onto payload. When required is true, a
+// key the schema does not declare is an error rather than something to drop.
+func overlay(
+	s *jsonschema.Schema, payload map[string]any, source map[string][]string, required bool,
+) error {
 	for key, values := range source {
 		if len(values) == 0 {
 			continue
 		}
 		prop := property(s, key)
 		if prop == nil {
+			if required {
+				return Invalid(key,
+					"the route captures this segment but the operation declares no such field, "+
+						"so its value would be discarded")
+			}
 			continue
 		}
 		coerced, err := coerce(prop, values)
