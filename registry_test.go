@@ -242,3 +242,27 @@ func TestDestructiveIsThreeState(t *testing.T) {
 		}
 	}
 }
+
+// An Entry is read by every adapter for the life of the process, and a
+// published MCP annotation is read once and cached by clients. A spec's
+// declared tri-states must therefore not still be the caller's variable.
+func TestRegisterDetachesDeclaredFlags(t *testing.T) {
+	r := newTestRegistry(t)
+	idempotent, destructive := true, true
+	tags := []string{"public"}
+	MustRegister(r, Spec[testDeps, greetIn, greetOut]{
+		Name: "x", Kind: Mutation,
+		Idempotent: &idempotent, Destructive: &destructive, Tags: tags,
+		Run: greet,
+	})
+
+	idempotent, destructive, tags[0] = false, false, "secret"
+
+	e, _ := r.Lookup("x")
+	if !*e.Idempotent || !*e.Destructive {
+		t.Error("a later write to the author's bool must not rewrite what was advertised")
+	}
+	if e.Tags[0] != "public" {
+		t.Error("a later write to the author's slice must not rewrite the tags")
+	}
+}
