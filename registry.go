@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -13,18 +14,6 @@ import (
 // NonFieldKey is the ValidationError key for a message that belongs to the
 // payload as a whole rather than to one field.
 const NonFieldKey = "non_field_errors"
-
-// malformedBody builds the error for a payload that is not JSON at all.
-//
-// One helper rather than a string at each site: the kernel rejects a malformed
-// body from two places, and which one fires depends on whether the client
-// happened to append a query parameter. Two wordings for one condition, chosen
-// by something the client cannot see, is not a distinction worth shipping.
-func malformedBody(err error) *ValidationError {
-	return &ValidationError{
-		Fields: map[string][]string{NonFieldKey: {"malformed JSON body: " + err.Error()}},
-	}
-}
 
 // Registry holds a set of specs under their names and is what every adapter
 // reads. D is the per-call dependency type.
@@ -65,6 +54,40 @@ type Entry struct {
 	Metadata    map[string]any
 	Input       *jsonschema.Schema
 	Output      *jsonschema.Schema
+}
+
+// CheckCaptures reports which of the named route captures the input schema
+// cannot receive, as a single error naming all of them.
+//
+// Dispatch already refuses an undeclared capture, so this is not the guarantee
+// -- it is the same guarantee moved to configuration time. A route table
+// declaring a capture the operation has no field for is broken in every
+// request it will ever serve, and this is the library's stated preference for
+// failing at as_view rather than at request time.
+//
+// The two checks are not redundant, because they cover different callers. An
+// adapter mounting a route table knows its patterns and should call this; one
+// handing out a bare handler for somebody else's router has no pattern to
+// inspect, and the dispatch-time refusal is what covers it.
+//
+// Extracting capture names from a route pattern stays with the adapter,
+// because path syntax is the one thing two HTTP adapters genuinely cannot
+// share: net/http writes {name} and Gin writes :name.
+func (e Entry) CheckCaptures(names ...string) error {
+	var undeclared []string
+	for _, name := range names {
+		if e.Input == nil || e.Input.Properties[name] == nil {
+			undeclared = append(undeclared, name)
+		}
+	}
+	if len(undeclared) == 0 {
+		return nil
+	}
+	slices.Sort(undeclared)
+	return fmt.Errorf(
+		"%w: %q captures %s, which the operation declares no field for, so the value "+
+			"would be discarded and the route would run unscoped",
+		ErrConfiguration, e.Name, strings.Join(undeclared, ", "))
 }
 
 // Option configures a Registry.
@@ -137,6 +160,17 @@ func Register[D, In, Out any](r *Registry[D], s Spec[D, In, Out]) error {
 		return fmt.Errorf("services: %q output: %w", s.Name, err)
 	}
 
+	// Refused here rather than at each adapter's mount, because Status is the
+	// spec author's field and an adapter checking it would only be able to
+	// refuse a registry another adapter had already accepted. A transport with
+	// no status concept ignores the value entirely, so refusing one that cannot
+	// be delivered costs it nothing.
+	if s.Status != 0 && !ValidSuccessStatus(s.Status) {
+		return fmt.Errorf(
+			"services: %q declares status %d, which cannot be sent as a final "+
+				"response status; use 200 to 599, or zero for the default",
+			s.Name, s.Status)
+	}
 	status := s.Status
 	if status == 0 {
 		status = 200

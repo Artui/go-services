@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -264,5 +265,75 @@ func TestRegisterDetachesDeclaredFlags(t *testing.T) {
 	}
 	if e.Tags[0] != "public" {
 		t.Error("a later write to the author's slice must not rewrite the tags")
+	}
+}
+
+// The same guarantee Dispatch already gives, moved to configuration time. A
+// route table declaring a capture the operation has no field for is broken in
+// every request it will ever serve.
+func TestEntryCheckCaptures(t *testing.T) {
+	r := newTestRegistry(t)
+	MustRegister(r, Spec[testDeps, greetIn, greetOut]{Name: "greet", Kind: Query, Run: greet})
+	e, _ := r.Lookup("greet")
+
+	if err := e.CheckCaptures(); err != nil {
+		t.Errorf("no captures is fine, got %v", err)
+	}
+	if err := e.CheckCaptures("name"); err != nil {
+		t.Errorf("a declared capture is fine, got %v", err)
+	}
+
+	err := e.CheckCaptures("tenant", "name", "region")
+	if err == nil {
+		t.Fatal("undeclared captures must be refused")
+	}
+	// The same fault Dispatch reports, so it carries the same sentinel and an
+	// adapter maps both to 500 without a second rule.
+	if !errors.Is(err, ErrConfiguration) {
+		t.Errorf("got %v, want ErrConfiguration", err)
+	}
+	// Named together and in a stable order, so a wrong route table is fixed in
+	// one pass rather than one error at a time.
+	if !strings.Contains(err.Error(), "region, tenant") {
+		t.Errorf("got %q, want both undeclared captures sorted", err)
+	}
+	if strings.Contains(err.Error(), "name") && !strings.Contains(err.Error(), "greet") {
+		t.Errorf("got %q, want the declared capture omitted", err)
+	}
+
+	// An Entry with no schema at all cannot receive anything.
+	if (Entry{Name: "x"}).CheckCaptures("id") == nil {
+		t.Error("an entry with no input schema must refuse every capture")
+	}
+}
+
+// Status is the spec author's field, so an adapter checking it could only
+// refuse a registry another adapter had already accepted. A 1xx is the case
+// that matters: it is a real status code, and it is not one a response can end
+// with -- the next write commits an implicit 200 behind it.
+func TestRegisterRefusesAnUndeliverableStatus(t *testing.T) {
+	for _, status := range []int{99, 100, 103, 199, 600} {
+		r := newTestRegistry(t)
+		err := Register(r, Spec[testDeps, greetIn, greetOut]{
+			Name: "x", Kind: Query, Status: status, Run: greet})
+		if err == nil {
+			t.Errorf("Status %d was accepted; it cannot be sent as a final status", status)
+			continue
+		}
+		if !strings.Contains(err.Error(), "cannot be sent") {
+			t.Errorf("Status %d: got %q, want it to say why", status, err)
+		}
+	}
+
+	// Zero still means "use the default", which is a different fact from a
+	// status somebody computed wrongly.
+	r := newTestRegistry(t)
+	if err := Register(r, Spec[testDeps, greetIn, greetOut]{
+		Name: "ok", Kind: Query, Status: 0, Run: greet}); err != nil {
+		t.Errorf("zero must remain the default, got %v", err)
+	}
+	e, _ := r.Lookup("ok")
+	if e.Status != 200 {
+		t.Errorf("Status = %d, want the 200 default", e.Status)
 	}
 }

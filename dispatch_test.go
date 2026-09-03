@@ -90,6 +90,7 @@ func TestDispatchEmptyBodyIsAnEmptyObject(t *testing.T) {
 			return greetOut{Greeting: "pong"}, nil
 		},
 	})
+	MustRegister(r, Spec[testDeps, greetIn, greetOut]{Name: "greet", Kind: Query, Run: greet})
 	for _, raw := range [][]byte{nil, {}} {
 		if _, err := r.Dispatch(context.Background(), nil, "ping", raw); err != nil {
 			t.Errorf("a no-argument spec must need no body, got %v", err)
@@ -376,5 +377,32 @@ func TestDispatchValueRoundsWhatDispatchKeepsExact(t *testing.T) {
 	}
 	if seen != 9007199254740992 {
 		t.Errorf("DispatchValue gave %d; the documented rounding has changed", seen)
+	}
+}
+
+// Absent, empty and explicitly null all mean "no arguments were sent". Only the
+// first two were treated that way, so an MCP client rendering no arguments as a
+// JSON null was refused with a schema error naming a type rather than a field.
+func TestDispatchAcceptsNullArguments(t *testing.T) {
+	type noArgs struct{}
+	r := newTestRegistry(t)
+	MustRegister(r, Spec[testDeps, noArgs, greetOut]{
+		Name: "ping", Kind: Query,
+		Run: func(Ctx[testDeps], noArgs) (greetOut, error) {
+			return greetOut{Greeting: "pong"}, nil
+		},
+	})
+	MustRegister(r, Spec[testDeps, greetIn, greetOut]{Name: "greet", Kind: Query, Run: greet})
+
+	for _, raw := range []string{``, `null`, ` null `, `{}`} {
+		if _, err := r.Dispatch(context.Background(), nil, "ping", []byte(raw)); err != nil {
+			t.Errorf("Dispatch(%q) = %v, want no error", raw, err)
+		}
+	}
+
+	// A null is only "no arguments" when there are none to send. It must not
+	// become an escape from a spec that requires them.
+	if _, err := r.Dispatch(context.Background(), nil, "greet", []byte(`null`)); err == nil {
+		t.Error("null must not satisfy a spec with required fields")
 	}
 }

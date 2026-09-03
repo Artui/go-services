@@ -73,3 +73,54 @@ func TestStatusFor(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigurationFaultIsNotAClientError(t *testing.T) {
+	// The distinction the taxonomy exists to make: a validation failure is
+	// addressed to the caller, a configuration fault to whoever deployed the
+	// route, and only one of them is something the caller can act on.
+	cfg := fmt.Errorf("%w: bad route", ErrConfiguration)
+	if StatusFor(cfg) != 500 {
+		t.Errorf("StatusFor = %d, want 500", StatusFor(cfg))
+	}
+	var invalid *ValidationError
+	if errors.As(cfg, &invalid) {
+		t.Error("a configuration fault must not read as a validation failure")
+	}
+}
+
+// A helper typed func(...) *ValidationError, returned straight into an error,
+// produces a non-nil error holding a nil pointer -- and errors.As matches it.
+// Every adapter's "is this a validation failure" arm then hands a nil receiver
+// to a renderer. On a transport whose server recovers that is a 500; on one
+// whose handler runs on a goroutine nobody recovers, it ends the process.
+func TestValidationErrorToleratesANilReceiver(t *testing.T) {
+	var typed *ValidationError
+	var err error = typed
+
+	var target *ValidationError
+	if !errors.As(err, &target) {
+		t.Fatal("errors.As is expected to match a typed nil; the test premise is wrong")
+	}
+	if target != nil {
+		t.Fatal("target should be the nil pointer")
+	}
+
+	// Neither may panic.
+	if got := target.FieldMap(); got == nil || len(got) != 0 {
+		t.Errorf("FieldMap on a nil receiver = %#v, want an empty non-nil map", got)
+	}
+	if got := target.Error(); got == "" {
+		t.Error("Error on a nil receiver must still describe itself")
+	}
+}
+
+func TestValidSuccessStatus(t *testing.T) {
+	for status, want := range map[int]bool{
+		0: false, 99: false, 100: false, 103: false, 199: false,
+		200: true, 204: true, 404: true, 599: true, 600: false, -1: false,
+	} {
+		if got := ValidSuccessStatus(status); got != want {
+			t.Errorf("ValidSuccessStatus(%d) = %v, want %v", status, got, want)
+		}
+	}
+}

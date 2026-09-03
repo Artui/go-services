@@ -10,9 +10,59 @@ below cover the kernel module, `github.com/Artui/go-services`.
 
 ## [Unreleased]
 
+The three adapter modules -- `httpx`, `ginx` and `mcpx` -- are unreleased. Each
+is versioned and tagged separately when it ships.
+
+Everything below came from three independent reviews, one per adapter, by
+reviewers who had not written the code they read.
+
+### Fixed
+
+- **A request body's numbers are no longer rewritten.** `EncodeParams`
+  re-encodes the body it is given, and decoding into an `any` turns every number
+  into a `float64`: an identifier of 9007199254740993 was re-encoded as ...992,
+  and the literal `1.0` as `1`. The path only ran when a request carried a
+  parameter, so the same payload behaved differently depending on the shape of
+  the route it arrived at -- exact with no captures, rounded with a query
+  string, and in the `1.0` case a 400 in one and a 201 in the other. This is the
+  hazard `DispatchValue`'s own documentation warns callers about, reintroduced
+  one function away from that warning.
+- **A nil `*ValidationError` no longer panics.** A helper typed to return
+  `*ValidationError`, assigned into an `error`, produces a non-nil error holding
+  a nil pointer, and `errors.As` matches it -- so an adapter's validation arm
+  handed a nil receiver to a renderer. `FieldMap` and `Error` now tolerate one.
+  On a transport whose server recovers per connection this was a 500; on the MCP
+  adapter, whose handler runs on a goroutine nobody recovers, it ended the
+  process.
+- **An explicit JSON `null` argument set is accepted.** Absent and empty already
+  meant "nothing was sent" and `null` did not, so a client rendering no
+  arguments as `null` was refused with a schema error naming a type and no field
+  to correct.
+- **A `Spec.Status` outside 200-599 is refused at registration.** A 1xx is an
+  interim response: the server writes it, does not commit, and the next write
+  commits an implicit 200 behind it, so the status was a promise nothing could
+  keep. Both HTTP adapters had grown their own range check after finding this
+  independently, and for a while the two disagreed.
+
+### Added
+
+- **`ValidSuccessStatus`**, because three places needed the same answer and two
+  of them had already diverged. Its documentation carries the evidence, gathered
+  over a real server with `httptrace`: an `httptest.ResponseRecorder` reports the
+  1xx faithfully while hiding what the wire does, which is how this survived
+  review on both adapters.
+
+### Changed
+
+- The coverage gate keys on the full import path rather than the base name. One
+  exclusions file serves every module, so the single kernel entry would have
+  silently exempted a function of that name in any module that grew one.
+
+## [0.2.0] - 2026-09-03
+
 Everything here came from building the first three adapters against v0.1.0.
-Seven of the eight are places the kernel described a rule instead of applying
-it, which is what a first consumer is for.
+Most of it is places the kernel described a rule instead of applying it, which
+is what a first consumer is for.
 
 ### Changed
 
@@ -60,6 +110,16 @@ it, which is what a first consumer is for.
   `UnreadableBodyText` and `BodyTooLargeText`** -- the HTTP projection of the
   error taxonomy. The taxonomy was shared and its projection was not, so two
   adapters carried their own copies of a client-visible contract.
+- **`ErrConfiguration`**, for a fault in how an operation was mounted rather
+  than in the request. An undeclared route capture was reported as a
+  `ValidationError`, which put an operator's diagnostic on the client's channel
+  where an adapter could not tell it from a genuine client error. `StatusFor`
+  answers 500: no change the caller makes would help.
+- **`Entry.CheckCaptures`**, moving that same guarantee to configuration time.
+  A route table naming a capture the operation cannot receive is broken in
+  every request it will serve, so an adapter that knows its patterns refuses it
+  at startup. The dispatch-time check remains for a handler placed on a router
+  the adapter cannot inspect.
 
 ## [0.1.0] - 2026-09-03
 
@@ -82,5 +142,6 @@ it, which is what a first consumer is for.
 - Framework-agnostic errors: `ErrNotFound`, `ErrConflict`, `ErrPermission` and
   `ValidationError`.
 
-[Unreleased]: https://github.com/Artui/go-services/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Artui/go-services/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Artui/go-services/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Artui/go-services/releases/tag/v0.1.0
