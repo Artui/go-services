@@ -59,7 +59,12 @@ repos:
       # code lives in its own module directory, never at the root.
       - id: forbid-adapter-imports-in-kernel
         name: "no transport imports in the kernel (it sits below all of them)"
-        entry: 'gin-gonic|modelcontextprotocol|net/http'
+        # Matches the quoted import path rather than the bare name, because the
+        # rule is about what the kernel imports and not about what its comments
+        # may mention. The loose version fired on a comment explaining why path
+        # syntax cannot be shared between two HTTP adapters, which is exactly
+        # the kind of explanation this file wants to keep.
+        entry: '"(net/http|github\.com/gin-gonic/|github\.com/modelcontextprotocol/)'
         language: pygrep
         files: '^[^/]+\.go$'
         exclude: '^\.pre-commit-config\.yaml$'

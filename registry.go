@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"reflect"
 	"slices"
+	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 )
@@ -65,6 +66,40 @@ type Entry struct {
 	Metadata    map[string]any
 	Input       *jsonschema.Schema
 	Output      *jsonschema.Schema
+}
+
+// CheckCaptures reports which of the named route captures the input schema
+// cannot receive, as a single error naming all of them.
+//
+// Dispatch already refuses an undeclared capture, so this is not the guarantee
+// -- it is the same guarantee moved to configuration time. A route table
+// declaring a capture the operation has no field for is broken in every
+// request it will ever serve, and this is the library's stated preference for
+// failing at as_view rather than at request time.
+//
+// The two checks are not redundant, because they cover different callers. An
+// adapter mounting a route table knows its patterns and should call this; one
+// handing out a bare handler for somebody else's router has no pattern to
+// inspect, and the dispatch-time refusal is what covers it.
+//
+// Extracting capture names from a route pattern stays with the adapter,
+// because path syntax is the one thing two HTTP adapters genuinely cannot
+// share: net/http writes {name} and Gin writes :name.
+func (e Entry) CheckCaptures(names ...string) error {
+	var undeclared []string
+	for _, name := range names {
+		if e.Input == nil || e.Input.Properties[name] == nil {
+			undeclared = append(undeclared, name)
+		}
+	}
+	if len(undeclared) == 0 {
+		return nil
+	}
+	slices.Sort(undeclared)
+	return fmt.Errorf(
+		"%w: %q captures %s, which the operation declares no field for, so the value "+
+			"would be discarded and the route would run unscoped",
+		ErrConfiguration, e.Name, strings.Join(undeclared, ", "))
 }
 
 // Option configures a Registry.

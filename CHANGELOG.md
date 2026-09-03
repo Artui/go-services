@@ -10,9 +10,14 @@ below cover the kernel module, `github.com/Artui/go-services`.
 
 ## [Unreleased]
 
+The three adapter modules -- `httpx`, `ginx` and `mcpx` -- are unreleased. Each
+is versioned and tagged separately when it ships.
+
+## [0.2.0] - 2026-09-03
+
 Everything here came from building the first three adapters against v0.1.0.
-Seven of the eight are places the kernel described a rule instead of applying
-it, which is what a first consumer is for.
+Most of it is places the kernel described a rule instead of applying it, which
+is what a first consumer is for.
 
 ### Changed
 
@@ -60,6 +65,16 @@ it, which is what a first consumer is for.
   `UnreadableBodyText` and `BodyTooLargeText`** -- the HTTP projection of the
   error taxonomy. The taxonomy was shared and its projection was not, so two
   adapters carried their own copies of a client-visible contract.
+- **`ErrConfiguration`**, for a fault in how an operation was mounted rather
+  than in the request. An undeclared route capture was reported as a
+  `ValidationError`, which put an operator's diagnostic on the client's channel
+  where an adapter could not tell it from a genuine client error. `StatusFor`
+  answers 500: no change the caller makes would help.
+- **`Entry.CheckCaptures`**, moving that same guarantee to configuration time.
+  A route table naming a capture the operation cannot receive is broken in
+  every request it will serve, so an adapter that knows its patterns refuses it
+  at startup. The dispatch-time check remains for a handler placed on a router
+  the adapter cannot inspect.
 
 ## [0.1.0] - 2026-09-03
 

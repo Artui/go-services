@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -264,5 +265,44 @@ func TestRegisterDetachesDeclaredFlags(t *testing.T) {
 	}
 	if e.Tags[0] != "public" {
 		t.Error("a later write to the author's slice must not rewrite the tags")
+	}
+}
+
+// The same guarantee Dispatch already gives, moved to configuration time. A
+// route table declaring a capture the operation has no field for is broken in
+// every request it will ever serve.
+func TestEntryCheckCaptures(t *testing.T) {
+	r := newTestRegistry(t)
+	MustRegister(r, Spec[testDeps, greetIn, greetOut]{Name: "greet", Kind: Query, Run: greet})
+	e, _ := r.Lookup("greet")
+
+	if err := e.CheckCaptures(); err != nil {
+		t.Errorf("no captures is fine, got %v", err)
+	}
+	if err := e.CheckCaptures("name"); err != nil {
+		t.Errorf("a declared capture is fine, got %v", err)
+	}
+
+	err := e.CheckCaptures("tenant", "name", "region")
+	if err == nil {
+		t.Fatal("undeclared captures must be refused")
+	}
+	// The same fault Dispatch reports, so it carries the same sentinel and an
+	// adapter maps both to 500 without a second rule.
+	if !errors.Is(err, ErrConfiguration) {
+		t.Errorf("got %v, want ErrConfiguration", err)
+	}
+	// Named together and in a stable order, so a wrong route table is fixed in
+	// one pass rather than one error at a time.
+	if !strings.Contains(err.Error(), "region, tenant") {
+		t.Errorf("got %q, want both undeclared captures sorted", err)
+	}
+	if strings.Contains(err.Error(), "name") && !strings.Contains(err.Error(), "greet") {
+		t.Errorf("got %q, want the declared capture omitted", err)
+	}
+
+	// An Entry with no schema at all cannot receive anything.
+	if (Entry{Name: "x"}).CheckCaptures("id") == nil {
+		t.Error("an entry with no input schema must refuse every capture")
 	}
 }
