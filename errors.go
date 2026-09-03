@@ -111,8 +111,17 @@ func StatusFor(err error) int {
 // that directly puts {"errors": null} on the wire, which a client parsing
 // errors as an object cannot read. Adapters render through this so all of them
 // answer the same shape.
+//
+// Both this and Error tolerate a nil receiver, which is not defensiveness for
+// its own sake. A helper returning *ValidationError assigned into an error
+// costs nothing at the call site and produces a non-nil error holding a nil
+// pointer, and errors.As matches that -- so every adapter's "is this a
+// validation failure" arm ends up handing a nil receiver to a renderer. On a
+// transport whose server recovers per connection that is a 500; on one whose
+// handler runs on a goroutine nobody recovers, it takes the process down. The
+// kernel is where that is cheapest to make safe, once, for every adapter.
 func (e *ValidationError) FieldMap() map[string][]string {
-	if e.Fields == nil {
+	if e == nil || e.Fields == nil {
 		return map[string][]string{}
 	}
 	return e.Fields
@@ -126,7 +135,7 @@ type ValidationError struct {
 }
 
 func (e *ValidationError) Error() string {
-	if len(e.Fields) == 0 {
+	if e == nil || len(e.Fields) == 0 {
 		return "services: validation failed"
 	}
 	names := make([]string, 0, len(e.Fields))

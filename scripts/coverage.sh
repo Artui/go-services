@@ -35,7 +35,10 @@ fi
 
 while IFS= read -r line; do
   [ -z "$line" ] && continue
-  location=$(basename "${line%%:*}")
+  # The full import path, not the base name. One exclusions file serves every
+  # module, so keying on "params.go:EncodeParams" would silently exempt a
+  # function of that name in any other module that grew one.
+  location="${line%%:*}"
   func=$(echo "$line" | awk '{print $2}')
   key="$location:$func"
   if grep -qF -- "$key" "$EXCLUSIONS" 2>/dev/null; then
