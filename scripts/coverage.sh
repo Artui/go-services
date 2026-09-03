@@ -11,19 +11,28 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-PROFILE=${PROFILE:-cover.out}
-EXCLUSIONS=scripts/coverage-exclusions.txt
+EXCLUSIONS=$PWD/scripts/coverage-exclusions.txt
+MODULES=${MODULES:-". httpx ginx mcpx"}
 
-go test -covermode=set -coverprofile="$PROFILE" ./... >/dev/null
+status=0
+below=""
+for m in $MODULES; do
+  [ -d "$m" ] || continue
+  # A module with no Go files of its own yet has nothing to measure.
+  ls "$m"/*.go >/dev/null 2>&1 || continue
+  profile="$PWD/cover-$(echo "$m" | tr -d './').out"
+  (cd "$m" && go test -covermode=set -coverprofile="$profile" ./... >/dev/null)
+  gaps=$(go tool cover -func="$profile" | grep -v '100.0%$' | grep -v '^total:' || true)
+  [ -n "$gaps" ] && below="$below$gaps
+"
+  echo "$m: $(go tool cover -func="$profile" | tail -1 | awk '{print $NF}')"
+done
 
-below=$(go tool cover -func="$PROFILE" | grep -v '100.0%$' | grep -v '^total:' || true)
-
-if [ -z "$below" ]; then
-  echo "coverage: 100.0% of statements"
+if [ -z "$(echo "$below" | tr -d '[:space:]')" ]; then
+  echo "every module at 100.0% of statements"
   exit 0
 fi
 
-status=0
 while IFS= read -r line; do
   [ -z "$line" ] && continue
   location=$(basename "${line%%:*}")
@@ -42,5 +51,3 @@ if [ "$status" -ne 0 ]; then
   echo "Every uncovered statement must be justified in $EXCLUSIONS."
   exit 1
 fi
-
-go tool cover -func="$PROFILE" | tail -1

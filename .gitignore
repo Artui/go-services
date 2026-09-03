@@ -2,3 +2,6 @@ cover.out
 cover.html
 *.test
 .DS_Store
+go.work
+go.work.sum
+cover-*.out
