@@ -1,0 +1,31 @@
+version: 2
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule: { interval: "weekly" }
+    groups:
+      actions: { patterns: ["*"] }
+
+  # One entry per module. Go has no workspace-wide manifest that Dependabot can
+  # read, so a module missing from this list is a module that never gets an
+  # update proposed -- silently, and with nothing failing to say so.
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule: { interval: "weekly" }
+    groups:
+      go: { patterns: ["*"] }
+  - package-ecosystem: "gomod"
+    directory: "/httpx"
+    schedule: { interval: "weekly" }
+    groups:
+      go: { patterns: ["*"] }
+  - package-ecosystem: "gomod"
+    directory: "/ginx"
+    schedule: { interval: "weekly" }
+    groups:
+      go: { patterns: ["*"] }
+  - package-ecosystem: "gomod"
+    directory: "/mcpx"
+    schedule: { interval: "weekly" }
+    groups:
+      go: { patterns: ["*"] }
