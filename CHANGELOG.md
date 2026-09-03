@@ -13,7 +13,9 @@ below cover the kernel module, `github.com/Artui/go-services`.
 The three adapter modules -- `httpx`, `ginx` and `mcpx` -- are unreleased. Each
 is versioned and tagged separately when it ships.
 
-Everything below came from three independent reviews, one per adapter, by
+## [0.3.0] - 2026-09-03
+
+Everything here came from three independent reviews, one per adapter, by
 reviewers who had not written the code they read.
 
 ### Fixed
@@ -142,6 +144,7 @@ is what a first consumer is for.
 - Framework-agnostic errors: `ErrNotFound`, `ErrConflict`, `ErrPermission` and
   `ValidationError`.
 
-[Unreleased]: https://github.com/Artui/go-services/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Artui/go-services/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Artui/go-services/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Artui/go-services/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Artui/go-services/releases/tag/v0.1.0

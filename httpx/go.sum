@@ -2,6 +2,8 @@ github.com/Artui/go-services v0.1.0 h1:ZHh42TfBlMpsVHCXlfOa3KdjG5xgQ0i0ua+ycqT8H
 github.com/Artui/go-services v0.1.0/go.mod h1:AzUZbK8feAV4JvWIlBhVf46nl/4U6ZnakP61K3P9vEA=
 github.com/Artui/go-services v0.2.0 h1:FOR7CBmu3FhwJ4YEudQOIpOVvTkYgOMjqeL8LbmFj58=
 github.com/Artui/go-services v0.2.0/go.mod h1:AzUZbK8feAV4JvWIlBhVf46nl/4U6ZnakP61K3P9vEA=
+github.com/Artui/go-services v0.3.0 h1:ETmUtWriQnBN5etihc7SoWTZDrTgBUehdM+K4SUUoww=
+github.com/Artui/go-services v0.3.0/go.mod h1:AzUZbK8feAV4JvWIlBhVf46nl/4U6ZnakP61K3P9vEA=
 github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
 github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
 github.com/google/jsonschema-go v0.4.3 h1:/DBOLZTfDow7pe2GmaJNhltueGTtDKICi8V8p+DQPd0=
