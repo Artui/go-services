@@ -9,8 +9,7 @@ import (
 )
 
 type testDeps struct {
-	user  string
-	trace *[]string
+	user string
 }
 
 type greetIn struct {

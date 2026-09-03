@@ -9,7 +9,11 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
-type declaredString struct{ internal int }
+// The unexported field is the point: a type declaring its own schema must
+// advertise that schema and not its Go representation.
+type declaredString struct {
+	internal int //nolint:unused // must never reach the advertised schema
+}
 
 func (declaredString) JSONSchema() (*jsonschema.Schema, error) {
 	return &jsonschema.Schema{Type: "string"}, nil
