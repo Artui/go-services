@@ -1,10 +1,13 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 )
+
+var nullLiteral = []byte("null")
 
 // Result is what a dispatch resolved, before any wire touches it. It is
 // transport-neutral on purpose: ordering, pagination and the response envelope
@@ -43,15 +46,20 @@ func (r *Registry[D]) Dispatch(
 		return Result{}, fmt.Errorf("%w: no spec named %q", ErrNotFound, name)
 	}
 
-	if len(raw) == 0 {
+	// Absent, empty and explicitly null all mean the same thing: no arguments
+	// were sent. Only the first two were treated that way, so a client that
+	// renders "no arguments" as a JSON null -- which MCP clients do -- was
+	// refused with a schema error naming a type rather than a field, which is
+	// nothing a caller can act on.
+	if len(raw) == 0 || bytes.Equal(bytes.TrimSpace(raw), nullLiteral) {
 		raw = json.RawMessage("{}")
 	}
 
 	// Layer one, on the JSON value rather than the Go value: jsonschema-go
 	// cannot validate against a struct, so the payload is parsed twice --
 	// once shapelessly to check it, once into In to use it.
-	var probe any
-	if err := json.Unmarshal(raw, &probe); err != nil {
+	probe, err := decodeJSONValue(raw, false)
+	if err != nil {
 		return Result{}, malformedBody(err)
 	}
 	if err := e.input.Validate(probe); err != nil {
