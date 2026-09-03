@@ -1,0 +1,13 @@
+# Statements that cannot be reached, one per line, as "file.go:FunctionName"
+# followed by the reason. Keep this list short: an entry is a claim that the
+# statement is unreachable, and a reviewer is entitled to check it.
+#
+# Go has no branch coverage, so this file is the compensating record. It is the
+# honest cost of the statement-only gate, and it is meant to be read.
+
+params.go:EncodeParams
+#   The json.Marshal error branch. payload holds only values produced by
+#   json.Unmarshal (nil, bool, float64, string, []any, map[string]any) or by
+#   coerce (string, int64, float64, bool, []any). Every one of those is
+#   marshalable, so the error cannot occur. The check stays because discarding
+#   an error to satisfy a coverage number is the worse trade.

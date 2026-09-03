@@ -1,0 +1,147 @@
+# go-services
+
+A service layer for Go: declare an operation once, serve it over more than one
+transport.
+
+A `Spec` names a typed input, a typed output, a plain function, and the
+cross-cutting facts about the call. A `Registry` holds the specs. Adapters read
+the registry and mount it onto an HTTP router or an MCP server. The adapters
+translate wire formats and nothing else -- validation, permission checks,
+transaction boundaries and error mapping all live in the kernel, below every
+transport, so they cannot drift apart.
+
+## Is this for you?
+
+Probably not yet, and it is worth saying so plainly.
+
+The value scales with the number of specs multiplied by the number of
+transports. If you have four endpoints and one transport, a handler that calls a
+function is genuinely the right answer and this package is overhead. It starts
+paying when the same operations have to be reachable two ways at once -- an HTTP
+API and an agent tool surface, say -- and every rule that matters has to hold on
+both.
+
+## The idea
+
+The usual way to give an existing HTTP API a second transport is to wrap it:
+discover the routes, then call them over loopback HTTP from the new transport.
+That works, and it puts every rule you care about in the wrong place. A
+permission check written as router middleware is the only thing standing between
+a caller and the handler, so the rules belong to whichever transport happens to
+be in front, and a second one silently gets a different answer.
+
+This package inverts that. The operation is declared below the transports, and
+an adapter's whole job is turning a wire into JSON plus an opaque principal:
+
+    HTTP  ---\
+              >--- Registry.Dispatch --- decode, validate, begin, resolve, permit, run
+    MCP   ---/
+
+If a rule can be forgotten by writing a new adapter, it is in the wrong place.
+
+## Declaring an operation
+
+```go
+type CreateAuthorIn struct {
+    Name string `json:"name" jsonschema:"the author's display name"`
+    Bio  string `json:"bio,omitempty" jsonschema:"optional short biography"`
+}
+
+// Validate is the second of three validation layers: format and business rules
+// a JSON Schema cannot state.
+func (in CreateAuthorIn) Validate() error {
+    if strings.TrimSpace(in.Name) == "" {
+        return services.Invalid("name", "must not be blank")
+    }
+    return nil
+}
+
+type AuthorOut struct {
+    ID   int64  `json:"id"`
+    Name string `json:"name"`
+}
+
+func createAuthor(ctx services.Ctx[App], in CreateAuthorIn) (AuthorOut, error) {
+    // ctx.Deps.DB is the transactional handle; ctx.Deps.User is already typed.
+    ...
+}
+
+registry := services.New(resolve, services.WithAtomic[App](tx))
+
+services.MustRegister(registry, services.Spec[App, CreateAuthorIn, AuthorOut]{
+    Name:        "create_author",
+    Description: "Create an author.",
+    Kind:        services.Mutation,
+    Run:         createAuthor,
+    Permit:      []func(services.Ctx[App], CreateAuthorIn) error{authoring.MayWrite},
+})
+```
+
+Required-ness comes from the struct tags: a field marked `omitempty` or
+`omitzero` is optional and every other exported field is required. Unknown
+fields are rejected. Both facts come from the reflected schema, which is also
+the schema an MCP tool advertises -- there is no second schema that could
+disagree with it.
+
+## Dependencies arrive per call
+
+`Ctx[D]` carries a context and a `D`, and nothing else. There is no service
+struct to construct, so no method pays for a dependency it does not use, and no
+test has to wire three collaborators to exercise one function.
+
+There is deliberately no actor on `Ctx`. Identity is a field on your own `D`,
+put there by the registry's resolver:
+
+```go
+func resolve(ctx context.Context, principal any) (App, error) {
+    user, ok := principal.(*auth.User) // the one place you assert your own type
+    if !ok {
+        return App{}, services.ErrPermission
+    }
+    return App{DB: db.FromContext(ctx), User: user}, nil
+}
+```
+
+Every service and `Permit` function downstream gets a typed user with no
+assertion at all.
+
+## Transactions, and one ordering rule
+
+`WithAtomic` takes a "run this inside a transaction" callback, so the kernel
+names no driver. `database/sql`, `pgx.BeginFunc` and GORM's `db.Transaction` all
+fit.
+
+Dependencies resolve **inside** that callback. That is not an implementation
+detail: resolving them first and running the service inside looks identical,
+passes every happy-path test, and writes half the mutation outside the boundary
+on rollback.
+
+## Optional fields, and PATCH
+
+Go's zero value cannot distinguish "the client sent an empty string" from "the
+client did not mention this field", so a naive update blanks everything the
+caller left out. `Optional[T]` restores the distinction:
+
+```go
+type UpdateAuthorIn struct {
+    Name Optional[string]  `json:"name,omitzero"`
+    Bio  Optional[*string] `json:"bio,omitzero"`
+}
+```
+
+Nullability composes through the type parameter rather than needing a second
+flag: `Optional[string]` may be absent, and `Optional[*string]` may be absent or
+explicitly null.
+
+## Status
+
+Pre-1.0, and the kernel is the only module published so far. The HTTP and MCP
+adapters land next; 1.0 waits on a second real consumer.
+
+## Requirements
+
+Go 1.24 or later, for `encoding/json`'s `omitzero`.
+
+## License
+
+MIT.

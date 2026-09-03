@@ -1,0 +1,236 @@
+package services
+
+import (
+	"encoding/json"
+	"errors"
+	"reflect"
+	"strings"
+	"testing"
+
+	"github.com/google/jsonschema-go/jsonschema"
+)
+
+type paramsIn struct {
+	Name   string   `json:"name,omitempty"`
+	Limit  int      `json:"limit,omitempty"`
+	Ratio  float64  `json:"ratio,omitempty"`
+	Active bool     `json:"active,omitempty"`
+	Tags   []string `json:"tags,omitempty"`
+	Sizes  []int    `json:"sizes,omitempty"`
+	Nick   *string  `json:"nick,omitempty"`
+	Blob   any      `json:"blob,omitempty"`
+}
+
+func paramsSchema(t *testing.T) *jsonschema.Schema {
+	t.Helper()
+	s, err := reflectSchema(reflect.TypeFor[paramsIn]())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func TestEncodeParamsCoercesBySchema(t *testing.T) {
+	s := paramsSchema(t)
+	raw, err := EncodeParams(s, map[string][]string{
+		"name":   {"ada"},
+		"limit":  {"10"},
+		"ratio":  {"1.5"},
+		"active": {"true"},
+		"tags":   {"a", "b"},
+		"sizes":  {"1", "2"},
+		"nick":   {"lovelace"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var got map[string]any
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	// The whole point: a query string is all strings, and 10 must not arrive
+	// as "10".
+	if got["limit"] != float64(10) {
+		t.Errorf("limit = %#v, want the number 10", got["limit"])
+	}
+	if got["ratio"] != 1.5 {
+		t.Errorf("ratio = %#v, want the number 1.5", got["ratio"])
+	}
+	if got["active"] != true {
+		t.Errorf("active = %#v, want the boolean true", got["active"])
+	}
+	if got["name"] != "ada" {
+		t.Errorf("name = %#v, want the string ada", got["name"])
+	}
+	// A nullable field still coerces as its real type rather than falling back.
+	if got["nick"] != "lovelace" {
+		t.Errorf("nick = %#v", got["nick"])
+	}
+	if !reflect.DeepEqual(got["tags"], []any{"a", "b"}) {
+		t.Errorf("tags = %#v, want both values", got["tags"])
+	}
+	if !reflect.DeepEqual(got["sizes"], []any{float64(1), float64(2)}) {
+		t.Errorf("sizes = %#v, want coerced numbers", got["sizes"])
+	}
+
+	// And the result actually satisfies the schema it was coerced against.
+	rs, err := s.Resolve(nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var probe any
+	if err := json.Unmarshal(raw, &probe); err != nil {
+		t.Fatal(err)
+	}
+	if err := rs.Validate(probe); err != nil {
+		t.Errorf("coerced payload must validate, got %v", err)
+	}
+}
+
+func TestEncodeParamsCoercionFailures(t *testing.T) {
+	s := paramsSchema(t)
+	for _, tc := range []struct {
+		field, value, want string
+	}{
+		{"limit", "ten", "an integer"},
+		{"ratio", "half", "a number"},
+		{"active", "yes please", "a boolean"},
+		{"sizes", "one", "an integer"},
+	} {
+		t.Run(tc.field, func(t *testing.T) {
+			_, err := EncodeParams(s, map[string][]string{tc.field: {tc.value}}, nil)
+			var invalid *ValidationError
+			if !errors.As(err, &invalid) {
+				t.Fatalf("got %v, want a ValidationError", err)
+			}
+			// This is the one place the kernel can attribute a message to a
+			// field, because it knows which parameter it was coercing.
+			msgs, ok := invalid.Fields[tc.field]
+			if !ok {
+				t.Fatalf("fields %v, want a %q key", invalid.Fields, tc.field)
+			}
+			if len(msgs) != 1 || !strings.Contains(msgs[0], tc.want) {
+				t.Errorf("message %v, want one mentioning %q", msgs, tc.want)
+			}
+		})
+	}
+}
+
+func TestEncodeParamsPassesBodyThroughWithNoParams(t *testing.T) {
+	body := json.RawMessage(`{"name":"ada"}`)
+	got, err := EncodeParams(paramsSchema(t), nil, body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(body) {
+		t.Errorf("got %s, want the body untouched", got)
+	}
+}
+
+func TestEncodeParamsOverlaysOntoBody(t *testing.T) {
+	got, err := EncodeParams(paramsSchema(t),
+		map[string][]string{"limit": {"5"}},
+		json.RawMessage(`{"name":"ada","limit":99}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(got, &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["name"] != "ada" {
+		t.Error("body fields must survive")
+	}
+	// Params win, so a route capture cannot be overridden from the body.
+	if out["limit"] != float64(5) {
+		t.Errorf("limit = %#v, want the parameter to win", out["limit"])
+	}
+}
+
+func TestEncodeParamsIgnoresWhatTheSchemaDoesNotDeclare(t *testing.T) {
+	// A query string carries analytics noise that is none of the operation's
+	// business; rejecting it would break real clients.
+	got, err := EncodeParams(paramsSchema(t), map[string][]string{
+		"utm_source": {"newsletter"},
+		"name":       {"ada"},
+	}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(got, &out); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := out["utm_source"]; ok {
+		t.Error("an undeclared parameter must be dropped, not carried")
+	}
+	if out["name"] != "ada" {
+		t.Error("a declared parameter must still land")
+	}
+}
+
+func TestEncodeParamsEdgeCases(t *testing.T) {
+	s := paramsSchema(t)
+
+	t.Run("an empty value slice is skipped", func(t *testing.T) {
+		got, err := EncodeParams(s, map[string][]string{"name": {}}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != `{}` {
+			t.Errorf("got %s, want an empty object", got)
+		}
+	})
+
+	t.Run("a repeated scalar takes the first", func(t *testing.T) {
+		got, err := EncodeParams(s, map[string][]string{"name": {"first", "second"}}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out map[string]any
+		_ = json.Unmarshal(got, &out)
+		if out["name"] != "first" {
+			t.Errorf("name = %#v, want the first value, matching url.Values.Get", out["name"])
+		}
+	})
+
+	t.Run("an untyped property passes through as a string", func(t *testing.T) {
+		got, err := EncodeParams(s, map[string][]string{"blob": {"anything"}}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var out map[string]any
+		_ = json.Unmarshal(got, &out)
+		if out["blob"] != "anything" {
+			t.Errorf("blob = %#v, want the raw string for the schema to judge", out["blob"])
+		}
+	})
+
+	t.Run("a malformed body is a validation error", func(t *testing.T) {
+		_, err := EncodeParams(s, map[string][]string{"name": {"a"}}, json.RawMessage(`{`))
+		var invalid *ValidationError
+		if !errors.As(err, &invalid) {
+			t.Fatalf("got %v, want a ValidationError", err)
+		}
+	})
+
+	t.Run("a nil schema declares nothing", func(t *testing.T) {
+		got, err := EncodeParams(nil, map[string][]string{"name": {"a"}}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if string(got) != `{}` {
+			t.Errorf("got %s, want an empty object", got)
+		}
+	})
+
+	t.Run("schemaType reads a union past its null", func(t *testing.T) {
+		if got := schemaType(nil); got != "" {
+			t.Errorf("nil schema type = %q, want empty", got)
+		}
+		if got := schemaType(&jsonschema.Schema{Types: []string{"null"}}); got != "" {
+			t.Errorf("null-only type = %q, want empty", got)
+		}
+	})
+}
