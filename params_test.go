@@ -385,3 +385,83 @@ func encodeCaptures(s *jsonschema.Schema, captures map[string][]string) error {
 	_, err := EncodeParams(s, nil, nil, captures)
 	return err
 }
+
+// This function re-encodes the body it is given, so what it decodes with has to
+// survive the trip. The default any-decoding does not: every number becomes a
+// float64, which rewrites a large integer and rewrites the literal 1.0 as 1.
+//
+// The symptom was that a body only went through this path when the request
+// carried a parameter, so one payload was a 400 on a route with no captures and
+// a 201 on the same route with a query string.
+func TestEncodeParamsDoesNotRewriteNumbersInTheBody(t *testing.T) {
+	type idIn struct {
+		ID   int64  `json:"id"`
+		Name string `json:"name,omitempty"`
+	}
+	s, err := reflectSchema(reflect.TypeFor[idIn]())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("an integer past 2^53 survives", func(t *testing.T) {
+		body := json.RawMessage(`{"id":9007199254740993}`)
+		for _, tc := range []struct {
+			name            string
+			query, captures map[string][]string
+		}{
+			{"no parameters", nil, nil},
+			{"a query parameter", map[string][]string{"name": {"x"}}, nil},
+			{"a route capture", nil, map[string][]string{"name": {"x"}}},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				raw, err := EncodeParams(s, body, tc.query, tc.captures)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var got idIn
+				if err := json.Unmarshal(raw, &got); err != nil {
+					t.Fatal(err)
+				}
+				if got.ID != 9007199254740993 {
+					t.Errorf("id = %d, want 9007199254740993 exactly", got.ID)
+				}
+			})
+		}
+	})
+
+	// The other half: whether a payload is accepted must not depend on the
+	// route's shape. 1.0 is not an int64 either way.
+	t.Run("a non-integral literal is refused either way", func(t *testing.T) {
+		body := json.RawMessage(`{"id":1.0}`)
+		bare, err := EncodeParams(s, body, nil, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		withParam, err := EncodeParams(s, body, map[string][]string{"name": {"x"}}, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var a, b idIn
+		if json.Unmarshal(bare, &a) == nil {
+			t.Error("1.0 must not decode into an int64")
+		}
+		if json.Unmarshal(withParam, &b) == nil {
+			t.Error("a parameter must not make 1.0 acceptable")
+		}
+	})
+}
+
+// Decode stops at the end of the first value where Unmarshal rejected anything
+// after it, so the strictness has to be restored by hand.
+func TestEncodeParamsRefusesTrailingData(t *testing.T) {
+	s := paramsSchema(t)
+	_, err := EncodeParams(s, json.RawMessage(`{"name":"a"} and then some`),
+		map[string][]string{"limit": {"1"}}, nil)
+	var invalid *ValidationError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("got %v, want a ValidationError", err)
+	}
+	if !strings.Contains(invalid.Error(), "unexpected data") {
+		t.Errorf("got %q, want it to name the trailing data", invalid)
+	}
+}

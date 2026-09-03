@@ -50,8 +50,8 @@ func (r *Registry[D]) Dispatch(
 	// Layer one, on the JSON value rather than the Go value: jsonschema-go
 	// cannot validate against a struct, so the payload is parsed twice --
 	// once shapelessly to check it, once into In to use it.
-	var probe any
-	if err := json.Unmarshal(raw, &probe); err != nil {
+	probe, err := decodeJSONValue(raw, false)
+	if err != nil {
 		return Result{}, malformedBody(err)
 	}
 	if err := e.input.Validate(probe); err != nil {

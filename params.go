@@ -40,18 +40,22 @@ func EncodeParams(
 
 	payload := map[string]any{}
 	if len(body) > 0 {
-		var decoded any
-		if err := json.Unmarshal(body, &decoded); err != nil {
+		// Exact, because this function re-encodes the body it was given: the
+		// default any-decoding turns every number into a float64, which
+		// rewrites a large integer and turns the literal 1.0 into 1. That
+		// happened only on requests carrying a parameter, since a body with
+		// none is passed through untouched, so one payload was a 400 on a
+		// route with no captures and a 201 on the same route with a query
+		// string.
+		decoded, err := decodeJSONValue(body, true)
+		if err != nil {
 			return nil, malformedBody(err)
 		}
 		object, ok := decoded.(map[string]any)
 		if !ok {
-			// Valid JSON that is not an object -- an array, a bare string. There
-			// is nothing to overlay onto, and it is not malformed, so it goes
-			// through untouched for the schema to reject accurately. Reporting
-			// it here would call the same client mistake "malformed" or a type
-			// error depending only on whether the route happens to capture
-			// anything, which is not a distinction the client can see.
+			// Valid JSON that is not an object -- an array, a bare string.
+			// There is nothing to overlay onto, and it is not malformed, so it
+			// goes through untouched for the schema to reject accurately.
 			return body, nil
 		}
 		payload = object
