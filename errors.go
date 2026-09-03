@@ -22,6 +22,17 @@ var (
 	// ErrPermission reports that the acting principal may not do this.
 	ErrPermission = errors.New("services: permission denied")
 
+	// ErrConfiguration reports a fault in how an operation was mounted rather
+	// than in the request that arrived.
+	//
+	// It is separate from ValidationError because the two address different
+	// people. A validation failure is addressed to the caller and tells them
+	// what to change; a configuration fault is addressed to whoever wrote the
+	// route table, and no change the caller makes will help. Answering it as a
+	// 400 puts an operator's diagnostic on the client's channel, beside genuine
+	// client errors that an adapter would then be unable to tell it from.
+	ErrConfiguration = errors.New("services: configuration error")
+
 	// ErrBodyTooLarge reports that the client sent more than an adapter is
 	// willing to read. It lives here rather than in each adapter because the
 	// limit and the answer are one decision: two transports refusing at
@@ -46,9 +57,10 @@ const DefaultMaxBodyBytes int64 = 1 << 20
 // caller can observe. An adapter on a wire without status codes ignores them,
 // as the MCP one does.
 const (
-	// StatusBodyTooLarge is the status for ErrBodyTooLarge. It is not in the
-	// StatusFor table because an adapter has to recognise its own transport's
-	// oversize error and wrap it; only the answer is shared.
+	// StatusBodyTooLarge is the status for ErrBodyTooLarge, which StatusFor
+	// returns like any other member of the taxonomy. What is not shared is the
+	// recognition: an adapter maps its own transport's oversize error onto the
+	// sentinel first, because that type belongs to the transport.
 	StatusBodyTooLarge = 413
 
 	// InternalErrorText is the body for an error outside the taxonomy. An
@@ -82,6 +94,11 @@ func StatusFor(err error) int {
 		return 409
 	case errors.Is(err, ErrBodyTooLarge):
 		return StatusBodyTooLarge
+	case errors.Is(err, ErrConfiguration):
+		// Listed rather than left to the default, because 500 is the right
+		// answer here for a reason worth stating: the deployment is wrong, and
+		// telling the caller to fix their request would be a lie.
+		return 500
 	default:
 		return 500
 	}

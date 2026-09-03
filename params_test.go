@@ -315,13 +315,24 @@ func TestMalformedBodyReadsTheSameFromBothSites(t *testing.T) {
 func TestEncodeParamsRefusesAnUndeclaredCaptureButDropsAnUndeclaredQuery(t *testing.T) {
 	s := paramsSchema(t)
 
-	if _, err := EncodeParams(s, nil, nil, map[string][]string{"tenant": {"acme"}}); err == nil {
-		t.Error("a capture the operation cannot receive must be refused, not discarded")
-	} else {
-		var invalid *ValidationError
-		if !errors.As(err, &invalid) || len(invalid.Fields["tenant"]) == 0 {
-			t.Errorf("got %v, want a ValidationError naming the capture", err)
-		}
+	err := encodeCaptures(s, map[string][]string{"tenant": {"acme"}})
+	if err == nil {
+		t.Fatal("a capture the operation cannot receive must be refused, not discarded")
+	}
+	// A configuration fault, not a validation failure: the caller did nothing
+	// wrong, so this must not arrive on the channel client errors use.
+	if !errors.Is(err, ErrConfiguration) {
+		t.Errorf("got %v, want ErrConfiguration", err)
+	}
+	var invalid *ValidationError
+	if errors.As(err, &invalid) {
+		t.Error("a misconfigured route must not read as a client validation failure")
+	}
+	if StatusFor(err) != 500 {
+		t.Errorf("StatusFor = %d, want 500: no change the caller makes would help", StatusFor(err))
+	}
+	if !strings.Contains(err.Error(), "tenant") {
+		t.Errorf("got %q, want the capture named", err)
 	}
 
 	got, err := EncodeParams(s, nil, map[string][]string{"utm_source": {"newsletter"}}, nil)
@@ -367,4 +378,10 @@ func TestEncodeParamsPassesAValidNonObjectBodyThroughUnchanged(t *testing.T) {
 	if rs.Validate(probe) == nil {
 		t.Error("the schema should refuse an array where an object is declared")
 	}
+}
+
+// encodeCaptures is a shorthand for the captures-only call shape.
+func encodeCaptures(s *jsonschema.Schema, captures map[string][]string) error {
+	_, err := EncodeParams(s, nil, nil, captures)
+	return err
 }

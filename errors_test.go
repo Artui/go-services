@@ -73,3 +73,17 @@ func TestStatusFor(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigurationFaultIsNotAClientError(t *testing.T) {
+	// The distinction the taxonomy exists to make: a validation failure is
+	// addressed to the caller, a configuration fault to whoever deployed the
+	// route, and only one of them is something the caller can act on.
+	cfg := fmt.Errorf("%w: bad route", ErrConfiguration)
+	if StatusFor(cfg) != 500 {
+		t.Errorf("StatusFor = %d, want 500", StatusFor(cfg))
+	}
+	var invalid *ValidationError
+	if errors.As(cfg, &invalid) {
+		t.Error("a configuration fault must not read as a validation failure")
+	}
+}

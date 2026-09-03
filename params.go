@@ -2,6 +2,7 @@ package services
 
 import (
 	"encoding/json"
+	"fmt"
 	"strconv"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -94,9 +95,12 @@ func overlay(
 		prop := property(s, key)
 		if prop == nil {
 			if required {
-				return Invalid(key,
-					"the route captures this segment but the operation declares no such field, "+
-						"so its value would be discarded")
+				// ErrConfiguration, not a ValidationError: the caller did
+				// nothing wrong and can do nothing about it.
+				return fmt.Errorf(
+					"%w: the route captures %q but the operation declares no such field, "+
+						"so its value would be discarded and the route would run unscoped",
+					ErrConfiguration, key)
 			}
 			continue
 		}
