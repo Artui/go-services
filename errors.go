@@ -21,7 +21,36 @@ var (
 
 	// ErrPermission reports that the acting principal may not do this.
 	ErrPermission = errors.New("services: permission denied")
+
+	// ErrBodyTooLarge reports that the client sent more than an adapter is
+	// willing to read. It lives here rather than in each adapter because the
+	// limit and the answer are one decision: two transports refusing at
+	// different sizes is a difference a client cannot predict.
+	ErrBodyTooLarge = errors.New("services: request body too large")
 )
+
+// DefaultMaxBodyBytes is the request-body ceiling an adapter applies unless it
+// is configured otherwise.
+//
+// Unbounded reads are the default in most Go HTTP code and a denial-of-service
+// waiting to happen. One mebibyte is generous for a JSON operation payload;
+// anything transferring bulk data wants its own endpoint rather than a bigger
+// number here.
+const DefaultMaxBodyBytes int64 = 1 << 20
+
+// FieldMap returns the per-field messages, never nil.
+//
+// Fields is an exported field on a constructible struct, so a
+// &ValidationError{} with no map reaches a renderer sooner or later. Rendering
+// that directly puts {"errors": null} on the wire, which a client parsing
+// errors as an object cannot read. Adapters render through this so all of them
+// answer the same shape.
+func (e *ValidationError) FieldMap() map[string][]string {
+	if e.Fields == nil {
+		return map[string][]string{}
+	}
+	return e.Fields
+}
 
 // ValidationError carries per-field messages from any of the three validation
 // layers. Fields is keyed by the JSON name, not the Go field name, because the

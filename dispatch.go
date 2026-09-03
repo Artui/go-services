@@ -52,9 +52,7 @@ func (r *Registry[D]) Dispatch(
 	// once shapelessly to check it, once into In to use it.
 	var probe any
 	if err := json.Unmarshal(raw, &probe); err != nil {
-		return Result{}, &ValidationError{
-			Fields: map[string][]string{NonFieldKey: {"malformed JSON: " + err.Error()}},
-		}
+		return Result{}, malformedBody(err)
 	}
 	if err := e.input.Validate(probe); err != nil {
 		// The validator reports a path rather than a field, and parsing its

@@ -37,3 +37,15 @@ func TestSentinelsAreDistinct(t *testing.T) {
 		t.Error("sentinels must not compare equal")
 	}
 }
+
+func TestValidationErrorFieldMapIsNeverNil(t *testing.T) {
+	// A &ValidationError{} with no map reaches a renderer sooner or later, and
+	// rendering Fields directly would put {"errors": null} on the wire.
+	if got := (&ValidationError{}).FieldMap(); got == nil || len(got) != 0 {
+		t.Errorf("FieldMap = %#v, want an empty non-nil map", got)
+	}
+	populated := Invalid("name", "must not be blank")
+	if got := populated.FieldMap(); len(got["name"]) != 1 {
+		t.Errorf("FieldMap = %#v, want the declared messages", got)
+	}
+}

@@ -14,6 +14,18 @@ import (
 // payload as a whole rather than to one field.
 const NonFieldKey = "non_field_errors"
 
+// malformedBody builds the error for a payload that is not JSON at all.
+//
+// One helper rather than a string at each site: the kernel rejects a malformed
+// body from two places, and which one fires depends on whether the client
+// happened to append a query parameter. Two wordings for one condition, chosen
+// by something the client cannot see, is not a distinction worth shipping.
+func malformedBody(err error) *ValidationError {
+	return &ValidationError{
+		Fields: map[string][]string{NonFieldKey: {"malformed JSON body: " + err.Error()}},
+	}
+}
+
 // Registry holds a set of specs under their names and is what every adapter
 // reads. D is the per-call dependency type.
 type Registry[D any] struct {
