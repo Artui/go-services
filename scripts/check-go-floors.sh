@@ -19,6 +19,7 @@ EXPECTED=(
   "ginx:1.26.0" # x/crypto and quic-go, pulled up to clear Gin's advisories
   "mcpx:1.25.0" # the MCP SDK's own go.mod
   "conformance:1.26.0" # the highest of the modules it drives, which is ginx
+  "example:1.26.0"     # the same: it mounts all three adapters at once
 )
 
 status=0

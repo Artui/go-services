@@ -2,13 +2,14 @@ GO ?= go
 
 # Every module in the repo. The kernel is first because the adapters depend on
 # it and nothing depends on them.
-MODULES := . httpx ginx mcpx conformance
+MODULES := . httpx ginx mcpx conformance example
 
-# Every module is built without the workspace, conformance included. It carries
-# replace directives rather than published versions, but the check still means
-# something for it: that its requires and its replaces are coherent on their
-# own. Excluding it hid exactly that, because `go mod tidy` run inside the
-# workspace stripped every require and nothing local complained.
+# Every module is built without the workspace, the two unpublished ones
+# included. They carry replace directives rather than published versions, but
+# the check still means something for them: that their requires and their
+# replaces are coherent on their own. Excluding conformance hid exactly that
+# once, because `go mod tidy` run inside the workspace stripped every require
+# and nothing local complained.
 PUBLISHED := $(MODULES)
 
 .PHONY: help fmt fmt-check vet lint test test-race cover check tidy verify-modules check-floors
