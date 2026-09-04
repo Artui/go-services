@@ -35,6 +35,14 @@ hook ever has to be relaxed, the design has changed and the plan should say so.
   their Go floors already differ: 1.24 for the kernel and `httpx`, 1.25 for
   `mcpx` (the SDK's own floor), 1.26 for `ginx` (clearing Gin's transitive
   advisories pulls in `x/crypto` and `quic-go` releases that require it).
+- **CI tests each module at its own floor**, taken from that module's `go.mod`
+  via `setup-go`'s `go-version-file`, so the floor is declared once and the
+  workflow cannot drift from it. A single Go version across a matrix cannot work
+  here, because the modules floor at 1.24, 1.25 and 1.26 and any one version is
+  either below a floor or above it. This only became visible when `setup-go`
+  reached v7, which sets `GOTOOLCHAIN=local`; under v5 an older toolchain
+  silently downloaded the newer one and a leg named for a floor was quietly
+  testing something else.
 - **A Go floor can climb without anyone deciding.** `go get` and `go mod tidy`
   raise the `go` directive when a dependency needs a newer one, and Go then
   downloads that toolchain rather than failing -- so nothing breaks and the CI
