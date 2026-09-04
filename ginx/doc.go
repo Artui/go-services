@@ -52,9 +52,24 @@
 // # What comes back
 //
 // A success is the service's return value as JSON, under the status the spec
-// declared or the Route overrode. A failure is one of six answers: 400 with
-// per-field messages, 403, 404 or 409 with the error's own words, 413 for a
-// body over the ceiling, and 500 with a fixed sentence that says nothing about
-// what went wrong. The real error behind a 500 goes to the WithErrorHandler
-// callback and to c.Errors, never to the client.
+// declared or the Route overrode. A failure is one of:
+//
+//	400  {"errors": {"field": ["message"]}}   a validation failure, any layer
+//	403  {"error": "..."}                     services.ErrPermission
+//	404  {"error": "..."}                     services.ErrNotFound
+//	409  {"error": "..."}                     services.ErrConflict
+//	413  {"error": "request body too large"}  over services.DefaultMaxBodyBytes
+//	500  {"error": "internal server error"}   anything else, always this sentence
+//
+// Note the two shapes. A validation failure answers "errors" with a map,
+// because its messages belong to fields; everything else answers "error" with a
+// sentence. Nothing in the body says which to expect, so a client branches on
+// the status -- 400 is the map and the rest are the sentence. It is the same
+// split package httpx makes, deliberately.
+//
+// The three that carry the error's own words carry them because those errors
+// were written to be declined with. The 500 is fixed rather than reported: an
+// unexpected error's words name hosts, tables and identifiers, so the real
+// error goes to the WithErrorHandler callback and to c.Errors, never to the
+// client.
 package ginx

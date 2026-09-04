@@ -8,7 +8,9 @@ smoothed over in passing. Findings are ordered by what they would cost a
 consumer, not by when they turned up.
 
 Everything below was measured against kernel `v0.3.0` and the adapters at
-`v0.1.0` on 2026-09-04.
+`v0.1.0` on 2026-09-04. Each finding carries what the ergonomics pass then did
+with it, added the same week; two were declined, and the reasons are here rather
+than in a commit message nobody will find.
 
 ---
 
@@ -32,6 +34,9 @@ explains that dependencies resolve with the transactional context; it should say
 that a read-only spec resolves without one, because that sentence is what
 decides the shape of the consumer's `Deps`.
 
+**Done.** `WithAtomic` now says it, and shows the resolver that picks between a
+transaction and a pool.
+
 ## 2. The library's own error idiom puts its package name on the client's wire
 
 The documented way to use the taxonomy is `fmt.Errorf("%w: ...", services.ErrX,
@@ -41,6 +46,14 @@ The documented way to use the taxonomy is `fmt.Errorf("%w: ...", services.ErrX,
 409 {"error":"services: conflict: no copy of \"Structure and Interpretation\" is on the shelf"}
 403 {"error":"services: permission denied: member 2 is suspended"}
 404 {"error":"services: not found: no book 999"}
+```
+
+and now serves this:
+
+```
+409 {"error":"conflict: no copy of \"Structure and Interpretation\" is on the shelf"}
+403 {"error":"permission denied: member 2 is suspended"}
+404 {"error":"not found: no book 999"}
 ```
 
 A note already existed for this, and it understated the problem: it described
@@ -53,11 +66,18 @@ The internal-error and body-too-large paths are already redacted to fixed text,
 so the machinery to answer differently is present; these three arms are the ones
 that pass the error through.
 
-**Owed: a kernel decision.** Either the sentinel texts lose their prefix, or the
-adapters render a fixed sentence per status the way they already do for 500, or
-the taxonomy grows a "client-facing message" channel. This is the finding with
-the widest blast radius, because it is visible to every consumer of every
-transport and nobody has to do anything unusual to hit it.
+**Done: the sentinel texts lost their prefix**, and only those three. The rule
+the pass settled on is that the prefix is for logs, and a sentinel whose words
+reach a client is not going to a log -- so `ErrConfiguration` and
+`ErrBodyTooLarge` keep theirs, because both are redacted before any client sees
+them and their only reader is whoever is on call.
+
+Rendering a fixed sentence per status was the alternative and was rejected: it
+would have thrown away the service's own words, which are the half a caller can
+act on and the half a spec author chose deliberately.
+
+`TestClientFacingSentinelsCarryNoPackagePrefix` holds the split, so a sentinel
+added later has to pick a side rather than inherit one.
 
 ## 3. `WithAtomic` cannot infer its type parameter
 
@@ -70,10 +90,13 @@ to work from and every caller writes `[Deps]` by hand -- next to a `New` call
 that infers the same type from its first argument. It reads as though the author
 forgot something.
 
-**Owed: ergonomics.** Options, roughly in order of how much they disturb: accept
-the callback in `New` alongside `resolve`; give `Registry` a method; or leave it
-and say why in the doc comment. Worth deciding in the 0.5.0 pass rather than
-after there are consumers.
+**Declined, and documented instead.** All three fixes cost more than the
+problem: putting `D` into a signature that has no use for it, or moving the
+callback into `New` where it becomes a required argument for the many registries
+that want no transaction at all, or a `SetAtomic` method that permits mutating a
+registry after its specs are registered. The annoyance is one line per
+application -- a compile error, caught immediately -- and the doc comment now
+says why it is spelt that way, which is the part that was actually missing.
 
 ## 4. A 201 has no way to say where the thing is
 
@@ -83,8 +106,13 @@ cannot be carried. The output struct is the only place left, which makes the
 address part of the body on every transport including the ones that have no
 headers.
 
-**Owed: a kernel decision**, already on the 0.5.0 list. Writing an actual 201
-is what makes it feel like a gap rather than a nicety.
+**Deferred, with the design settled.** It does not belong on `Result`, which is
+transport-neutral by construction -- a `Location` is an HTTP header and MCP has
+nowhere to put one. It belongs on the HTTP adapters' `Route`, as a template
+filled from the output the dispatch already returned, because the route is the
+only thing in the system that knows the URL shape. That is a feature in two
+adapters rather than an ergonomic fix in the kernel, so it is its own piece of
+work.
 
 ## 5. Every consumer will write the same driver-error mapping
 
@@ -93,8 +121,10 @@ code here and would appear in every service in a real application. The kernel
 cannot ship the mapping without importing a driver, so this is not an API
 request.
 
-**Owed: documentation**, or an example that is easy to copy. This module is now
-that example.
+**Done.** The kernel had **no package documentation at all** -- every adapter
+carried a `doc.go` and the package everyone imports first did not, so pkg.go.dev
+showed it with an empty overview. That is now written, and this mapping is one
+of its sections.
 
 ## 6. Two error shapes, and the client has to know which by status
 
@@ -103,8 +133,10 @@ answers `{"error":"..."}`. Both are deliberate -- per-field messages genuinely
 need a different shape -- but a client parsing responses must branch on the
 status to know which key exists, and nothing on the wire says so.
 
-**Owed: documentation at most.** Recorded because it is invisible from inside
-the library and obvious the first time you write a client.
+**Done.** `httpx` already had the table; `ginx` described the same six answers
+in prose without showing the two shapes. It has the table now, and both say
+outright that nothing in the body distinguishes them and a client branches on
+the status.
 
 ---
 

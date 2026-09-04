@@ -10,17 +10,40 @@ import (
 // The kernel's error taxonomy. Adapters map these to their own wire with
 // errors.Is / errors.As, so a consumer's own wrapping survives the trip: the
 // mapping table is per-adapter, the taxonomy is not.
+//
+// Three of these carry no "services: " prefix and two do, which is a rule
+// rather than an oversight: the prefix is for logs, and a sentinel whose words
+// reach a client is not going to a log.
+//
+// All three adapters render ErrPermission, ErrNotFound and ErrConflict
+// verbatim, and only those three -- everything else is redacted to a fixed
+// sentence. The documented way to use them is to wrap:
+//
+//	fmt.Errorf("%w: no copy of %q is on the shelf", services.ErrConflict, title)
+//
+// which puts the sentinel's own text at the front of the message. With a
+// package prefix that served {"error":"services: conflict: no copy of ..."} --
+// the implementation's package name in the middle of a sentence about a library
+// book, on every transport, reached by using the library exactly as documented.
+// Over MCP it was worse, because the reader is a model that may take "services"
+// for a term of art.
+//
+// ErrConfiguration and ErrBodyTooLarge keep the prefix precisely because they
+// never reach a client: both are redacted, both address an operator, and for an
+// operator reading a log the package name is the useful half.
+// TestClientFacingSentinelsCarryNoPackagePrefix holds the split, so a sentinel
+// added later has to choose a side on purpose.
 var (
 	// ErrNotFound reports that a named spec, or the row a service went looking
 	// for, does not exist.
-	ErrNotFound = errors.New("services: not found")
+	ErrNotFound = errors.New("not found")
 
 	// ErrConflict reports that the request was understood but the current state
 	// forbids it -- the 409 case, distinct from a permission refusal.
-	ErrConflict = errors.New("services: conflict")
+	ErrConflict = errors.New("conflict")
 
 	// ErrPermission reports that the acting principal may not do this.
-	ErrPermission = errors.New("services: permission denied")
+	ErrPermission = errors.New("permission denied")
 
 	// ErrConfiguration reports a fault in how an operation was mounted rather
 	// than in the request that arrived.
