@@ -10,8 +10,20 @@ below cover the kernel module, `github.com/Artui/go-services`.
 
 ## [Unreleased]
 
-The three adapter modules -- `httpx`, `ginx` and `mcpx` -- are unreleased. Each
-is versioned and tagged separately when it ships.
+## Adapters
+
+Each adapter is its own module and carries its own tag line. All three were
+released at **v0.1.0** on 2026-09-04, against kernel v0.3.0, once the
+conformance suite could show they answer the same.
+
+- **`httpx/v0.1.0`** -- mounts a registry on `net/http`'s `ServeMux`, with no
+  third-party dependency, so it also reaches chi and echo.
+- **`ginx/v0.1.0`** -- the same over a Gin router.
+- **`mcpx/v0.1.0`** -- exposes a registry as MCP tools through the official SDK,
+  handing it the schema the kernel already reflected rather than a second one.
+
+`conformance` is a fifth module and is deliberately never tagged: it depends on
+all of the others and exists only to fail when two of them disagree.
 
 ## [0.3.0] - 2026-09-03
 
