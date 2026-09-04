@@ -20,10 +20,27 @@ conformance suite could show they answer the same.
 - **`mcpx/v0.1.0`** -- exposes a registry as MCP tools through the official SDK,
   handing it the schema the kernel already reflected rather than a second one.
 
-`conformance` is a fifth module and is deliberately never tagged: it depends on
-all of the others and exists only to fail when two of them disagree.
+All three moved to **v0.1.1** on 2026-09-04, raising their kernel floor from
+v0.3.0 to v0.4.0. That raise is the whole release: until it happened, installing
+an adapter resolved the old kernel, so the error wording v0.4.0 corrected still
+reached every client of every adapter. Nothing else changed in any of them.
+
+`conformance` and `example` are the two modules here that are deliberately never
+tagged: they depend on all of the others, and exist to fail when two transports
+disagree and when a transaction boundary is wrong.
 
 ## [Unreleased]
+
+### Added
+
+- **The wire a client actually receives is now asserted end to end.** The
+  adapters' own suites build their expectations from the sentinel, so they check
+  the composition -- the sentinel's words, then the service's -- and would keep
+  passing if a sentinel's wording became nonsense. The kernel's own test checks
+  the property. Neither of them reads a response body.
+  `example.TestTheWireCarriesNoPackageName` spells all four answers out in full,
+  through a real registry over a real database, across all three transports. It
+  was falsified by reinstating the prefix, which fails it on each of them.
 
 ## [0.4.0] - 2026-09-04
 

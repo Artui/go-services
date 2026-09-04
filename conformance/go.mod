@@ -24,7 +24,7 @@ replace github.com/Artui/go-services/ginx => ../ginx
 replace github.com/Artui/go-services/mcpx => ../mcpx
 
 require (
-	github.com/Artui/go-services v0.3.0
+	github.com/Artui/go-services v0.4.0
 	github.com/Artui/go-services/ginx v0.0.0-00010101000000-000000000000
 	github.com/Artui/go-services/httpx v0.0.0-00010101000000-000000000000
 	github.com/Artui/go-services/mcpx v0.0.0-00010101000000-000000000000
