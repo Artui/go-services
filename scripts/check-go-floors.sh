@@ -18,6 +18,7 @@ EXPECTED=(
   "httpx:1.24"  # the kernel's floor; net/http path values arrived in 1.22
   "ginx:1.26.0" # x/crypto and quic-go, pulled up to clear Gin's advisories
   "mcpx:1.25.0" # the MCP SDK's own go.mod
+  "conformance:1.26.0" # the highest of the modules it drives, which is ginx
 )
 
 status=0

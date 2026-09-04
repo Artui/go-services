@@ -2,7 +2,14 @@ GO ?= go
 
 # Every module in the repo. The kernel is first because the adapters depend on
 # it and nothing depends on them.
-MODULES := . httpx ginx mcpx
+MODULES := . httpx ginx mcpx conformance
+
+# Every module is built without the workspace, conformance included. It carries
+# replace directives rather than published versions, but the check still means
+# something for it: that its requires and its replaces are coherent on their
+# own. Excluding it hid exactly that, because `go mod tidy` run inside the
+# workspace stripped every require and nothing local complained.
+PUBLISHED := $(MODULES)
 
 .PHONY: help fmt fmt-check vet lint test test-race cover check tidy verify-modules check-floors
 
@@ -40,7 +47,7 @@ cover: ## Run coverage and enforce the gate, per module
 # which is exactly what hides a go.mod that no longer stands on its own. This
 # target is the honest check, and CI runs it.
 verify-modules: ## Prove each module resolves without the workspace
-	@for m in $(MODULES); do \
+	@for m in $(PUBLISHED); do \
 		echo "resolve $$m without the workspace"; \
 		(cd $$m && GOWORK=off $(GO) build ./...) || exit 1; \
 	done
