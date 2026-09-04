@@ -4,10 +4,12 @@ GO ?= go
 # it and nothing depends on them.
 MODULES := . httpx ginx mcpx conformance
 
-# The modules that are actually published. conformance is a test harness that
-# depends on all of the others and is never tagged, so it carries replace
-# directives and there is nothing for verify-modules to prove about it.
-PUBLISHED := . httpx ginx mcpx
+# Every module is built without the workspace, conformance included. It carries
+# replace directives rather than published versions, but the check still means
+# something for it: that its requires and its replaces are coherent on their
+# own. Excluding it hid exactly that, because `go mod tidy` run inside the
+# workspace stripped every require and nothing local complained.
+PUBLISHED := $(MODULES)
 
 .PHONY: help fmt fmt-check vet lint test test-race cover check tidy verify-modules check-floors
 

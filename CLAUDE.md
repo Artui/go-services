@@ -47,9 +47,12 @@ hook ever has to be relaxed, the design has changed and the plan should say so.
   depends on all of them and carries `replace` directives pointing at the
   working tree -- a suite that could only see released adapters could not catch
   a divergence before release, which is its entire purpose. It is excluded from
-  `verify-modules` (nothing resolves it) and from the coverage gate (a harness
-  run by its own tests has no meaningful number). What it owes instead is that
-  it fails when an adapter diverges, which is checked by falsifying it.
+  the coverage gate (a harness run by its own tests has no meaningful number)
+  but **not** from `verify-modules`: the standalone build still proves its
+  requires and replaces are coherent, and excluding it once already hid a
+  `go mod tidy` run inside the workspace stripping every require. **Tidy this
+  module with `GOWORK=off`**, or the workspace satisfies the requires and tidy
+  removes them.
 - Cohesive file per concept (`spec.go`, `registry.go`, `dispatch.go`), which is
   Go's idiom. **This deliberately differs from the Python siblings'
   one-symbol-per-file layout** -- that convention exists for a language whose
