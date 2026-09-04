@@ -42,6 +42,14 @@ hook ever has to be relaxed, the design has changed and the plan should say so.
   fetches the newer one. `make check-floors` asserts each module's floor against
   a list with a reason per entry. Raising a floor is fine; raising it by
   accident is what that refuses.
+- `conformance/` is a fifth module and is **never published**. It drives one
+  spec set through every adapter and asserts they agree, so it necessarily
+  depends on all of them and carries `replace` directives pointing at the
+  working tree -- a suite that could only see released adapters could not catch
+  a divergence before release, which is its entire purpose. It is excluded from
+  `verify-modules` (nothing resolves it) and from the coverage gate (a harness
+  run by its own tests has no meaningful number). What it owes instead is that
+  it fails when an adapter diverges, which is checked by falsifying it.
 - Cohesive file per concept (`spec.go`, `registry.go`, `dispatch.go`), which is
   Go's idiom. **This deliberately differs from the Python siblings'
   one-symbol-per-file layout** -- that convention exists for a language whose
