@@ -1,6 +1,7 @@
 package ginx_test
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -13,6 +14,22 @@ import (
 	"github.com/Artui/go-services/ginx"
 	"github.com/gin-gonic/gin"
 )
+
+// wireError is the body this adapter serves for a wrapped sentinel.
+//
+// It is built from the sentinel rather than written out, because the contract
+// is "the sentinel's own words, then the service's" -- not any particular
+// wording. A test that spells the whole string out has to be edited whenever
+// the kernel rewords one, and editing it is indistinguishable from noticing
+// that it changed. This also lets the suite pass against the kernel on either
+// side of such a rewording, which is what lets the two land separately.
+func wireError(sentinel error, detail string) string {
+	body, err := json.Marshal(map[string]string{"error": sentinel.Error() + ": " + detail})
+	if err != nil {
+		panic(err)
+	}
+	return string(body)
+}
 
 // authorRoutes is the table most of the request-path tests serve.
 func authorRoutes() map[string]ginx.Route {
@@ -126,17 +143,17 @@ func TestErrorMapping(t *testing.T) {
 		{
 			name:   "a wrapped ErrPermission keeps the service's own words",
 			method: http.MethodGet, target: "/refuse/1",
-			status: http.StatusForbidden, want: `{"error":"services: permission denied: not yours"}`,
+			status: http.StatusForbidden, want: wireError(services.ErrPermission, "not yours"),
 		},
 		{
 			name:   "a wrapped ErrNotFound keeps the service's own words",
 			method: http.MethodGet, target: "/authors/2",
-			status: http.StatusNotFound, want: `{"error":"services: not found: author 2"}`,
+			status: http.StatusNotFound, want: wireError(services.ErrNotFound, "author 2"),
 		},
 		{
 			name:   "a wrapped ErrConflict keeps the service's own words",
 			method: http.MethodPost, target: "/clash", body: `{"id":1}`,
-			status: http.StatusConflict, want: `{"error":"services: conflict: already retired"}`,
+			status: http.StatusConflict, want: wireError(services.ErrConflict, "already retired"),
 		},
 		{
 			name:   "an unmapped error says one fixed sentence",
@@ -305,7 +322,7 @@ func TestUnmappedErrorIsReportedButNotServed(t *testing.T) {
 	// the client was told nothing.
 	observed, collected = nil, nil
 	assertJSON(t, do(e, http.MethodGet, "/authors/2", nil), http.StatusNotFound,
-		`{"error":"services: not found: author 2"}`)
+		wireError(services.ErrNotFound, "author 2"))
 	if observed != nil {
 		t.Errorf("WithErrorHandler saw %v, want nothing for a mapped error", observed)
 	}
@@ -342,7 +359,7 @@ func TestPrincipalFailure(t *testing.T) {
 			name:   "a refusal is the principal function's to make",
 			err:    fmt.Errorf("%w: token expired", services.ErrPermission),
 			status: http.StatusForbidden,
-			want:   `{"error":"services: permission denied: token expired"}`,
+			want:   wireError(services.ErrPermission, "token expired"),
 		},
 		{
 			// Failing to authenticate is not the same as being refused: an

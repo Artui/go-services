@@ -135,6 +135,17 @@ func TestArgumentsReachTheKernelAsTheySentThem(t *testing.T) {
 // The MCP specification draws the line at whether the model should see it: a
 // tool that ran and declined has produced something the model must read and
 // react to, while a tool that does not exist is the client's problem. Getting
+// refusal is the text a tool result carries for a wrapped sentinel.
+//
+// Built from the sentinel rather than spelled out, because the contract is "the
+// sentinel's own words, then the service's" and not any particular wording. It
+// also means this suite passes against a kernel on either side of a rewording,
+// which is what lets a kernel change and its adapters land in separate releases
+// instead of needing one flag day.
+func refusal(sentinel error, detail string) string {
+	return sentinel.Error() + ": " + detail
+}
+
 // this backwards turns every permission check into what looks like an outage.
 func TestARefusalIsAResultNotAProtocolError(t *testing.T) {
 	cs := connect(t, newRegistry(t), nil)
@@ -144,10 +155,10 @@ func TestARefusalIsAResultNotAProtocolError(t *testing.T) {
 		args any
 		want string
 	}{
-		{"fail.permission", map[string]any{"id": 3}, "services: permission denied: author 3 belongs to someone else"},
-		{"fail.notfound", map[string]any{"id": 3}, "services: not found: no author 3"},
-		{"fail.conflict", map[string]any{"id": 3}, "services: conflict: author 3 still has books"},
-		{"fail.permit", map[string]any{}, "services: permission denied: anonymous may not do this"},
+		{"fail.permission", map[string]any{"id": 3}, refusal(services.ErrPermission, "author 3 belongs to someone else")},
+		{"fail.notfound", map[string]any{"id": 3}, refusal(services.ErrNotFound, "no author 3")},
+		{"fail.conflict", map[string]any{"id": 3}, refusal(services.ErrConflict, "author 3 still has books")},
+		{"fail.permit", map[string]any{}, refusal(services.ErrPermission, "anonymous may not do this")},
 	} {
 		res, err := cs.CallTool(t.Context(), &mcp.CallToolParams{Name: tc.tool, Arguments: tc.args})
 		if err != nil {
@@ -335,7 +346,7 @@ func TestAPrincipalRefusalTravelsTheSameTaxonomy(t *testing.T) {
 		{
 			name: "an error wrapping the taxonomy is readable",
 			err:  fmt.Errorf("%w: this connection sent no bearer token", services.ErrPermission),
-			want: "services: permission denied: this connection sent no bearer token",
+			want: refusal(services.ErrPermission, "this connection sent no bearer token"),
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -371,7 +382,7 @@ func TestAResolverRefusalIsMappedToo(t *testing.T) {
 	if !res.IsError {
 		t.Fatal("a refused resolver did not set IsError")
 	}
-	if got := text(t, res); got != "services: permission denied" {
+	if got := text(t, res); got != services.ErrPermission.Error() {
 		t.Errorf("%q", got)
 	}
 }

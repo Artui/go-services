@@ -10,7 +10,41 @@ below cover the kernel module, `github.com/Artui/go-services`.
 
 ## [Unreleased]
 
+### Changed
+
+- **`ErrPermission`, `ErrNotFound` and `ErrConflict` no longer carry a
+  `services: ` prefix.** All three adapters render those three verbatim and
+  redact everything else, and the documented way to use them is to wrap -- so
+  `fmt.Errorf("%w: no copy of %q is on the shelf", services.ErrConflict, title)`
+  was serving `{"error":"services: conflict: no copy of ..."}`, putting the
+  implementation's package name in the middle of a sentence about a library
+  book. Over MCP the reader is a model that may take "services" for a term of
+  art. The rule the change settles on: the prefix is for logs, and a sentinel
+  whose words reach a client is not going to a log. `ErrConfiguration` and
+  `ErrBodyTooLarge` keep theirs, because both are redacted before any client
+  sees them. `TestClientFacingSentinelsCarryNoPackagePrefix` holds the split.
+
+  This is visible on every wire. `errors.Is` and `errors.As` are unaffected, and
+  any test comparing a rendered body should build the expectation from the
+  sentinel rather than spelling it out -- the adapters' own suites now do, which
+  is what let this land without a flag day.
+
 ### Added
+
+- **A package doc for the kernel.** Every adapter carried a `doc.go` and the
+  package everyone imports first did not, so pkg.go.dev showed it with an empty
+  overview. It covers the declaration shape, the three validation layers, the
+  ordering rule, the error taxonomy's two audiences, and how to map a driver's
+  errors onto it.
+- **`WithAtomic` now documents what decides the shape of `D`.** Only an atomic
+  entry runs inside the callback, so a `Query` resolves with no transaction in
+  its context and a dependency type holding a concrete `*sql.Tx` is empty for
+  every read in the registry. It also says why its type argument cannot be
+  inferred, so the next reader does not re-open the question.
+- **`ginx` documents the two response shapes** as a table, the way `httpx`
+  already did. A validation failure answers `errors` with a map and everything
+  else answers `error` with a sentence, and nothing in the body says which --
+  a client branches on the status.
 
 - **A worked example, `example/`, running against a real database.** One
   registry -- a library lending service over `database/sql` and SQLite -- mounted

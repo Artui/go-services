@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/Artui/go-services"
 	"github.com/Artui/go-services/mcpx"
@@ -126,7 +127,15 @@ func Example() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println(refused.IsError, refused.Content[0].(*mcp.TextContent).Text)
+	// The sentinel's own words are trimmed before printing, and only the
+	// service's half is shown. This file's rule is that it restates nothing the
+	// declaration already says, and an Output block is a literal assertion --
+	// spelling out the kernel's wording here would make this example a second
+	// copy of it, failing whenever that wording is improved. What the example
+	// is actually for is the half below: the words the Permit function chose
+	// reach the model intact.
+	fmt.Println(refused.IsError, strings.TrimPrefix(
+		refused.Content[0].(*mcp.TextContent).Text, services.ErrPermission.Error()+": "))
 
 	// So is a payload the schema rejects, rendered so the model can retry.
 	rejected, err := client.CallTool(ctx, &mcp.CallToolParams{
@@ -142,7 +151,7 @@ func Example() {
 	// Output:
 	// notes.archive readOnly=false idempotent=true destructive=false
 	// {"id":7,"archived_by":"ursula"}
-	// true services: permission denied: note 13 belongs to someone else
+	// true note 13 belongs to someone else
 	// true
 	// The arguments were rejected. Correct these and call the tool again:
 	// - validating root: validating /properties/id: type: seven has type "string", want "integer"

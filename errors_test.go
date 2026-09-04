@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 )
 
@@ -121,6 +122,47 @@ func TestValidSuccessStatus(t *testing.T) {
 	} {
 		if got := ValidSuccessStatus(status); got != want {
 			t.Errorf("ValidSuccessStatus(%d) = %v, want %v", status, got, want)
+		}
+	}
+}
+
+// The taxonomy splits on audience, and the split is load-bearing enough to be
+// a test rather than a paragraph.
+//
+// A sentinel's words reach a client only for the three the adapters render
+// verbatim; the rest are redacted and reach an operator's log instead. The
+// package prefix is useful in a log and is noise on a wire, so it goes exactly
+// where the reader is an operator. Adding a sentinel means choosing a side, and
+// this is what makes that choice deliberate instead of copied.
+func TestClientFacingSentinelsCarryNoPackagePrefix(t *testing.T) {
+	const prefix = "services: "
+
+	// Rendered verbatim by httpx, ginx and mcpx alike.
+	clientFacing := map[string]error{
+		"ErrNotFound":   ErrNotFound,
+		"ErrConflict":   ErrConflict,
+		"ErrPermission": ErrPermission,
+	}
+	for name, err := range clientFacing {
+		if strings.HasPrefix(err.Error(), prefix) {
+			t.Errorf("%s = %q; a sentinel whose words reach a client must not name the package",
+				name, err.Error())
+		}
+	}
+
+	// Never rendered: both are redacted to a fixed sentence, so their words are
+	// only ever read by whoever is looking at a log.
+	operatorFacing := map[string]error{
+		"ErrConfiguration": ErrConfiguration,
+		"ErrBodyTooLarge":  ErrBodyTooLarge,
+		// Not a sentinel, but the same audience: adapters render per-field
+		// messages through FieldMap and never call Error.
+		"ValidationError": &ValidationError{},
+	}
+	for name, err := range operatorFacing {
+		if !strings.HasPrefix(err.Error(), prefix) {
+			t.Errorf("%s = %q; a sentinel only an operator reads should name the package",
+				name, err.Error())
 		}
 	}
 }

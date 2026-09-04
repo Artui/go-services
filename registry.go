@@ -100,6 +100,31 @@ type Option[D any] func(*Registry[D])
 // The callback receives a context it is expected to make transactional. The
 // Registry then resolves dependencies with that context, so Deps holds the
 // transactional handle -- see Registry.Dispatch for why the ordering matters.
+//
+// Only an atomic entry runs inside the callback, which decides the shape of D
+// and is the first thing to get wrong. A Query resolves its dependencies with a
+// context that has no transaction in it, so a D holding a concrete transaction
+// type is empty for every read in the registry. Hold an interface both a
+// transaction and a pool satisfy, and let the resolver choose:
+//
+//	func resolve(ctx context.Context, principal any) (Deps, error) {
+//	    var q Queryer = pool
+//	    if tx, ok := ctx.Value(txKey{}).(*sql.Tx); ok {
+//	        q = tx
+//	    }
+//	    return Deps{DB: q, ...}, nil
+//	}
+//
+// The type argument cannot be inferred and has to be written out:
+//
+//	services.New(resolve, services.WithAtomic[Deps](inTransaction))
+//
+// D appears nowhere in this function's parameters, because a transaction
+// callback has no reason to know the dependency type, so there is nothing for
+// inference to work from. Making it inferrable would mean either putting D into
+// a signature that does not need it or moving the callback into New, where it
+// would be a required argument for the many registries that want no transaction
+// at all. Written once per application, it is the cheaper of the three.
 func WithAtomic[D any](fn func(context.Context, func(context.Context) error) error) Option[D] {
 	return func(r *Registry[D]) { r.atomic = fn }
 }
