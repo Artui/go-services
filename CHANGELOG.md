@@ -8,7 +8,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 Each module in this repository is versioned and tagged independently. Entries
 below cover the kernel module, `github.com/Artui/go-services`.
 
+## Adapters
+
+Each adapter is its own module and carries its own tag line. All three were
+released at **v0.1.0** on 2026-09-04, against kernel v0.3.0, once the
+conformance suite could show they answer the same.
+
+- **`httpx/v0.1.0`** -- mounts a registry on `net/http`'s `ServeMux`, with no
+  third-party dependency, so it also reaches chi and echo.
+- **`ginx/v0.1.0`** -- the same over a Gin router.
+- **`mcpx/v0.1.0`** -- exposes a registry as MCP tools through the official SDK,
+  handing it the schema the kernel already reflected rather than a second one.
+
+`conformance` is a fifth module and is deliberately never tagged: it depends on
+all of the others and exists only to fail when two of them disagree.
+
 ## [Unreleased]
+
+## [0.4.0] - 2026-09-04
 
 ### Changed
 
@@ -62,21 +79,6 @@ below cover the kernel module, `github.com/Artui/go-services`.
 - `example/FRICTION.md`, which is the module's actual output -- six findings
   written down where they were met, and four things that were expected to hurt
   and did not.
-
-## Adapters
-
-Each adapter is its own module and carries its own tag line. All three were
-released at **v0.1.0** on 2026-09-04, against kernel v0.3.0, once the
-conformance suite could show they answer the same.
-
-- **`httpx/v0.1.0`** -- mounts a registry on `net/http`'s `ServeMux`, with no
-  third-party dependency, so it also reaches chi and echo.
-- **`ginx/v0.1.0`** -- the same over a Gin router.
-- **`mcpx/v0.1.0`** -- exposes a registry as MCP tools through the official SDK,
-  handing it the schema the kernel already reflected rather than a second one.
-
-`conformance` is a fifth module and is deliberately never tagged: it depends on
-all of the others and exists only to fail when two of them disagree.
 
 ## [0.3.0] - 2026-09-03
 
@@ -209,7 +211,8 @@ is what a first consumer is for.
 - Framework-agnostic errors: `ErrNotFound`, `ErrConflict`, `ErrPermission` and
   `ValidationError`.
 
-[Unreleased]: https://github.com/Artui/go-services/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Artui/go-services/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Artui/go-services/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Artui/go-services/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Artui/go-services/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Artui/go-services/releases/tag/v0.1.0
