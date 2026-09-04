@@ -10,6 +10,25 @@ below cover the kernel module, `github.com/Artui/go-services`.
 
 ## [Unreleased]
 
+### Added
+
+- **A worked example, `example/`, running against a real database.** One
+  registry -- a library lending service over `database/sql` and SQLite -- mounted
+  on all three adapters at once, so the kernel's ordering rule has a composed
+  proof for the first time. The conformance suite cannot supply one: it runs
+  with an empty `Deps` and no database, so nothing in it can tell a correct
+  transaction boundary from a broken one. Like `conformance`, the module is
+  never published and carries `replace` directives.
+- **The example carries its own falsification.** `TestRollbackAssertionHasTeeth`
+  runs the same dispatch against a registry whose dependencies resolve *outside*
+  the boundary and asserts the orphan row appears, which is what makes the
+  rollback assertion beside it mean something. Its companion asserts the other
+  half: on the happy path the correct registry and the broken one are
+  indistinguishable.
+- `example/FRICTION.md`, which is the module's actual output -- six findings
+  written down where they were met, and four things that were expected to hurt
+  and did not.
+
 ## Adapters
 
 Each adapter is its own module and carries its own tag line. All three were

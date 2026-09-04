@@ -12,9 +12,11 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 EXCLUSIONS=$PWD/scripts/coverage-exclusions.txt
-# conformance is excluded: it is a harness whose whole job is to be run by its
-# own tests, so a coverage number for it measures nothing. What it owes instead
-# is that it fails when an adapter diverges, which is checked by falsifying it.
+# conformance and example are excluded: both are harnesses whose whole job is to
+# be run by their own tests, so a coverage number for either measures nothing.
+# What they owe instead is that they fail when the thing they watch breaks, and
+# both are checked by falsifying them -- conformance by reinstating an adapter
+# divergence, example by resolving dependencies outside the transaction.
 MODULES=${MODULES:-". httpx ginx mcpx"}
 
 status=0
