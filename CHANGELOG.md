@@ -21,9 +21,14 @@ conformance suite could show they answer the same.
   handing it the schema the kernel already reflected rather than a second one.
 
 `httpx` and `ginx` move to **v0.2.0** on 2026-09-05, gaining `Route.Location`
-and `WithLocation`. `mcpx` stays at **v0.1.1**: it has no routes and no headers,
-so kernel v0.5.0 buys it nothing and raising its floor would be a claim with no
-content.
+and `WithLocation`. `mcpx` moves to **v0.1.2** the same day with no change but
+its floor.
+
+Every adapter floors on the newest kernel, including one that uses nothing the
+release added. The alternative leaves that adapter's CI resolving a kernel no
+consumer runs: Go takes the maximum across a build, so anyone pairing two
+adapters gets the newest kernel regardless, and the low floor only ever applied
+to the single-adapter case while the paired case went untested.
 
 All three moved to **v0.1.1** on 2026-09-04, raising their kernel floor from
 v0.3.0 to v0.4.0. That raise is the whole release: until it happened, installing
@@ -59,8 +64,9 @@ disagree and when a transaction boundary is wrong.
 
 ### Changed
 
-- `httpx`, `ginx`, `conformance` and `example` floor on kernel **v0.5.0**.
-  `mcpx` stays on v0.4.0, which is all it uses.
+- **Every module floors on kernel v0.5.0**, `mcpx` included, and that is now the
+  repository's rule rather than a judgement per release. A module left behind is
+  the one combination nobody runs.
 
 ## [0.5.0] - 2026-09-05
 
