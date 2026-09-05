@@ -20,7 +20,7 @@ make cover        # coverage, with the gate
 ## The one architectural rule
 
 **The kernel must not import any transport.** No `gin-gonic`, no
-`modelcontextprotocol`, not even `net/http` -- which is why a success status is
+`modelcontextprotocol`, no `adk`, not even `net/http` -- which is why a success status is
 a plain `int` on `Result` rather than an `http.Status*` constant. Adapters live
 in their own module directories and read `Registry.Entries()`; the kernel never
 learns they exist.
@@ -34,7 +34,10 @@ hook ever has to be relaxed, the design has changed and the plan should say so.
   module with its own `go.mod`, because Go has no optional dependencies and
   their Go floors already differ: 1.24 for the kernel and `httpx`, 1.25 for
   `mcpx` (the SDK's own floor), 1.26 for `ginx` (clearing Gin's transitive
-  advisories pulls in `x/crypto` and `quic-go` releases that require it).
+  advisories pulls in `x/crypto` and `quic-go` releases that require it), and
+  **1.26.6 for `adkx`**, which is `adk-go`'s own floor and the highest here.
+  That last one is the layout paying out rather than a problem: a consumer who
+  wants an HTTP route and not an agent framework is not dragged onto it.
 - **CI tests each module at its own floor**, taken from that module's `go.mod`
   via `setup-go`'s `go-version-file`, so the floor is declared once and the
   workflow cannot drift from it. A single Go version across a matrix cannot work

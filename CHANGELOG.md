@@ -35,6 +35,12 @@ v0.3.0 to v0.4.0. That raise is the whole release: until it happened, installing
 an adapter resolved the old kernel, so the error wording v0.4.0 corrected still
 reached every client of every adapter. Nothing else changed in any of them.
 
+`adkx` is unreleased. It publishes a registry as tools for Google's Agent
+Development Kit, and it is the same trade `mcpx` makes: `adk-go` reflects its
+schemas with `jsonschema-go` at the version this kernel uses, and
+`genai.FunctionDeclaration` carries a `ParametersJsonSchema` field, so the
+schema the kernel already reflected is handed over as it is.
+
 `conformance` and `example` are the two modules here that are deliberately never
 tagged: they depend on all of the others, and exist to fail when two transports
 disagree and when a transaction boundary is wrong.
@@ -42,6 +48,29 @@ disagree and when a transaction boundary is wrong.
 ## [Unreleased]
 
 ### Added
+
+- **`adkx`, a fourth adapter: a registry as tools for Google's ADK.** The
+  declaration carries the kernel's own `*jsonschema.Schema` object, asserted by
+  pointer identity rather than by comparison, so the schema a model is shown and
+  the schema the kernel enforces cannot drift apart.
+
+  Two facts about that wire are documented on the package because neither is
+  fixable here. **Arguments arrive as a map**: `genai.FunctionCall.Args` is a
+  `map[string]any`, so a model's tool-call arguments are decoded before any tool
+  in any ADK program sees them and an integer past 2^53 is already a float64 --
+  the same registry is exact over MCP, whose SDK carries the raw JSON, and lossy
+  here. **And a tool's error text is shown to the model**: ADK renders a
+  returned error as `map[string]any{"error": err.Error()}`, so this package
+  returns the kernel's taxonomy verbatim and replaces everything else with a
+  fixed sentence, sending the real error to `WithErrorReporter`.
+
+  It floors at Go 1.26.6, `adk-go`'s own floor and the highest in the
+  repository. That is the module-per-boundary layout paying out: a consumer who
+  wants an HTTP route and not an agent framework is not dragged onto it.
+
+- **The kernel-import guard knows about ADK.** It matched `net/http`,
+  `gin-gonic` and `modelcontextprotocol`, so a kernel file could have imported
+  `adk` or `genai` and nothing would have fired. Verified by making it fire.
 
 - **`Route.Location` and `WithLocation` on both HTTP adapters.** A successful
   response carries a `Location` built from a template naming the operation's

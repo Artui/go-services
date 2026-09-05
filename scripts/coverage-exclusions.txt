@@ -16,3 +16,10 @@ github.com/Artui/go-services/params.go:EncodeParams
 #   coerce (string, int64, float64, bool, []any). Every one of those is
 #   marshalable, so the error cannot occur. The check stays because discarding
 #   an error to satisfy a coverage number is the worse trade.
+
+github.com/Artui/go-services/adkx/result.go:succeed
+#   The json.Decode error branch. raw came out of json.Marshal one line above,
+#   so it is valid JSON by construction and decoding it into an any cannot
+#   fail. The check stays because discarding an error to satisfy a coverage
+#   number is the worse trade -- the same call this file already makes for
+#   EncodeParams.
