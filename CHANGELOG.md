@@ -52,6 +52,22 @@ disagree and when a transaction boundary is wrong.
 
 ### Added
 
+- **`adkx.RunnableTool`**, the shape ADK actually dispatches on.
+
+  ADK's own version is unexported and matched structurally at the point of use,
+  so nothing in the compiler tells a consumer that a method drifted and there is
+  no name to assert against. Every consumer that wants to drive a tool -- which
+  mostly means every consumer that wants to test one -- was writing the
+  interface out; three copies existed here before this.
+
+  All three are now aliases, so there is one declaration of the shape in the
+  repository, in the package best placed to notice when it stops being right.
+  `adkx` carries `var _ RunnableTool = (*specTool[struct{}])(nil)`, verified by
+  renaming a method, which fails that line by name.
+
+  It is not a promise about ADK's API, which is not ours to make. It is a
+  promise that what `adkx` publishes is runnable, which is.
+
 - **The worked example is mounted on all four adapters.** `example/` drives one
   library-lending registry through `net/http`, Gin, MCP and now ADK, and asserts
   they leave the same rows behind. That is a different question from the one the

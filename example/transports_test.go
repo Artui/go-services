@@ -14,7 +14,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/adk/v2/agent"
-	adktool "google.golang.org/adk/v2/tool"
 
 	services "github.com/Artui/go-services"
 	"github.com/Artui/go-services/adkx"
@@ -299,13 +298,9 @@ func TestAMisspeltCaptureIsRefusedAtMount(t *testing.T) {
 	}
 }
 
-// adkTool is ADK's own dispatch shape, restated because the real one is
-// unexported. Every consumer of adkx that wants to drive a tool in a test has
-// to write this out, which is worth knowing before you start.
-type adkTool interface {
-	adktool.Tool
-	Run(ctx agent.Context, args any) (map[string]any, error)
-}
+// adkTool is the shape ADK dispatches on. adkx names it, so this module does
+// not have to restate an interface the compiler would not tie to anything.
+type adkTool = adkx.RunnableTool
 
 // adkContext is an ADK invocation for one member.
 //

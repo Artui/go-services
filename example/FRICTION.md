@@ -175,10 +175,15 @@ type adkTool interface {
 `adkx`'s own suite writes the same thing, and so does the conformance driver.
 Three copies of one interface, none of which the compiler ties to ADK.
 
-**Owed: nothing in the kernel, and possibly something in `adkx`.** It could
-export that interface itself -- a consumer would then have one name to assert
-against, and `adkx` would be the single place that notices if ADK's shape
-changes. Worth deciding before there are consumers rather than after.
+**Done: `adkx.RunnableTool`.** The package exports the interface, and carries
+`var _ RunnableTool = (*specTool[struct{}])(nil)` so that a drift in ADK's shape
+is a build failure in `adkx` rather than a runtime surprise in somebody's agent.
+Verified by renaming a method, which fails that line by name.
+
+All three copies are now aliases of it. There is one declaration of the shape in
+the repository, in the package best placed to notice when it stops being right.
+It is not a promise about ADK's API, which is not ours to make -- it is a
+promise that what `adkx` publishes is runnable, which is.
 
 ### 8. Identity is a string on one transport and a number everywhere else
 
