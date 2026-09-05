@@ -20,7 +20,7 @@ EXPECTED=(
   "mcpx:1.25.0" # the MCP SDK's own go.mod
   "adkx:1.26.6" # adk-go's own go.mod, the highest floor in the repo
   "conformance:1.26.6" # the highest of the modules it drives, which is adkx
-  "example:1.26.0"     # the same: it mounts all three adapters at once
+  "example:1.26.6"     # the same: it mounts all four adapters at once
 )
 
 status=0

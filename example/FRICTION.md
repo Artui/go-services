@@ -153,6 +153,47 @@ the status.
 
 ---
 
+## Mounting on ADK, added 2026-09-05
+
+Two frictions, both small, both only visible from out here.
+
+### 7. Every consumer restates ADK's tool interface to test one
+
+ADK dispatches a tool through an interface it does not export, so a tool is
+matched structurally at the point of use. Nothing in the compiler says a method
+drifted, and nothing lets a consumer write `var _ adk.FunctionTool = myTool`.
+
+This module needs the shape to drive `borrow_book`, so it writes it out:
+
+```go
+type adkTool interface {
+	adktool.Tool
+	Run(ctx agent.Context, args any) (map[string]any, error)
+}
+```
+
+`adkx`'s own suite writes the same thing, and so does the conformance driver.
+Three copies of one interface, none of which the compiler ties to ADK.
+
+**Owed: nothing in the kernel, and possibly something in `adkx`.** It could
+export that interface itself -- a consumer would then have one name to assert
+against, and `adkx` would be the single place that notices if ADK's shape
+changes. Worth deciding before there are consumers rather than after.
+
+### 8. Identity is a string on one transport and a number everywhere else
+
+`agent.Context.UserID` returns a string, and this application's member is an
+`int64`, so the ADK principal parses one into the other. The HTTP adapters have
+the same seam and it reads better there, because a header was always going to be
+text.
+
+**Owed: nothing.** The kernel's decision that a principal is opaque is what lets
+this be four lines in the application instead of a conversion the library has to
+guess at. Recorded because it is the kind of thing that looks like a gap until
+you ask what the alternative would be.
+
+---
+
 ## What was expected to hurt and did not
 
 The plan asked for these to be measured, and a result of "nothing owed" is a

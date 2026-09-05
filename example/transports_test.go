@@ -13,8 +13,11 @@ import (
 
 	"github.com/gin-gonic/gin"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"google.golang.org/adk/v2/agent"
+	adktool "google.golang.org/adk/v2/tool"
 
 	services "github.com/Artui/go-services"
+	"github.com/Artui/go-services/adkx"
 	"github.com/Artui/go-services/ginx"
 	"github.com/Artui/go-services/httpx"
 	"github.com/Artui/go-services/mcpx"
@@ -135,7 +138,12 @@ func mountMCPX(t *testing.T, db *sql.DB) transport {
 	}}
 }
 
-var mounts = []func(*testing.T, *sql.DB) transport{mountHTTPX, mountGinx, mountMCPX}
+// Every adapter this project is mounted on. A transport added here is
+// immediately held to the same three assertions below, which is the point of
+// keeping the example rather than deleting it.
+var mounts = []func(*testing.T, *sql.DB) transport{
+	mountHTTPX, mountGinx, mountMCPX, mountADKX,
+}
 
 // dumpState is the comparison. Reading the tables back is the only way to tell
 // three transports apart on the thing that matters -- a status code says what
@@ -202,7 +210,7 @@ func agree[T comparable](t *testing.T, what string, got map[string]T) T {
 	t.Helper()
 	var first T
 	var firstName string
-	for _, name := range []string{"httpx", "ginx", "mcpx"} {
+	for _, name := range []string{"httpx", "ginx", "mcpx", "adkx"} {
 		v, ok := got[name]
 		if !ok {
 			t.Fatalf("%s: no result for %s", what, name)
@@ -289,4 +297,74 @@ func TestAMisspeltCaptureIsRefusedAtMount(t *testing.T) {
 	if !errors.Is(err, services.ErrConfiguration) {
 		t.Errorf("err = %v, want ErrConfiguration", err)
 	}
+}
+
+// adkTool is ADK's own dispatch shape, restated because the real one is
+// unexported. Every consumer of adkx that wants to drive a tool in a test has
+// to write this out, which is worth knowing before you start.
+type adkTool interface {
+	adktool.Tool
+	Run(ctx agent.Context, args any) (map[string]any, error)
+}
+
+// adkContext is an ADK invocation for one member.
+//
+// StrictContextMock is ADK's own double and implements the whole interface, so
+// this keeps compiling as agent.Context grows -- which matters here because
+// none of that surface is ours.
+type adkContext struct {
+	agent.StrictContextMock
+	member int64
+}
+
+// UserID is where the principal comes from. ADK has no headers, so identity
+// rides on the session rather than on the call, and adkx.UserID reads exactly
+// this -- but a member is a number here and ADK's is a string, which is the one
+// piece of glue an application has to write.
+func (c *adkContext) UserID() string { return strconv.FormatInt(c.member, 10) }
+
+func mountADKX(t *testing.T, db *sql.DB) transport {
+	t.Helper()
+	ts, err := adkx.Toolset(Registry(db), func(ctx agent.Context) (any, error) {
+		id, err := strconv.ParseInt(ctx.UserID(), 10, 64)
+		if err != nil {
+			// Nil rather than an error, for the same reason the HTTP principal
+			// does it: "nobody is authenticated" is the resolver's decision to
+			// refuse, and an adapter that made it here would take that decision
+			// away from the application.
+			return nil, nil
+		}
+		return id, nil
+	})
+	if err != nil {
+		t.Fatalf("adkx toolset: %v", err)
+	}
+
+	ctx := &adkContext{StrictContextMock: agent.NewStrictContextMock(t.Context())}
+	published, err := ts.Tools(ctx)
+	if err != nil {
+		t.Fatalf("adkx tools: %v", err)
+	}
+
+	var borrow adkTool
+	for _, one := range published {
+		if one.Name() != "borrow_book" {
+			continue
+		}
+		runnable, ok := one.(adkTool)
+		if !ok {
+			t.Fatalf("adkx published borrow_book in a shape ADK cannot run: %T", one)
+		}
+		borrow = runnable
+	}
+	if borrow == nil {
+		t.Fatal("adkx published no borrow_book")
+	}
+
+	return transport{name: "adkx", borrow: func(t *testing.T, m, book int64) bool {
+		t.Helper()
+		ctx.member = m
+		_, err := borrow.Run(ctx, map[string]any{"book_id": book})
+		return err != nil
+	}}
 }
