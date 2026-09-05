@@ -218,7 +218,29 @@ one-line fixes once you know, and both cost an afternoon if you do not. Recorded
 because this is the second consumer of that component in the workspace and the
 first one to load it from a CDN rather than a bundler.
 
-### 10. A scripted agent cannot see its own tool result
+### 10. A failed server-side tool call cannot be rendered as failed
+
+`TOOL_CALL_RESULT` carries a content string and nothing else -- the protocol has
+no error flag on it -- and the web component's `onToolResult` settles every
+result it receives as `DONE`. So a refusal arrived as a card reading "done" with
+"no copy is on the shelf" folded inside it: a failure wearing the shape of an
+outcome, which is the one rendering a tool result must never have.
+
+What is available is a convention the component already uses. When its OWN
+browser-side tool handler throws, it sends the result back as `Error: ` followed
+by the message. `aguix` now emits the same shape for a server-side failure, so
+the model sees one convention whichever side the tool ran on, and a person
+reading the transcript sees the word before the reason rather than after it. A
+success stays bare JSON, so the two are tellable apart.
+
+**Owed, and not by us: the card still reads "done".** Nothing a server sends can
+change that, because nothing in the event says so. Either the component reads
+the prefix it already writes, or `TOOL_CALL_RESULT` grows the flag every other
+tool protocol has -- MCP has `isError`, ADK renders `{"error": ...}`. This is
+the finding to take to the component and to the protocol; the prefix is what can
+be done from this side alone.
+
+### 11. A scripted agent cannot see its own tool result
 
 Steps run in order and none sees what the previous produced, so a `Say` written
 after a `CallTool` is composed before the call has happened. The first version

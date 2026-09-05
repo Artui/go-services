@@ -11,6 +11,25 @@ import (
 	services "github.com/Artui/go-services"
 )
 
+// ToolErrorPrefix marks a tool result as a failure.
+//
+// AG-UI's TOOL_CALL_RESULT carries a content string and nothing else: there is
+// no error flag on the event, and the web component settles every result it
+// receives as done. So a refusal that simply put its reason in the content was
+// indistinguishable from a success -- the card read "done" with "no copy is on
+// the shelf" folded inside it, which is a failure disguised as an outcome.
+//
+// The prefix is not invented here. When the component's own browser-side tool
+// handler throws, it sends the result back as "Error: " followed by the
+// message. Emitting the same shape for a server-side failure means the model
+// sees one convention whichever side the tool ran on, and a person reading the
+// transcript sees the word before the reason rather than after it.
+//
+// It does not change how the card renders, because nothing a server sends can:
+// that is a limit of the protocol and of the component, recorded as a finding
+// rather than worked around.
+const ToolErrorPrefix = "Error: "
+
 // ToolResultError is what a tool result says when a call failed for a reason
 // outside the kernel's taxonomy.
 //
@@ -18,7 +37,8 @@ import (
 // whatever decides the next move. So it gets the same treatment RUN_ERROR does:
 // the taxonomy's own words, which a spec author wrote for a caller, and a fixed
 // sentence for everything else.
-const ToolResultError = "The operation failed. The reason was recorded on the server."
+const ToolResultError = ToolErrorPrefix +
+	"The operation failed. The reason was recorded on the server."
 
 // Principal turns a run's context into whatever the registry's resolver
 // expects. Identity arrives the way it does in any net/http server -- put there
@@ -136,6 +156,9 @@ func (t *Toolbox[D]) dispatch(
 	if err != nil {
 		return t.explain(err), nil
 	}
+	// Only a success reaches the encoder below, so only a success is rendered
+	// as bare JSON. Everything explain returns is prefixed, which is what makes
+	// the two tellable apart on a wire that has no other way to say so.
 
 	payload, err := json.Marshal(result.Value)
 	if err != nil {
@@ -164,12 +187,12 @@ func (t *Toolbox[D]) explain(err error) string {
 	// nil pointer, which errors.As matches. Rendering that as "the arguments
 	// were rejected" with nothing listed invites a retry that cannot succeed.
 	case errors.As(err, &invalid) && invalid != nil:
-		return explainValidation(invalid)
+		return ToolErrorPrefix + explainValidation(invalid)
 
 	case errors.Is(err, services.ErrPermission),
 		errors.Is(err, services.ErrNotFound),
 		errors.Is(err, services.ErrConflict):
-		return err.Error()
+		return ToolErrorPrefix + err.Error()
 	}
 	return ToolResultError
 }

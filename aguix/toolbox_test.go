@@ -203,3 +203,45 @@ func TestACallWithNoArgumentsSendsAnEmptyObject(t *testing.T) {
 		t.Errorf("args delta = %v, want {}", got)
 	}
 }
+
+// The distinction the wire cannot otherwise make.
+//
+// TOOL_CALL_RESULT carries a content string and no error flag, and the web
+// component settles every result it receives as done -- so without a marker in
+// the content itself, a refusal and a success are the same event with different
+// words inside. A success is bare JSON; every failure is prefixed.
+func TestAFailedCallIsTellableApartFromASuccess(t *testing.T) {
+	box := toolboxFor(t, signedIn)
+
+	success := fmt.Sprint(runTool(t, box, `{"book_id":4}`)[4]["content"])
+	if strings.HasPrefix(success, aguix.ToolErrorPrefix) {
+		t.Errorf("a success is marked as an error: %q", success)
+	}
+	if !strings.HasPrefix(success, "{") {
+		t.Errorf("a success is not the service's own value: %q", success)
+	}
+
+	for _, tc := range []struct{ name, args string }{
+		{"permission", `{"book_id":13}`},
+		{"not found", `{"book_id":99}`},
+		{"validation", `{"book_id":0}`},
+		{"unexpected", `{"book_id":7}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			events := runTool(t, box, tc.args)
+			got := fmt.Sprint(events[len(events)-2]["content"])
+			if !strings.HasPrefix(got, aguix.ToolErrorPrefix) {
+				t.Errorf("result = %q, want it marked as a failure", got)
+			}
+		})
+	}
+}
+
+// A refusal that is not signed in is a failure too, and marked as one.
+func TestAPrincipalRefusalIsMarked(t *testing.T) {
+	events := runTool(t, toolboxFor(t, aguix.Anonymous), `{"book_id":4}`)
+	got := fmt.Sprint(events[len(events)-2]["content"])
+	if !strings.HasPrefix(got, aguix.ToolErrorPrefix) {
+		t.Errorf("result = %q, want it marked as a failure", got)
+	}
+}

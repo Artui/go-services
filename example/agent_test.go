@@ -111,8 +111,15 @@ func TestAnAgentBorrowRollsBack(t *testing.T) {
 	if last := events[len(events)-1]; last["type"] != "RUN_FINISHED" {
 		t.Errorf("run ended with %v, want RUN_FINISHED", last["type"])
 	}
-	if result := resultOf(t, events); !strings.Contains(result, "no copy of") {
+	result := resultOf(t, events)
+	if !strings.Contains(result, "no copy of") {
 		t.Errorf("result = %q, want the conflict's own words", result)
+	}
+	// Marked as a failure, because nothing else on this wire says so: the
+	// protocol has no error flag on a tool result and the component settles
+	// every one it receives as done.
+	if !strings.HasPrefix(result, aguix.ToolErrorPrefix) {
+		t.Errorf("result = %q, want it tellable apart from a success", result)
 	}
 	if n := countLoans(t, db); n != 0 {
 		t.Errorf("loans = %d, want 0: the insert escaped the transaction", n)

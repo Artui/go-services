@@ -82,8 +82,15 @@ disagree and when a transaction boundary is wrong.
   key: the script decides which tool to call, and everything under that is the
   kernel every other adapter runs, against the same SQLite database.
 
-  Two findings came out of pointing a real client at it, both in
-  `example/FRICTION.md`. The sharper one is that **the tests were green while
+  Three findings came out of pointing a real client at it, all in
+  `example/FRICTION.md`. One is that **a failed server-side tool call cannot be
+  rendered as failed**: `TOOL_CALL_RESULT` has no error flag and the component
+  settles every result as done, so a refusal arrived as a card reading "done"
+  with "no copy is on the shelf" folded inside it. `aguix` marks failures with
+  the `Error: ` prefix the component already emits for its own browser-side tool
+  failures, which makes a refusal and a success tellable apart on a wire that
+  otherwise cannot say so. The card still reads "done", and that part is the
+  component's to fix. The sharper one is that **the tests were green while
   the demo was lying**: the script ended with "That is done." and said it over a
   refusal, with the tool result reading "no copy is on the shelf" directly
   above. Every assertion held, because none of them had an opinion about whether
