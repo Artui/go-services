@@ -337,3 +337,62 @@ func TestRegisterRefusesAnUndeliverableStatus(t *testing.T) {
 		t.Errorf("Status = %d, want the 200 default", e.Status)
 	}
 }
+
+// CheckLocation is the mount-time half of ExpandLocation, and the mirror of
+// CheckCaptures on the output side.
+func TestCheckLocation(t *testing.T) {
+	r := New[testDeps](nil)
+	MustRegister(r, Spec[testDeps, greetIn, greetOut]{
+		Name: "borrow", Kind: Mutation, Run: greet,
+	})
+	entry, ok := r.Lookup("borrow")
+	if !ok {
+		t.Fatal("the spec just registered is not there")
+	}
+
+	for _, tc := range []struct {
+		name     string
+		template string
+		says     string
+	}{
+		{"a declared field is accepted", "/greetings/{greeting}", ""},
+		{"no placeholders is a fixed path", "/greetings", ""},
+		{
+			"an undeclared field is refused, naming it", "/greetings/{nope}",
+			"nope",
+		},
+		{
+			"every undeclared field is named at once", "/greetings/{nope}/{also}",
+			"also, nope",
+		},
+		{
+			// The template is parsed before it is checked, so a malformed one
+			// says so rather than reporting every placeholder as undeclared.
+			"a malformed template says what is wrong with it", "/greetings/{greeting",
+			"never closes",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := entry.CheckLocation(tc.template)
+			if tc.says == "" {
+				if err != nil {
+					t.Fatalf("CheckLocation = %v, want nil", err)
+				}
+				return
+			}
+			if err == nil {
+				t.Fatal("CheckLocation = nil, want an error")
+			}
+			if !errors.Is(err, ErrConfiguration) {
+				t.Errorf("err = %v, want ErrConfiguration", err)
+			}
+			if !strings.Contains(err.Error(), tc.says) {
+				t.Errorf("err = %v, want it to mention %q", err, tc.says)
+			}
+			// The spec's name, so a table of routes says which row is wrong.
+			if !strings.Contains(err.Error(), "borrow") {
+				t.Errorf("err = %v, want it to name the spec", err)
+			}
+		})
+	}
+}

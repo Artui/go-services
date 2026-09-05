@@ -33,6 +33,26 @@ disagree and when a transaction boundary is wrong.
 
 ### Added
 
+- **`ExpandLocation` and `Entry.CheckLocation`, the kernel half of a `Location`
+  header.** A template is a path with `{name}` placeholders naming output fields
+  by their JSON name -- `"/loans/{loan_id}"` -- and the two functions are the
+  request-time and mount-time halves of the same guarantee, exactly as
+  `EncodeParams` and `CheckCaptures` are on the input side.
+
+  It lives in the kernel for the reason `StatusFor` does: both HTTP adapters
+  need it, the result is client-visible, and two adapters carrying their own
+  copies would be two servers disagreeing about where the thing they just
+  created lives. The syntax is `{name}` on both, including Gin, because a
+  Location is a string being filled rather than a pattern being matched.
+
+  Values are path-escaped, since a slug carrying a slash would otherwise forge a
+  path segment. Numbers go through `UseNumber`, so an identifier past 2^53 is
+  not rewritten on its way into the header -- the same float64 round trip that
+  cost this project a defect in `EncodeParams`.
+
+  **No adapter reads it yet.** Wiring `Route.Location` into `httpx` and `ginx`
+  is the next release, and it cannot happen until this one is tagged.
+
 - **The wire a client actually receives is now asserted end to end.** The
   adapters' own suites build their expectations from the sentinel, so they check
   the composition -- the sentinel's words, then the service's -- and would keep
