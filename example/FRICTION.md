@@ -233,12 +233,23 @@ the model sees one convention whichever side the tool ran on, and a person
 reading the transcript sees the word before the reason rather than after it. A
 success stays bare JSON, so the two are tellable apart.
 
-**Owed, and not by us: the card still reads "done".** Nothing a server sends can
-change that, because nothing in the event says so. Either the component reads
-the prefix it already writes, or `TOOL_CALL_RESULT` grows the flag every other
-tool protocol has -- MCP has `isError`, ADK renders `{"error": ...}`. This is
-the finding to take to the component and to the protocol; the prefix is what can
-be done from this side alone.
+**Taken to the protocol, 2026-09-05.** The paragraph above used to end here,
+saying the card was not ours to fix and the prefix was all this side could do.
+Half of that is still true and half of it was a failure of nerve.
+
+`TOOL_CALL_RESULT` now carries an optional `outcome` from `aguix`, either
+`failed` or `denied`. The vocabulary is pydantic-ai's own `ToolReturnPart.outcome`
+rather than one invented here, so the family's Python transport forwards a value
+it already computes and currently discards; AG-UI's event schemas are
+`passthrough`, so the key survives a client's parser whether or not that client
+knows it. A success carries no such key, which is what keeps every existing
+server correct.
+
+**Still owed and still not by us: the card reads "done".** A client has to read
+the field for the rendering to change, which is a change in the component and is
+in flight alongside this one. What is no longer true is that a server had nothing
+to say -- it had nothing the protocol had *named*, which is a different problem
+and a fixable one.
 
 ### 11. A scripted agent cannot see its own tool result
 

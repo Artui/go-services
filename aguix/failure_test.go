@@ -102,9 +102,17 @@ func TestAnUnencodableToolResultEndsTheRun(t *testing.T) {
 		t.Errorf("run ended with %v, want RUN_ERROR", last["type"])
 	}
 	// The client still got a result frame, saying the operation failed, before
-	// the run ended -- so the transcript is not a call with no answer.
-	if got := fmt.Sprint(events[len(events)-2]["content"]); got != aguix.ToolResultError {
+	// the run ended -- so the transcript is not a call with no answer. This is
+	// the one failure path the toolbox's own tables cannot reach, because it
+	// needs a service returning a value no encoder can represent, and it is
+	// marked like every other: failed, because the fault is this process's and
+	// nobody refused anything.
+	result := events[len(events)-2]
+	if got := fmt.Sprint(result["content"]); got != aguix.ToolResultError {
 		t.Errorf("result = %q, want the fixed sentence", got)
+	}
+	if got := result["outcome"]; got != string(aguix.OutcomeFailed) {
+		t.Errorf("outcome = %v, want %q", got, aguix.OutcomeFailed)
 	}
 	if reported == nil {
 		t.Error("the encoding failure was not reported")

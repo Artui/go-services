@@ -65,6 +65,24 @@ func eventTypes(events []map[string]any) []string {
 	return out
 }
 
+// outcomeOf returns the outcome the tool result reported, or "" when it carried
+// none -- which is what a success looks like, and is a distinct answer from a
+// failure that forgot to say so.
+func outcomeOf(t *testing.T, events []map[string]any) string {
+	t.Helper()
+	for _, event := range events {
+		if event["type"] == "TOOL_CALL_RESULT" {
+			outcome, present := event["outcome"]
+			if !present {
+				return ""
+			}
+			return fmt.Sprint(outcome)
+		}
+	}
+	t.Fatal("the run carried no tool result")
+	return ""
+}
+
 func resultOf(t *testing.T, events []map[string]any) string {
 	t.Helper()
 	for _, event := range events {
@@ -115,11 +133,16 @@ func TestAnAgentBorrowRollsBack(t *testing.T) {
 	if !strings.Contains(result, "no copy of") {
 		t.Errorf("result = %q, want the conflict's own words", result)
 	}
-	// Marked as a failure, because nothing else on this wire says so: the
-	// protocol has no error flag on a tool result and the component settles
-	// every one it receives as done.
+	// Marked as a failure twice, and both are asserted here because they are
+	// read by different consumers. The prefix is what the model is handed; the
+	// outcome is what a client reads to decide how to render the call. A
+	// composed run is where they can quietly come apart, since nothing inside
+	// aguix alone would notice one being emitted without the other.
 	if !strings.HasPrefix(result, aguix.ToolErrorPrefix) {
 		t.Errorf("result = %q, want it tellable apart from a success", result)
+	}
+	if got := outcomeOf(t, events); got != string(aguix.OutcomeFailed) {
+		t.Errorf("outcome = %q, want the conflict reported as failed", got)
 	}
 	if n := countLoans(t, db); n != 0 {
 		t.Errorf("loans = %d, want 0: the insert escaped the transaction", n)
@@ -187,5 +210,22 @@ func TestTheAgentIsOfferedEveryOperation(t *testing.T) {
 		if !strings.Contains(string(def.Parameters), "properties") {
 			t.Errorf("%q carries no reflected schema: %s", def.Name, def.Parameters)
 		}
+	}
+}
+
+// A success carries no outcome key at all, which is the half of the contract
+// that keeps every client that has not adopted the field correct.
+//
+// Asserted from the composed stack rather than only from aguix's own frame
+// tests: this is the run a browser makes, and an absence is the kind of thing
+// that survives a unit test and gets written by accident somewhere upstream.
+func TestASuccessfulAgentCallReportsNoOutcome(t *testing.T) {
+	events, _ := runAgent(t, newDB(t), "borrow book 10")
+
+	if got := outcomeOf(t, events); got != "" {
+		t.Errorf("outcome = %q on a success, want no key at all", got)
+	}
+	if result := resultOf(t, events); strings.HasPrefix(result, aguix.ToolErrorPrefix) {
+		t.Errorf("result = %q, want a success unmarked", result)
 	}
 }

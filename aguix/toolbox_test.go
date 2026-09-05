@@ -54,6 +54,9 @@ func newRegistry(t *testing.T) *services.Registry[deps] {
 					"%w: book 13 is reference only", services.ErrPermission)
 			case 99:
 				return borrowOut{}, fmt.Errorf("%w: no book 99", services.ErrNotFound)
+			case 5:
+				return borrowOut{}, fmt.Errorf(
+					"%w: no copy of book 5 is on the shelf", services.ErrConflict)
 			case 7:
 				return borrowOut{}, fmt.Errorf("%s", operatorSecret)
 			}
@@ -77,11 +80,21 @@ func toolboxFor(t *testing.T, principal aguix.Principal) *aguix.Toolbox[deps] {
 // runTool drives one scripted tool call and returns the frames it produced.
 func runTool(t *testing.T, box *aguix.Toolbox[deps], args string) []map[string]any {
 	t.Helper()
+	return frames(t, toolStream(t, box, args))
+}
+
+// toolStream is the same run left as the bytes that went out.
+//
+// The frame tests read this rather than the parsed maps, because decoding into
+// a map has already thrown away the one thing they assert: which keys were
+// written. An absent field and a field carrying the zero value are the same map.
+func toolStream(t *testing.T, box *aguix.Toolbox[deps], args string) string {
+	t.Helper()
 	agent := aguix.Scripted(aguix.Rule{
 		Steps: []aguix.Step{aguix.CallTool(box, "borrow_book", json.RawMessage(args))},
 	})
-	return frames(t, run(t, agent, oneTurn,
-		aguix.WithOnError(func(_ *http.Request, _ error) {})).Body.String())
+	return run(t, agent, oneTurn,
+		aguix.WithOnError(func(_ *http.Request, _ error) {})).Body.String()
 }
 
 // The protocol's order, which a client depends on: a call is announced, its
@@ -204,12 +217,14 @@ func TestACallWithNoArgumentsSendsAnEmptyObject(t *testing.T) {
 	}
 }
 
-// The distinction the wire cannot otherwise make.
+// The distinction as the content makes it.
 //
-// TOOL_CALL_RESULT carries a content string and no error flag, and the web
-// component settles every result it receives as done -- so without a marker in
-// the content itself, a refusal and a success are the same event with different
-// words inside. A success is bare JSON; every failure is prefixed.
+// TOOL_CALL_RESULT carries a content string, and the web component settles
+// every result it receives as done -- so without a marker in the content
+// itself, a refusal and a success reach the model as the same event with
+// different words inside. A success is bare JSON; every failure is prefixed.
+// The outcome field says the same thing structurally, for a client that reads
+// it; the test below holds the two together.
 func TestAFailedCallIsTellableApartFromASuccess(t *testing.T) {
 	box := toolboxFor(t, signedIn)
 
@@ -243,5 +258,55 @@ func TestAPrincipalRefusalIsMarked(t *testing.T) {
 	got := fmt.Sprint(events[len(events)-2]["content"])
 	if !strings.HasPrefix(got, aguix.ToolErrorPrefix) {
 		t.Errorf("result = %q, want it marked as a failure", got)
+	}
+}
+
+// The two markers, and the rule that they agree.
+//
+// A failure is marked twice: the prefix in the content, for the model and for
+// every client that has not adopted the field, and the outcome on the event,
+// for the ones that have. Two markers set from one error can still drift apart
+// once someone adds a third failure path, so this is the invariant rather than
+// a second copy of the table above -- prefixed exactly when the outcome is set,
+// and set to the member of the vocabulary the taxonomy calls for.
+func TestTheOutcomeAndThePrefixNeverDisagree(t *testing.T) {
+	for _, tc := range []struct {
+		name, args string
+		principal  aguix.Principal
+		want       aguix.ToolOutcome
+	}{
+		{name: "success", args: `{"book_id":4}`, want: aguix.OutcomeSuccess},
+		{name: "permission", args: `{"book_id":13}`, want: aguix.OutcomeDenied},
+		{
+			name: "principal", args: `{"book_id":4}`,
+			principal: aguix.Anonymous, want: aguix.OutcomeDenied,
+		},
+		{name: "conflict", args: `{"book_id":5}`, want: aguix.OutcomeFailed},
+		{name: "not found", args: `{"book_id":99}`, want: aguix.OutcomeFailed},
+		{name: "validation", args: `{"book_id":0}`, want: aguix.OutcomeFailed},
+		{name: "unexpected", args: `{"book_id":7}`, want: aguix.OutcomeFailed},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			principal := tc.principal
+			if principal == nil {
+				principal = signedIn
+			}
+			events := runTool(t, toolboxFor(t, principal), tc.args)
+			result := events[len(events)-2]
+
+			got, marked := result["outcome"]
+			if !marked {
+				got = ""
+			}
+			if aguix.ToolOutcome(fmt.Sprint(got)) != tc.want {
+				t.Errorf("outcome = %v, want %q", got, tc.want)
+			}
+
+			prefixed := strings.HasPrefix(fmt.Sprint(result["content"]), aguix.ToolErrorPrefix)
+			if prefixed != marked {
+				t.Errorf("content prefixed = %v but outcome present = %v: %v",
+					prefixed, marked, result)
+			}
+		})
 	}
 }
