@@ -65,10 +65,21 @@ tidy: ## Tidy every module
 # adapters listed the kernel they exist to adapt as `// indirect`, and a Go tag
 # cannot be repointed once it is pushed -- so the only thing standing between a
 # stale go.mod and permanence was somebody running the mutating target by hand.
+# Only stdout is captured, and that is the whole trick: `go mod tidy -diff`
+# writes the diff to stdout and its "downloading ..." progress to stderr. Folding
+# stderr in passes on a warm module cache and fails on a cold one, which is the
+# difference between this laptop and CI -- caught by CI on the first run of this
+# very target.
 tidy-check: ## Fail if any module is untidy (CI runs this; tidy does not)
 	@for m in $(MODULES); do \
-		out="$$(cd $$m && $(GO) mod tidy -diff 2>&1)"; \
-		if [ -n "$$out" ]; then echo "untidy module: $$m"; echo "$$out"; exit 1; fi; \
+		if out="$$(cd $$m && $(GO) mod tidy -diff)"; then :; else \
+			if [ -n "$$out" ]; then \
+				echo "untidy module: $$m"; echo "$$out"; \
+			else \
+				echo "go mod tidy -diff failed for $$m (see stderr above)"; \
+			fi; \
+			exit 1; \
+		fi; \
 	done
 
 check: lint test-race cover tidy-check verify-modules check-floors ## Everything CI runs
