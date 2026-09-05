@@ -31,6 +31,8 @@ disagree and when a transaction boundary is wrong.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-09-05
+
 ### Added
 
 - **`ExpandLocation` and `Entry.CheckLocation`, the kernel half of a `Location`
@@ -248,7 +250,8 @@ is what a first consumer is for.
 - Framework-agnostic errors: `ErrNotFound`, `ErrConflict`, `ErrPermission` and
   `ValidationError`.
 
-[Unreleased]: https://github.com/Artui/go-services/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Artui/go-services/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Artui/go-services/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Artui/go-services/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Artui/go-services/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Artui/go-services/releases/tag/v0.2.0
