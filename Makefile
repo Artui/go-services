@@ -2,7 +2,7 @@ GO ?= go
 
 # Every module in the repo. The kernel is first because the adapters depend on
 # it and nothing depends on them.
-MODULES := . httpx ginx mcpx adkx conformance example
+MODULES := . httpx ginx mcpx adkx aguix conformance example
 
 # Every module is built without the workspace, the two unpublished ones
 # included. They carry replace directives rather than published versions, but

@@ -44,6 +44,10 @@ schema the kernel already reflected is handed over as it is.
 `conformance` floors at Go 1.26.6 now, the highest of the modules it drives,
 which is `adkx`.
 
+`aguix` is unreleased. It serves an agent over AG-UI -- Server-Sent Events over
+one POST -- and bridges a registry into it, so a spec becomes a tool an agent
+can call and the client watches the call happen.
+
 `conformance` and `example` are the two modules here that are deliberately never
 tagged: they depend on all of the others, and exist to fail when two transports
 disagree and when a transaction boundary is wrong.
@@ -51,6 +55,46 @@ disagree and when a transaction boundary is wrong.
 ## [Unreleased]
 
 ### Added
+
+- **`aguix`, a fifth adapter: an agent over AG-UI.** An HTTP handler that
+  decodes `RunAgentInput` and streams the protocol's events, a `Toolbox` that
+  turns registry operations into tool calls the client can watch, and a
+  `Scripted` agent so an endpoint can be exercised end to end with no model.
+
+  It **does not** get a conformance column, and that is a decision rather than
+  an omission: AG-UI streams an agent's turn where the other four call one spec,
+  so there is no single call whose answer could be lined up against theirs. What
+  it gets instead is the worked example driving a run and then reading the
+  database -- `TestAnAgentBorrowRollsBack` asserts that a refused borrow through
+  a transport with no status code still leaves no loan row behind.
+
+  The event types are written from the published protocol rather than taken from
+  the community Go SDK, which carries no tags -- the pins found in the wild span
+  nine months with no shared floor, and roughly seventy repositories
+  reimplement these types rather than depend on it. The cost of that choice is
+  the obligation to be right about the wire, so `TestEventFrames` asserts the
+  encoded bytes against field names read out of the `@ag-ui/core` package the
+  web component actually resolves.
+
+- **A browser demo, `example/agentdemo`.** It serves the library registry as an
+  AG-UI agent and a page that drives it through the real `<ag-ui-chat>` web
+  component, loaded from a CDN at a pinned version. There is no model and no API
+  key: the script decides which tool to call, and everything under that is the
+  kernel every other adapter runs, against the same SQLite database.
+
+  Three findings came out of pointing a real client at it, all in
+  `example/FRICTION.md`. One is that **a failed server-side tool call cannot be
+  rendered as failed**: `TOOL_CALL_RESULT` has no error flag and the component
+  settles every result as done, so a refusal arrived as a card reading "done"
+  with "no copy is on the shelf" folded inside it. `aguix` marks failures with
+  the `Error: ` prefix the component already emits for its own browser-side tool
+  failures, which makes a refusal and a success tellable apart on a wire that
+  otherwise cannot say so. The card still reads "done", and that part is the
+  component's to fix. The sharper one is that **the tests were green while
+  the demo was lying**: the script ended with "That is done." and said it over a
+  refusal, with the tool result reading "no copy is on the shelf" directly
+  above. Every assertion held, because none of them had an opinion about whether
+  the sentence was true.
 
 - **`adkx.RunnableTool`**, the shape ADK actually dispatches on.
 

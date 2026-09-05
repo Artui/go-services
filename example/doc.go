@@ -19,11 +19,12 @@
 // difference between the two is what they hold: conformance compares the
 // transports' own answers, and this compares the rows they left behind.
 //
-// aguix, when it exists, will not join that list. AG-UI streams an agent's turn
+// aguix does not join that list, as planned. AG-UI streams an agent's turn
 // rather than calling one spec, so there is no single call whose database state
-// could be compared with the others'. It needs its own harness here, driving a
-// run and asserting what the run committed, and putting it in the mounts table
-// would be claiming the two are the same shape when they are not.
+// could be compared with the others'. It has its own harness instead --
+// agent_test.go drives a run the way a browser does and then reads the rows --
+// and agentdemo serves the same script to the real web component, so the thing
+// a person clicks and the thing CI asserts are one agent.
 //
 // It is deliberately written the way a stranger would write it: only the public
 // API, no reaching into the kernel, and every piece of friction met along the
