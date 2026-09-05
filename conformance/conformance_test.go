@@ -141,6 +141,9 @@ func TestEveryTransportAgrees(t *testing.T) {
 			if std.Status != gin.Status {
 				t.Errorf("HTTP status diverges: httpx=%d ginx=%d", std.Status, gin.Status)
 			}
+			if std.Location != gin.Location {
+				t.Errorf("Location diverges: httpx=%q ginx=%q", std.Location, gin.Location)
+			}
 			if std.Wire != gin.Wire {
 				t.Errorf("HTTP body diverges:\n  httpx: %s\n  ginx:  %s", std.Wire, gin.Wire)
 			}

@@ -90,6 +90,15 @@ func Handler[D any](
 	if !ok {
 		return nil, fmt.Errorf("ginx: no spec named %q is registered", name)
 	}
+	// Checked when the handler is built, so a template naming a field the
+	// output has no property for is refused here rather than found by whoever
+	// followed the header. Mount gets this for free, and so does a handler
+	// placed by hand on a router Mount never saw.
+	if cfg.location != "" {
+		if err := entry.CheckLocation(cfg.location); err != nil {
+			return nil, fmt.Errorf("ginx: %w", err)
+		}
+	}
 
 	return func(c *gin.Context) {
 		who, err := principal(c)
@@ -136,6 +145,20 @@ func Handler[D any](
 		if err != nil {
 			fail(c, err, cfg.onError)
 			return
+		}
+
+		// After the marshal, so a value that cannot be encoded is a 500 with no
+		// Location rather than a 500 claiming something was created. The
+		// net/http adapter reaches the same answer from the other direction --
+		// it expands first and clears the header when the marshal fails -- and
+		// the conformance suite is what holds the two to it.
+		if cfg.location != "" {
+			location, err := services.ExpandLocation(cfg.location, res.Value)
+			if err != nil {
+				fail(c, err, cfg.onError)
+				return
+			}
+			c.Header("Location", location)
 		}
 
 		// c.Data rather than an aborting write: a handler registered after this

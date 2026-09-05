@@ -106,13 +106,26 @@ cannot be carried. The output struct is the only place left, which makes the
 address part of the body on every transport including the ones that have no
 headers.
 
-**Deferred, with the design settled.** It does not belong on `Result`, which is
+**Done, and the design held.** It does not belong on `Result`, which is
 transport-neutral by construction -- a `Location` is an HTTP header and MCP has
 nowhere to put one. It belongs on the HTTP adapters' `Route`, as a template
 filled from the output the dispatch already returned, because the route is the
-only thing in the system that knows the URL shape. That is a feature in two
-adapters rather than an ergonomic fix in the kernel, so it is its own piece of
-work.
+only thing in the system that knows the URL shape.
+
+`Route.Location` and `WithLocation` are on both HTTP adapters; the *filling* is
+`services.ExpandLocation`, in the kernel for the reason `StatusFor` is there --
+a client following a Location must not reach a different place depending on
+which router the server was built with. This module's own `borrow_book` route
+now carries `"/loans/{loan_id}"`, and `TestACreatedLoanSaysWhereItLives` asserts
+both adapters answer `/loans/1`.
+
+One thing only writing it revealed: the two adapters build the header at
+different points -- `httpx` expands before marshalling and clears it if the
+marshal fails, `ginx` marshals first and never expands -- so a value that cannot
+be encoded reaches the same answer by two different routes. The conformance
+suite mounts them with the same template over exactly that case, and moving
+`ginx`'s header write before its marshal makes it fail with
+`Location diverges: httpx="" ginx="/unencodable/fixed"`.
 
 ## 5. Every consumer will write the same driver-error mapping
 

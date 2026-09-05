@@ -51,8 +51,11 @@ func mountHTTPX(t *testing.T, db *sql.DB) transport {
 	t.Helper()
 	mux := http.NewServeMux()
 	err := httpx.Mount(mux, Registry(db), map[string]httpx.Route{
-		"borrow_book": {Method: "POST", Pattern: "/books/{book_id}/loans"},
-		"list_books":  {Method: "GET", Pattern: "/books"},
+		"borrow_book": {
+			Method: "POST", Pattern: "/books/{book_id}/loans",
+			Location: "/loans/{loan_id}",
+		},
+		"list_books": {Method: "GET", Pattern: "/books"},
 	}, headerPrincipal)
 	if err != nil {
 		t.Fatalf("httpx mount: %v", err)
@@ -73,8 +76,11 @@ func mountGinx(t *testing.T, db *sql.DB) transport {
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()
 	err := ginx.Mount(engine, Registry(db), map[string]ginx.Route{
-		"borrow_book": {Method: "POST", Path: "/books/:book_id/loans"},
-		"list_books":  {Method: "GET", Path: "/books"},
+		"borrow_book": {
+			Method: "POST", Path: "/books/:book_id/loans",
+			Location: "/loans/{loan_id}",
+		},
+		"list_books": {Method: "GET", Path: "/books"},
 	}, func(c *gin.Context) (any, error) { return headerPrincipal(c.Request) })
 	if err != nil {
 		t.Fatalf("ginx mount: %v", err)

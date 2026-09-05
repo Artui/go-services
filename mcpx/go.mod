@@ -3,7 +3,7 @@ module github.com/Artui/go-services/mcpx
 go 1.25.0
 
 require (
-	github.com/Artui/go-services v0.4.0
+	github.com/Artui/go-services v0.5.0
 	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 )

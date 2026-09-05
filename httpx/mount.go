@@ -47,6 +47,20 @@ type Route struct {
 	// is unambiguously the mistake and is refused as one.
 	Host string
 
+	// Location sets a Location header on a successful response, from a
+	// template naming fields of the operation's output: "/loans/{loan_id}".
+	// Empty sends no header.
+	//
+	// It is checked against the operation's output schema at Mount, so a
+	// template naming a field nothing produces is refused here rather than
+	// found by whoever followed the header. The filling is the kernel's, so
+	// this adapter and ginx build the same header from the same output.
+	//
+	// The syntax is {name} even though a Pattern above may use the same braces
+	// for captures. They are unrelated: a capture is matched out of the request
+	// path, and this is filled from the response value.
+	Location string
+
 	// Status overrides the success status the spec declared. Zero uses the
 	// spec's own.
 	Status int
@@ -159,6 +173,9 @@ func Mount[D any](
 		routeOpts = append(routeOpts, opts...)
 		if route.Status != 0 {
 			routeOpts = append(routeOpts, WithStatus(route.Status))
+		}
+		if route.Location != "" {
+			routeOpts = append(routeOpts, WithLocation(route.Location))
 		}
 
 		h, err := Handler(reg, name, principal, routeOpts...)

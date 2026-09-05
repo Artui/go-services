@@ -89,7 +89,7 @@ func TestTheWireCarriesNoPackageName(t *testing.T) {
 
 // serveBorrow drives one borrow over whichever HTTP adapter is named, against a
 // database of its own.
-func serveBorrow(t *testing.T, adapter string, member, book int64) (int, string) {
+func serveBorrowFull(t *testing.T, adapter string, member, book int64) (int, string, string) {
 	t.Helper()
 	db := newDB(t)
 
@@ -98,7 +98,10 @@ func serveBorrow(t *testing.T, adapter string, member, book int64) (int, string)
 	case "httpx":
 		mux := http.NewServeMux()
 		if err := httpx.Mount(mux, Registry(db), map[string]httpx.Route{
-			"borrow_book": {Method: "POST", Pattern: "/books/{book_id}/loans"},
+			"borrow_book": {
+				Method: "POST", Pattern: "/books/{book_id}/loans",
+				Location: "/loans/{loan_id}",
+			},
 		}, headerPrincipal); err != nil {
 			t.Fatalf("httpx mount: %v", err)
 		}
@@ -107,7 +110,10 @@ func serveBorrow(t *testing.T, adapter string, member, book int64) (int, string)
 		gin.SetMode(gin.TestMode)
 		engine := gin.New()
 		if err := ginx.Mount(engine, Registry(db), map[string]ginx.Route{
-			"borrow_book": {Method: "POST", Path: "/books/:book_id/loans"},
+			"borrow_book": {
+				Method: "POST", Path: "/books/:book_id/loans",
+				Location: "/loans/{loan_id}",
+			},
 		}, func(c *gin.Context) (any, error) { return headerPrincipal(c.Request) }); err != nil {
 			t.Fatalf("ginx mount: %v", err)
 		}
@@ -120,7 +126,15 @@ func serveBorrow(t *testing.T, adapter string, member, book int64) (int, string)
 	req.Header.Set(memberHeader, strconv.FormatInt(member, 10))
 	rec := httptest.NewRecorder()
 	handler.ServeHTTP(rec, req)
-	return rec.Code, strings.TrimSpace(rec.Body.String())
+	return rec.Code, strings.TrimSpace(rec.Body.String()), rec.Header().Get("Location")
+}
+
+// serveBorrow is the status-and-body half, for the tests that do not care where
+// the loan ended up.
+func serveBorrow(t *testing.T, adapter string, member, book int64) (int, string) {
+	t.Helper()
+	status, body, _ := serveBorrowFull(t, adapter, member, book)
+	return status, body
 }
 
 // callBorrow drives the same operation over MCP, where there is no status and
@@ -161,4 +175,36 @@ func callBorrow(t *testing.T, member, book int64) string {
 		}
 	}
 	return text.String()
+}
+
+// A 201 that says where the thing it created lives.
+//
+// This is the finding FRICTION.md recorded and the ergonomics pass deferred:
+// Result carries no channel for a header, so the template lives on the route,
+// which is the only thing in the system that knows the URL shape. Both HTTP
+// adapters build it from the kernel, so both answer the same path.
+func TestACreatedLoanSaysWhereItLives(t *testing.T) {
+	for _, adapter := range []string{"httpx", "ginx"} {
+		status, body, location := serveBorrowFull(t, adapter, 1, 10)
+		if status != http.StatusCreated {
+			t.Fatalf("%s: status = %d, want 201 (body %s)", adapter, status, body)
+		}
+		// Loan 1, because each adapter runs against a database of its own.
+		if location != "/loans/1" {
+			t.Errorf("%s: Location = %q, want %q", adapter, location, "/loans/1")
+		}
+	}
+}
+
+// A refusal points nowhere, because nothing was created.
+func TestARefusedBorrowSaysNothingAboutWhere(t *testing.T) {
+	for _, adapter := range []string{"httpx", "ginx"} {
+		status, _, location := serveBorrowFull(t, adapter, 1, 11)
+		if status != http.StatusConflict {
+			t.Fatalf("%s: status = %d, want 409", adapter, status)
+		}
+		if location != "" {
+			t.Errorf("%s: Location = %q on a 409", adapter, location)
+		}
+	}
 }

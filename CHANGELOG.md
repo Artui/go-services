@@ -20,6 +20,16 @@ conformance suite could show they answer the same.
 - **`mcpx/v0.1.0`** -- exposes a registry as MCP tools through the official SDK,
   handing it the schema the kernel already reflected rather than a second one.
 
+`httpx` and `ginx` move to **v0.2.0** on 2026-09-05, gaining `Route.Location`
+and `WithLocation`. `mcpx` moves to **v0.1.2** the same day with no change but
+its floor.
+
+Every adapter floors on the newest kernel, including one that uses nothing the
+release added. The alternative leaves that adapter's CI resolving a kernel no
+consumer runs: Go takes the maximum across a build, so anyone pairing two
+adapters gets the newest kernel regardless, and the low floor only ever applied
+to the single-adapter case while the paired case went untested.
+
 All three moved to **v0.1.1** on 2026-09-04, raising their kernel floor from
 v0.3.0 to v0.4.0. That raise is the whole release: until it happened, installing
 an adapter resolved the old kernel, so the error wording v0.4.0 corrected still
@@ -30,6 +40,33 @@ tagged: they depend on all of the others, and exist to fail when two transports
 disagree and when a transaction boundary is wrong.
 
 ## [Unreleased]
+
+### Added
+
+- **`Route.Location` and `WithLocation` on both HTTP adapters.** A successful
+  response carries a `Location` built from a template naming the operation's
+  output fields -- `"/loans/{loan_id}"` -- which is what a 201 is specified to
+  do and what `Result` had no channel for. `mcpx` gains nothing: MCP has no
+  headers, and inventing somewhere to put one would be an HTTP concept on a wire
+  that does not want it.
+
+  The filling is the kernel's `ExpandLocation`, so both adapters answer the same
+  path for the same output. A template naming a field the output schema does not
+  declare is refused when the handler is built.
+
+- **The conformance suite compares the `Location` header.** It is not a
+  formality: the two adapters build it at different points -- `httpx` expands
+  before marshalling and clears the header if the marshal fails, `ginx` marshals
+  first and never expands -- so they reach the same answer by different routes.
+  Both are mounted over a value that cannot be encoded, and moving `ginx`'s
+  header write before its marshal fails the suite with
+  `Location diverges: httpx="" ginx="/unencodable/fixed"`.
+
+### Changed
+
+- **Every module floors on kernel v0.5.0**, `mcpx` included, and that is now the
+  repository's rule rather than a judgement per release. A module left behind is
+  the one combination nobody runs.
 
 ## [0.5.0] - 2026-09-05
 

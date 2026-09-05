@@ -3,7 +3,7 @@ module github.com/Artui/go-services/ginx
 go 1.26.0
 
 require (
-	github.com/Artui/go-services v0.4.0
+	github.com/Artui/go-services v0.5.0
 	github.com/gin-gonic/gin v1.12.0
 )
 

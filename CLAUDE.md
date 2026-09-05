@@ -50,6 +50,16 @@ hook ever has to be relaxed, the design has changed and the plan should say so.
   fetches the newer one. `make check-floors` asserts each module's floor against
   a list with a reason per entry. Raising a floor is fine; raising it by
   accident is what that refuses.
+- **Every module floors on the newest kernel tag, whether or not it uses what
+  that release added.** A module left on an older floor is the one combination
+  nobody runs: Go picks the maximum across a build, so any consumer pairing two
+  adapters gets the newest kernel anyway, while that module's own CI leg keeps
+  resolving the old one -- testing a pairing the field never sees and leaving
+  the pairing it does see untested. Raising a floor "only when it buys
+  something" optimises for a single-adapter consumer pinned to an old kernel, at
+  the cost of the consumers there actually are. A kernel release is therefore a
+  sweep: raise every module, re-tag every adapter, and say in the changelog
+  which ones changed nothing but the floor.
 - `conformance/` is a fifth module and is **never published**. It drives one
   spec set through every adapter and asserts they agree, so it necessarily
   depends on all of them and carries `replace` directives pointing at the
