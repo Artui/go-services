@@ -6,23 +6,13 @@ import (
 
 	services "github.com/Artui/go-services"
 	"github.com/Artui/go-services/adkx"
-	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/tool"
-	"google.golang.org/genai"
 )
 
-// runnableTool is ADK's own dispatch shape, restated here because the real one
-// is unexported.
-//
-// That is the whole risk this package carries: ADK matches a tool structurally
-// at the point of use, so nothing in the compiler tells us a method drifted.
-// Asserting the shape in a test is what turns a runtime surprise into a build
-// failure, and it is why the interface is written out rather than inferred.
-type runnableTool interface {
-	tool.Tool
-	Declaration() *genai.FunctionDeclaration
-	Run(ctx agent.Context, args any) (map[string]any, error)
-}
+// The interface this suite used to write out for itself now has a name, and
+// asserting against that name is what makes a drift in ADK's shape a build
+// failure in adkx rather than a runtime surprise in a consumer's agent.
+type runnableTool = adkx.RunnableTool
 
 func mustToolset(t *testing.T, opts ...adkx.Option) tool.Toolset {
 	t.Helper()

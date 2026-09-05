@@ -17,8 +17,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"google.golang.org/adk/v2/agent"
-	adktool "google.golang.org/adk/v2/tool"
-	"google.golang.org/genai"
 
 	"github.com/Artui/go-services/adkx"
 )
@@ -159,15 +157,9 @@ func callTool(t *testing.T, s *mcp.ClientSession, name string, args map[string]a
 	return out
 }
 
-// adkTool is ADK's own dispatch shape, restated here because the real one is
-// unexported. It is the same assertion adkx's own suite makes, and it is worth
-// repeating: ADK matches a tool structurally at the point of use, so a drifted
-// method is a runtime surprise unless something names the shape.
-type adkTool interface {
-	adktool.Tool
-	Declaration() *genai.FunctionDeclaration
-	Run(ctx agent.Context, args any) (map[string]any, error)
-}
+// adkTool is the shape ADK dispatches on, which adkx now names so that this
+// driver, adkx's own suite and the worked example stop each carrying a copy.
+type adkTool = adkx.RunnableTool
 
 // adkContext is an invocation context for the anonymous principal this suite
 // uses everywhere. StrictContextMock is ADK's own double and implements the
