@@ -39,6 +39,17 @@ type Outcome struct {
 	// Status is HTTP-only and zero elsewhere. It is compared within the HTTP
 	// pair and ignored across transports.
 	Status int
+
+	// Location is the Location header, HTTP-only and empty elsewhere.
+	//
+	// It is here rather than left to each adapter's own suite because the whole
+	// argument for building it in the kernel is that a client following the
+	// header must not reach a different place depending on which router the
+	// server was built with. Each adapter reaches it from a different
+	// direction -- one expands before marshalling and clears the header when
+	// the marshal fails, the other marshals first and never expands -- and this
+	// is what holds the two answers together.
+	Location string
 }
 
 // MessagesFromJSON flattens an HTTP error envelope into the messages it

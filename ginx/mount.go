@@ -31,6 +31,16 @@ type Route struct {
 	// will ever serve.
 	Path string
 
+	// Location sets a Location header on a successful response, from a template
+	// naming fields of the operation's output: "/loans/{loan_id}". Empty sends
+	// no header.
+	//
+	// The syntax is {name} and not the ":name" this route's Path uses. They are
+	// unrelated: a capture is matched out of the request path, and this is
+	// filled from the response value. It is checked against the operation's
+	// output schema at Mount.
+	Location string
+
 	// Status overrides the spec's declared success status for this route. Zero
 	// means the spec's own, which is the right answer unless one operation is
 	// genuinely reachable two ways with different HTTP semantics.
@@ -165,12 +175,18 @@ func Mount[D any](
 		}
 		claimed[claim] = name
 
-		// Clip so that appending the route's own override allocates rather than
-		// writing into the caller's backing array, where it would leak into
-		// every route mounted after this one.
-		routeOpts := opts
+		// A fresh slice per route, so that appending a route's own overrides
+		// cannot write into the caller's backing array and leak into every
+		// route mounted after this one. Clipping would do for a single
+		// override; with two, always allocating is the version that stays
+		// obviously correct, and it is what the net/http adapter does.
+		routeOpts := make([]Option, 0, len(opts)+2)
+		routeOpts = append(routeOpts, opts...)
 		if route.Status != 0 {
-			routeOpts = append(slices.Clip(opts), WithStatus(route.Status))
+			routeOpts = append(routeOpts, WithStatus(route.Status))
+		}
+		if route.Location != "" {
+			routeOpts = append(routeOpts, WithLocation(route.Location))
 		}
 		handler, err := Handler(reg, name, principal, routeOpts...)
 		if err != nil {

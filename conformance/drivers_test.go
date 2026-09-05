@@ -20,19 +20,28 @@ import (
 
 // The route table, shared so the two HTTP adapters are mounted identically.
 // Only the path syntax differs, which is the one thing they cannot share.
+//
+// location is the Location template, shared for the same reason. The two
+// adapters build the header at different points -- one expands before
+// marshalling and clears it if the marshal fails, the other marshals first and
+// never expands -- so mounting them with the same template is what turns that
+// into a comparison instead of two separate opinions.
 var routes = []struct {
-	spec, method, stdPattern, ginPath string
+	spec, method, stdPattern, ginPath, location string
 }{
-	{"create_author", "POST", "/authors", "/authors"},
-	{"get_author", "GET", "/authors/{name}", "/authors/:name"},
-	{"patch_author", "PATCH", "/authors", "/authors"},
-	{"no_args", "GET", "/ping", "/ping"},
-	{"denied", "POST", "/denied", "/denied"},
-	{"missing", "POST", "/missing", "/missing"},
-	{"clash", "POST", "/clash", "/clash"},
-	{"boom", "POST", "/boom", "/boom"},
-	{"typed_nil", "POST", "/typed_nil", "/typed_nil"},
-	{"unencodable", "GET", "/unencodable", "/unencodable"},
+	{"create_author", "POST", "/authors", "/authors", "/authors/{name}"},
+	{"get_author", "GET", "/authors/{name}", "/authors/:name", ""},
+	{"patch_author", "PATCH", "/authors", "/authors", ""},
+	{"no_args", "GET", "/ping", "/ping", ""},
+	{"denied", "POST", "/denied", "/denied", ""},
+	{"missing", "POST", "/missing", "/missing", ""},
+	{"clash", "POST", "/clash", "/clash", ""},
+	{"boom", "POST", "/boom", "/boom", ""},
+	{"typed_nil", "POST", "/typed_nil", "/typed_nil", ""},
+	// A fixed template over a value that cannot be encoded. This is the case
+	// where the two adapters take genuinely different paths to the same answer,
+	// and neither may end up claiming something was created.
+	{"unencodable", "GET", "/unencodable", "/unencodable", "/unencodable/fixed"},
 }
 
 func anonymousHTTP(*http.Request) (any, error)                        { return nil, nil }
@@ -44,7 +53,9 @@ func mountHTTPX(t *testing.T, reg *services.Registry[conformance.Deps]) *http.Se
 	mux := http.NewServeMux()
 	table := map[string]httpx.Route{}
 	for _, r := range routes {
-		table[r.spec] = httpx.Route{Method: r.method, Pattern: r.stdPattern}
+		table[r.spec] = httpx.Route{
+			Method: r.method, Pattern: r.stdPattern, Location: r.location,
+		}
 	}
 	if err := httpx.Mount(mux, reg, table, anonymousHTTP); err != nil {
 		t.Fatalf("httpx mount: %v", err)
@@ -58,7 +69,7 @@ func mountGinx(t *testing.T, reg *services.Registry[conformance.Deps]) *gin.Engi
 	engine := gin.New()
 	table := map[string]ginx.Route{}
 	for _, r := range routes {
-		table[r.spec] = ginx.Route{Method: r.method, Path: r.ginPath}
+		table[r.spec] = ginx.Route{Method: r.method, Path: r.ginPath, Location: r.location}
 	}
 	if err := ginx.Mount(engine, reg, table, anonymousGin); err != nil {
 		t.Fatalf("ginx mount: %v", err)
@@ -97,10 +108,11 @@ func serveHTTP(h http.Handler, method, target, body string) conformance.Outcome 
 	raw, _ := io.ReadAll(rec.Body)
 
 	out := conformance.Outcome{
-		Status: rec.Code,
-		Failed: rec.Code >= 400,
-		Wire:   string(raw),
-		Leaked: strings.Contains(string(raw), conformance.SecretText),
+		Status:   rec.Code,
+		Failed:   rec.Code >= 400,
+		Wire:     string(raw),
+		Location: rec.Header().Get("Location"),
+		Leaked:   strings.Contains(string(raw), conformance.SecretText),
 	}
 	if out.Failed {
 		out.Messages = conformance.MessagesFromJSON(raw)

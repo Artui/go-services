@@ -26,6 +26,12 @@ type config struct {
 	status    int
 	statusSet bool
 
+	// location is a Location header template, or empty for no header. Unlike
+	// status it needs no "was it set" flag: an empty template and "nobody
+	// asked" are the same request, since a Location that is the empty string
+	// is not a thing anyone can want.
+	location string
+
 	// onError observes an error this package could not map onto a status. It
 	// exists because the 500 response deliberately says nothing.
 	onError func(*gin.Context, error)
@@ -39,6 +45,24 @@ type config struct {
 // Route.Status overrides it again for one route.
 func WithStatus(code int) Option {
 	return func(c *config) { c.status, c.statusSet = code, true }
+}
+
+// WithLocation sets a Location header on a successful response, from a template
+// naming fields of the operation's output: "/loans/{loan_id}".
+//
+// The filling is services.ExpandLocation, so this adapter and the net/http one
+// build the same header from the same output. That matters more than it looks:
+// a client following a Location must not reach a different place depending on
+// which router the server happens to be built with.
+//
+// The syntax is {name}, not Gin's :name. A route path is a pattern matched out
+// of the request; this is a template filled from the response, and the two are
+// unrelated enough that sharing a syntax would only suggest otherwise.
+//
+// Passed to Mount it sets the default for every route in the table, and a
+// Route.Location overrides it again for one route.
+func WithLocation(template string) Option {
+	return func(c *config) { c.location = template }
 }
 
 // WithErrorHandler registers fn to receive the errors this package answers with

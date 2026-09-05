@@ -74,6 +74,14 @@ func Handler[D any](
 	if cfg.status != 0 && !services.ValidSuccessStatus(cfg.status) {
 		return nil, fmt.Errorf("httpx: %q: %d cannot be sent as a response status", name, cfg.status)
 	}
+	// Checked here rather than only in Mount, so the bare-handler form gets it
+	// too. A template naming a field the output has no property for would
+	// otherwise be found by whoever followed the header.
+	if cfg.location != "" {
+		if err := entry.CheckLocation(cfg.location); err != nil {
+			return nil, fmt.Errorf("httpx: %w", err)
+		}
+	}
 	return &handler[D]{reg: reg, entry: entry, principal: principal, cfg: cfg}, nil
 }
 
@@ -117,7 +125,19 @@ func (h *handler[D]) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if status == 0 {
 		status = result.Status
 	}
-	h.write(w, r, status, result.Value)
+
+	// Expanded before anything is written, so a broken template is a redacted
+	// 500 with the real error on the observer -- not a half-sent response with
+	// the status line already committed.
+	var location string
+	if h.cfg.location != "" {
+		location, err = services.ExpandLocation(h.cfg.location, result.Value)
+		if err != nil {
+			h.fail(w, r, err)
+			return
+		}
+	}
+	h.write(w, r, status, result.Value, location)
 }
 
 // payload assembles the JSON document the kernel dispatches on.
@@ -184,7 +204,9 @@ func (h *handler[D]) body(w http.ResponseWriter, r *http.Request) (json.RawMessa
 func (h *handler[D]) fail(w http.ResponseWriter, r *http.Request, err error) {
 	status, body := errorResponseFor(err)
 	h.observe(r, status, err)
-	h.write(w, r, status, body)
+	// No Location on a failure: nothing was created, so there is nowhere to
+	// point at.
+	h.write(w, r, status, body, "")
 }
 
 // write renders v as the response body at status.
@@ -193,8 +215,11 @@ func (h *handler[D]) fail(w http.ResponseWriter, r *http.Request, err error) {
 // straight into the ResponseWriter commits a 200 and then fails part-way
 // through the body, handing the client a truncated success it has no way to
 // detect; buffering costs one copy and buys the ability to still send a 500.
-func (h *handler[D]) write(w http.ResponseWriter, r *http.Request, status int, v any) {
+func (h *handler[D]) write(
+	w http.ResponseWriter, r *http.Request, status int, v any, location string,
+) {
 	if !bodyAllowedForStatus(status) {
+		setLocation(w, location)
 		w.WriteHeader(status)
 		return
 	}
@@ -204,11 +229,17 @@ func (h *handler[D]) write(w http.ResponseWriter, r *http.Request, status int, v
 		// The service returned something no encoder can represent: a NaN, a
 		// channel, a cycle. That is this process's bug rather than the
 		// client's, so it is redacted and reported like any other one.
+		//
+		// The Location goes with it. It is reachable together with this branch
+		// because a template with no placeholders never marshals the output to
+		// build itself, and a response that has become an internal error must
+		// not still claim something was created.
 		h.observe(r, http.StatusInternalServerError, err)
-		status, body = http.StatusInternalServerError, internalBody
+		status, body, location = http.StatusInternalServerError, internalBody, ""
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	setLocation(w, location)
 	w.WriteHeader(status)
 	// The status line is already on the wire, so a write failure -- a client
 	// that hung up mid-response -- has nobody left to tell.
@@ -218,5 +249,14 @@ func (h *handler[D]) write(w http.ResponseWriter, r *http.Request, status int, v
 func (h *handler[D]) observe(r *http.Request, status int, err error) {
 	if h.cfg.onError != nil {
 		h.cfg.onError(r, status, err)
+	}
+}
+
+// setLocation writes the header when there is one, and is a function rather
+// than two inline conditionals so the two write paths cannot diverge on whether
+// an empty template means an empty header or no header at all.
+func setLocation(w http.ResponseWriter, location string) {
+	if location != "" {
+		w.Header().Set("Location", location)
 	}
 }

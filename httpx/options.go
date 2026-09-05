@@ -16,6 +16,7 @@ type Option func(*config)
 // each deployment sets differently on each transport.
 type config struct {
 	status     int
+	location   string
 	onError    func(*http.Request, int, error)
 	pathValues func(*http.Request) map[string][]string
 }
@@ -35,6 +36,26 @@ func newConfig(opts []Option) config {
 // setting expressed per route, and takes precedence over this one.
 func WithStatus(status int) Option {
 	return func(c *config) { c.status = status }
+}
+
+// WithLocation sets a Location header on a successful response, from a template
+// naming fields of the operation's output: "/loans/{loan_id}".
+//
+// The filling is services.ExpandLocation, so both HTTP adapters build the same
+// header from the same output -- a client following it must not reach a
+// different place depending on which router the server happens to use. Values
+// are path-escaped there, and a template naming a field the output does not
+// declare is refused when the handler is built rather than when a response goes
+// out with a broken header.
+//
+// Route.Location is the same setting expressed per route, and takes precedence
+// over this one, exactly as Route.Status does.
+//
+// A 201 is what this is for. Nothing here restricts it to one status, because a
+// route author asking for a Location on a 200 has a reason this package cannot
+// see, but note that a 204 carries the header and no body at all.
+func WithLocation(template string) Option {
+	return func(c *config) { c.location = template }
 }
 
 // WithOnError hands every failed request to fn, with the status that was sent
