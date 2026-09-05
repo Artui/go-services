@@ -12,7 +12,7 @@ MODULES := . httpx ginx mcpx adkx aguix conformance example
 # and nothing local complained.
 PUBLISHED := $(MODULES)
 
-.PHONY: help fmt fmt-check vet lint test test-race cover check tidy verify-modules check-floors
+.PHONY: help fmt fmt-check vet lint test test-race cover check tidy tidy-check verify-modules check-floors
 
 help:
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -59,4 +59,16 @@ check-floors: ## Fail if a module's Go floor moved without a decision
 tidy: ## Tidy every module
 	@for m in $(MODULES); do (cd $$m && $(GO) mod tidy); done
 
-check: lint test-race cover verify-modules check-floors ## Everything CI runs
+# The check half of `tidy`, on the same pattern as fmt / fmt-check: CI runs the
+# one that cannot rewrite the tree. Added after an untidy go.mod reached a
+# published tag. `go mod tidy` had never run in CI, so nothing noticed that two
+# adapters listed the kernel they exist to adapt as `// indirect`, and a Go tag
+# cannot be repointed once it is pushed -- so the only thing standing between a
+# stale go.mod and permanence was somebody running the mutating target by hand.
+tidy-check: ## Fail if any module is untidy (CI runs this; tidy does not)
+	@for m in $(MODULES); do \
+		out="$$(cd $$m && $(GO) mod tidy -diff 2>&1)"; \
+		if [ -n "$$out" ]; then echo "untidy module: $$m"; echo "$$out"; exit 1; fi; \
+	done
+
+check: lint test-race cover tidy-check verify-modules check-floors ## Everything CI runs
