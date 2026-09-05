@@ -11,23 +11,36 @@ import (
 	services "github.com/Artui/go-services"
 )
 
-// ToolErrorPrefix marks a tool result as a failure.
+// ToolErrorPrefix marks a tool result as a failure, in the content itself.
 //
-// AG-UI's TOOL_CALL_RESULT carries a content string and nothing else: there is
-// no error flag on the event, and the web component settles every result it
-// receives as done. So a refusal that simply put its reason in the content was
-// indistinguishable from a success -- the card read "done" with "no copy is on
-// the shelf" folded inside it, which is a failure disguised as an outcome.
+// AG-UI's TOOL_CALL_RESULT carries a content string, and as published it
+// carried nothing else: no field said whether the call succeeded, and the web
+// component settles every result it receives as done. So a refusal that simply
+// put its reason in the content was indistinguishable from a success -- the
+// card read "done" with "no copy is on the shelf" folded inside it, which is a
+// failure disguised as an outcome.
 //
-// The prefix is not invented here. When the component's own browser-side tool
-// handler throws, it sends the result back as "Error: " followed by the
-// message. Emitting the same shape for a server-side failure means the model
-// sees one convention whichever side the tool ran on, and a person reading the
-// transcript sees the word before the reason rather than after it.
+// There is a structural answer now as well: Event.Outcome, serialised as
+// "outcome" and emitted on every result that did not succeed. The two are not
+// alternatives, and dropping either would lose something a reader has.
 //
-// It does not change how the card renders, because nothing a server sends can:
-// that is a limit of the protocol and of the component, recorded as a finding
-// rather than worked around.
+//   - The field is for a client that reads it. It is machine-readable, cannot
+//     be mistaken for a service's own words, and survives the content being
+//     re-rendered, translated or truncated.
+//   - The prefix is for the model, and for every client that does not read the
+//     field. A tool result is fed back to whatever decides the next move, and
+//     that reader is handed the content rather than the envelope around it. The
+//     prefix is also the convention the component already emits when its own
+//     browser-side tool handler throws, so the model sees one shape whichever
+//     side the tool ran on, and a person reading the transcript sees the word
+//     before the reason rather than after it.
+//
+// Where this stands, stated so nobody has to infer it: the field is proposed
+// upstream and emitted ahead of standardisation. A client that has not adopted
+// it sees exactly the stream it saw before -- see ToolOutcome for why that is
+// checked rather than assumed -- and that includes the card still reading
+// "done", which remains the component's to fix and is why the prefix is not a
+// stopgap to be dropped once the field is standard.
 const ToolErrorPrefix = "Error: "
 
 // ToolResultError is what a tool result says when a call failed for a reason
@@ -131,47 +144,54 @@ func (t *Toolbox[D]) Call(
 		return err
 	}
 
-	content, runErr := t.dispatch(ctx, name, args)
-	if err := out.Emit(ToolCallResult(t.ids(), callID, content)); err != nil {
+	content, outcome, runErr := t.dispatch(ctx, name, args)
+	if err := out.Emit(ToolCallResult(t.ids(), callID, content, outcome)); err != nil {
 		return err
 	}
 	return runErr
 }
 
-// dispatch runs the operation and renders its answer as the string a tool
-// result carries.
+// dispatch runs the operation, renders its answer as the string a tool result
+// carries, and says how it ended.
 //
-// The second return is the error the RUN should fail with, which is almost
-// never set: a refusal and a validation failure are answers, and only a fault
-// in this deployment is a reason to stop the run.
+// The third return is the error the RUN should fail with, which is almost never
+// set: a refusal and a validation failure are answers, and only a fault in this
+// deployment is a reason to stop the run.
 func (t *Toolbox[D]) dispatch(
 	ctx context.Context, name string, args json.RawMessage,
-) (string, error) {
+) (string, ToolOutcome, error) {
 	who, err := t.principal(ctx)
 	if err != nil {
-		return t.explain(err), nil
+		content, outcome := t.explain(err)
+		return content, outcome, nil
 	}
 
 	result, err := t.reg.Dispatch(ctx, who, name, args)
 	if err != nil {
-		return t.explain(err), nil
+		content, outcome := t.explain(err)
+		return content, outcome, nil
 	}
 	// Only a success reaches the encoder below, so only a success is rendered
-	// as bare JSON. Everything explain returns is prefixed, which is what makes
-	// the two tellable apart on a wire that has no other way to say so.
+	// as bare JSON and only a success carries no outcome. Everything explain
+	// returns is both prefixed and marked, and the two markers are set in the
+	// same place so they cannot come to disagree.
 
 	payload, err := json.Marshal(result.Value)
 	if err != nil {
 		// The service returned something no encoder can represent. That is this
 		// process's bug rather than anything the agent did, and it is the one
 		// case worth ending the run over: a client shown a tool result it
-		// cannot parse has no way to tell that from an empty answer.
-		return ToolResultError, fmt.Errorf("aguix: %q returned an unencodable value: %w", name, err)
+		// cannot parse has no way to tell that from an empty answer. The result
+		// still goes out, marked failed, so the transcript is not a call with
+		// no answer.
+		return ToolResultError, OutcomeFailed,
+			fmt.Errorf("aguix: %q returned an unencodable value: %w", name, err)
 	}
-	return string(payload), nil
+	return string(payload), OutcomeSuccess, nil
 }
 
-// explain is the taxonomy split, in the wording a tool result uses.
+// explain is the taxonomy split, in the wording a tool result uses and in the
+// outcome it reports.
 //
 // A validation failure is rendered as prose rather than as a JSON error
 // envelope, which is what the HTTP adapters send. The reader is different: a
@@ -179,22 +199,54 @@ func (t *Toolbox[D]) dispatch(
 // to do next, so the answer says which argument was wrong and that trying again
 // is the expected move. It is the same call mcpx and adkx make, for the same
 // reason, and it is why the wording is theirs rather than the HTTP one.
-func (t *Toolbox[D]) explain(err error) string {
+//
+// The outcome is decided here too, from the same error, so the prefix and the
+// field can never contradict each other: nothing returns one without the other.
+func (t *Toolbox[D]) explain(err error) (string, ToolOutcome) {
 	var invalid *services.ValidationError
 	switch {
+	// Failed, not denied. The call was attempted, the arguments were read, and
+	// they were rejected on their merits -- and the answer says how to fix
+	// them, so a caller that rephrases gets a different result. That is the
+	// opposite of a denial.
+	//
 	// The nil check is not redundant with errors.As: a helper returning
 	// *ValidationError assigned into an error yields a non-nil error holding a
 	// nil pointer, which errors.As matches. Rendering that as "the arguments
 	// were rejected" with nothing listed invites a retry that cannot succeed.
 	case errors.As(err, &invalid) && invalid != nil:
-		return ToolErrorPrefix + explainValidation(invalid)
+		return ToolErrorPrefix + explainValidation(invalid), OutcomeFailed
 
-	case errors.Is(err, services.ErrPermission),
-		errors.Is(err, services.ErrNotFound),
+	// Denied, and this is the mapping worth arguing rather than assuming. The
+	// contract's "denied" means refused by a person or a guard rather than
+	// attempted, and that is what this sentinel says in the kernel's own words:
+	// the acting principal may not do this. Nothing happened -- the refusal
+	// came from the principal before the registry was reached, or from the deps
+	// resolver before the service ran, or from a guard the spec author wrote,
+	// in which case the transaction rolled back -- and no rephrasing of the
+	// arguments changes the answer, which is exactly what separates it from the
+	// two below.
+	//
+	// Where the refusal came from is deliberately not distinguished. To a
+	// client the three mean one thing, and a wire field is worth having only
+	// while every producer fills it the same way.
+	case errors.Is(err, services.ErrPermission):
+		return ToolErrorPrefix + err.Error(), OutcomeDenied
+
+	// Failed. These two are answers about the state of the world rather than
+	// about the caller: the call ran, looked, and found the row missing or the
+	// current state forbidding it. A client can offer "sign in as someone else"
+	// for the denial above and "ask for a different book" for these, which is
+	// the whole reason the distinction is on the wire at all.
+	case errors.Is(err, services.ErrNotFound),
 		errors.Is(err, services.ErrConflict):
-		return ToolErrorPrefix + err.Error()
+		return ToolErrorPrefix + err.Error(), OutcomeFailed
 	}
-	return ToolResultError
+	// Outside the taxonomy: a bug, or an upstream that broke. Failed rather
+	// than denied, because nobody refused anything -- and reporting a fault as
+	// a denial would tell a client to stop asking, which is the one conclusion
+	// it must not draw from a server that is simply broken.
+	return ToolResultError, OutcomeFailed
 }
 
 // explainValidation lists the rejected arguments, one per line.

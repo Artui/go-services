@@ -39,6 +39,55 @@ const (
 	EventToolCallResult EventType = "TOOL_CALL_RESULT"
 )
 
+// ToolOutcome says how a tool call ended.
+//
+// TOOL_CALL_RESULT carries a content string and, as published, nothing else --
+// no field saying whether the call succeeded. So a refusal and a success are
+// the same frame with different words inside, and a client that wants to render
+// them differently has to read the prose to find out which it got.
+//
+// This is the structural answer, serialised as "outcome". The vocabulary is
+// pydantic-ai's own ToolReturnPart.outcome rather than one invented here, so
+// the family's Python transport can forward what it already has and nothing in
+// the chain has to translate. Its fourth member, "interrupted", is deliberately
+// absent: it describes a run that was stopped rather than a call that ended,
+// and it is not part of what a client is asked to render.
+//
+// The field is proposed upstream and emitted ahead of standardisation, which is
+// a position rather than an accident: a consumer that reads it gains the
+// distinction now, and one that does not sees exactly the stream it saw before.
+// That second half is checked rather than assumed -- @ag-ui/core builds every
+// event schema on a BaseEventSchema ending in .passthrough(), so an unrecognised
+// key is neither stripped nor refused by the client's own parser. Verified at
+// 0.0.59, the version the web component resolves; a schema that later turned
+// strict would refuse this field, which is a thing to re-check rather than a
+// thing to hope about.
+type ToolOutcome string
+
+const (
+	// OutcomeSuccess is the absence of the field, and its value is the empty
+	// string for exactly that reason: omitempty drops it.
+	//
+	// A successful result must not carry the key at all -- not even as
+	// "success". A producer that has not adopted the field is indistinguishable
+	// from one reporting a success, so absence is what the contract had to
+	// mean; writing the word as well would suggest a client may require a key
+	// that half the servers on this protocol will never send.
+	//
+	// It exists as a constant so that emitting a success is something a call
+	// site says rather than something it leaves out.
+	OutcomeSuccess ToolOutcome = ""
+
+	// OutcomeFailed is a call that ran and failed: a bug, a definitive upstream
+	// error, or a domain refusal such as a conflict or a missing row.
+	OutcomeFailed ToolOutcome = "failed"
+
+	// OutcomeDenied is a call refused by a person or a guard rather than
+	// attempted. Nothing happened, and nothing the caller rephrases will change
+	// that -- which is the half a client can act on differently.
+	OutcomeDenied ToolOutcome = "denied"
+)
+
 // Event is one frame on the wire.
 //
 // It is a single struct with omitempty fields rather than one type per event.
@@ -73,6 +122,12 @@ type Event struct {
 	// returned an object: the protocol says so, and the client renders it as
 	// the tool's textual answer.
 	Content string `json:"content,omitempty"`
+
+	// Outcome is set only when the call did not succeed. It is declared last so
+	// that a successful result's frame is byte for byte what it was before the
+	// field existed, which is the compatibility claim stated as a property of
+	// the struct rather than as a promise in a comment.
+	Outcome ToolOutcome `json:"outcome,omitempty"`
 }
 
 // RunStarted opens a run. Every stream begins with one, and a client that
@@ -133,13 +188,19 @@ func ToolCallEnd(toolCallID string) Event {
 	return Event{Type: EventToolCallEnd, ToolCallID: toolCallID}
 }
 
-// ToolCallResult reports what the call returned.
+// ToolCallResult reports what the call returned and how it ended.
 //
 // messageID identifies the tool message this result becomes in the thread, and
 // is distinct from the tool call's own id: the protocol requires both.
-func ToolCallResult(messageID, toolCallID, content string) Event {
+//
+// The outcome is a parameter rather than a second constructor because a caller
+// that has an answer always knows which kind it is, and a signature that can be
+// satisfied by saying nothing is one a later emit site will satisfy that way.
+// Pass OutcomeSuccess, which is the empty value and therefore writes no field.
+func ToolCallResult(messageID, toolCallID, content string, outcome ToolOutcome) Event {
 	return Event{
 		Type: EventToolCallResult, MessageID: messageID,
 		ToolCallID: toolCallID, Content: content, Role: "tool",
+		Outcome: outcome,
 	}
 }
