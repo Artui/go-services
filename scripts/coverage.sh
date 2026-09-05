@@ -17,7 +17,7 @@ EXCLUSIONS=$PWD/scripts/coverage-exclusions.txt
 # What they owe instead is that they fail when the thing they watch breaks, and
 # both are checked by falsifying them -- conformance by reinstating an adapter
 # divergence, example by resolving dependencies outside the transaction.
-MODULES=${MODULES:-". httpx ginx mcpx"}
+MODULES=${MODULES:-". httpx ginx mcpx adkx"}
 
 status=0
 below=""

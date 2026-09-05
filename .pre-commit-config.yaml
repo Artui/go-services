@@ -64,7 +64,7 @@ repos:
         # may mention. The loose version fired on a comment explaining why path
         # syntax cannot be shared between two HTTP adapters, which is exactly
         # the kind of explanation this file wants to keep.
-        entry: '"(net/http|github\.com/gin-gonic/|github\.com/modelcontextprotocol/)'
+        entry: '"(net/http|github\.com/gin-gonic/|github\.com/modelcontextprotocol/|google\.golang\.org/adk/|google\.golang\.org/genai)'
         language: pygrep
         files: '^[^/]+\.go$'
         exclude: '^\.pre-commit-config\.yaml$'
