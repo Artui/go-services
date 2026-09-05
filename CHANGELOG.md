@@ -20,9 +20,14 @@ conformance suite could show they answer the same.
 - **`mcpx/v0.1.0`** -- exposes a registry as MCP tools through the official SDK,
   handing it the schema the kernel already reflected rather than a second one.
 
-`httpx` and `ginx` move to **v0.2.0** on 2026-09-05, gaining `Route.Location`
-and `WithLocation`. `mcpx` moves to **v0.1.2** the same day with no change but
-its floor.
+All three moved to **v0.1.1** on 2026-09-04, raising their kernel floor from
+v0.3.0 to v0.4.0. That raise is the whole release: until it happened, installing
+an adapter resolved the old kernel, so the error wording v0.4.0 corrected still
+reached every client of every adapter. Nothing else changed in any of them.
+
+`httpx` and `ginx` then moved to **v0.2.0** on 2026-09-05, gaining
+`Route.Location` and `WithLocation`. `mcpx` moved to **v0.1.2** the same day
+with no change but its floor.
 
 Every adapter floors on the newest kernel, including one that uses nothing the
 release added. The alternative leaves that adapter's CI resolving a kernel no
@@ -30,12 +35,7 @@ consumer runs: Go takes the maximum across a build, so anyone pairing two
 adapters gets the newest kernel regardless, and the low floor only ever applied
 to the single-adapter case while the paired case went untested.
 
-All three moved to **v0.1.1** on 2026-09-04, raising their kernel floor from
-v0.3.0 to v0.4.0. That raise is the whole release: until it happened, installing
-an adapter resolved the old kernel, so the error wording v0.4.0 corrected still
-reached every client of every adapter. Nothing else changed in any of them.
-
-`adkx` is unreleased. It publishes a registry as tools for Google's Agent
+`adkx/v0.1.0` on 2026-09-05 publishes a registry as tools for Google's Agent
 Development Kit, and it is the same trade `mcpx` makes: `adk-go` reflects its
 schemas with `jsonschema-go` at the version this kernel uses, and
 `genai.FunctionDeclaration` carries a `ParametersJsonSchema` field, so the
@@ -51,6 +51,23 @@ disagree and when a transaction boundary is wrong.
 ## [Unreleased]
 
 ### Added
+
+- **The worked example is mounted on all four adapters.** `example/` drives one
+  library-lending registry through `net/http`, Gin, MCP and now ADK, and asserts
+  they leave the same rows behind. That is a different question from the one the
+  conformance suite asks: conformance compares the transports' own answers, and
+  this compares what they committed.
+
+  Verified by breaking it -- swallowing the ADK leg's error makes
+  `TestEveryTransportRollsBackTheSameWay` fail with
+  `httpx produced true, adkx produced false`.
+
+  Two frictions came out of writing it, and are in `example/FRICTION.md`. The
+  one worth acting on: **ADK's tool interface is unexported**, so every consumer
+  that wants to drive a tool in a test restates it -- this module, `adkx`'s own
+  suite and the conformance driver all carry a copy, and none of the three is
+  tied to ADK by the compiler. `adkx` exporting that interface would give
+  consumers one name and make `adkx` the single place that notices a change.
 
 - **`adkx` has a column in the conformance suite**, which is what makes it a
   fourth transport rather than a fourth thing that happens to compile. It is
