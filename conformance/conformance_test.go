@@ -13,14 +13,17 @@ import (
 // cannot be (a malformed body has no map form) the MCP leg is skipped and the
 // case says so.
 type conformanceCase struct {
-	name    string
-	spec    string
-	method  string
-	target  string // std pattern; the Gin path is derived from the table
-	ginURL  string
-	body    string
-	args    map[string]any
-	skipMCP string // a reason, when the case cannot be expressed as arguments
+	name   string
+	spec   string
+	method string
+	target string // std pattern; the Gin path is derived from the table
+	ginURL string
+	body   string
+	args   map[string]any
+	// skipMapped is a reason, when the case cannot be expressed as arguments.
+	// It covers MCP and ADK together: both take a map, so a malformed body has
+	// no form either of them can be given.
+	skipMapped string
 }
 
 func cases() []conformanceCase {
@@ -62,12 +65,12 @@ func cases() []conformanceCase {
 		{
 			name: "malformed body", spec: "create_author", method: "POST",
 			target: "/authors", ginURL: "/authors",
-			body: `{`, skipMCP: "arguments are a map; there is no malformed form of one",
+			body: `{`, skipMapped: "arguments are a map; there is no malformed form of one",
 		},
 		{
 			name: "a valid non-object body", spec: "create_author", method: "POST",
 			target: "/authors", ginURL: "/authors",
-			body: `[1,2]`, skipMCP: "arguments are a map; an array cannot be sent",
+			body: `[1,2]`, skipMapped: "arguments are a map; an array cannot be sent",
 		},
 		{
 			name: "no arguments at all", spec: "no_args", method: "GET",
@@ -130,6 +133,7 @@ func TestEveryTransportAgrees(t *testing.T) {
 	mux := mountHTTPX(t, reg)
 	engine := mountGinx(t, reg)
 	session := mountMCPX(t, reg)
+	adkTools := mountADKX(t, reg)
 
 	for _, tc := range cases() {
 		t.Run(tc.name, func(t *testing.T) {
@@ -155,34 +159,47 @@ func TestEveryTransportAgrees(t *testing.T) {
 				}
 			}
 
-			if tc.skipMCP != "" {
-				t.Logf("MCP leg skipped: %s", tc.skipMCP)
+			if tc.skipMapped != "" {
+				t.Logf("MCP and ADK legs skipped: %s", tc.skipMapped)
 				return
 			}
 
-			mcp := callTool(t, session, tc.spec, tc.args)
-			if mcp.Leaked {
-				t.Errorf("mcpx leaked the internal error text: %s", mcp.Wire)
+			// The two transports that take arguments as a map. Each is compared
+			// against HTTP rather than against the other: neither shares a wire
+			// format with anything, and what they do share is the dispatch
+			// underneath, which is what these assertions are about.
+			mapped := map[string]conformance.Outcome{
+				"mcpx": callTool(t, session, tc.spec, tc.args),
+				"adkx": callADK(t, adkTools, tc.spec, tc.args),
 			}
 
-			// Across transports, only what every transport can express.
-			if std.Failed != mcp.Failed {
-				t.Errorf("outcome diverges: HTTP failed=%v, MCP failed=%v\n  http: %s\n  mcp:  %s",
-					std.Failed, mcp.Failed, std.Wire, mcp.Wire)
-			}
-			if !std.Failed && !reflect.DeepEqual(std.Value, mcp.Value) {
-				t.Errorf("success value diverges:\n  http: %#v\n  mcp:  %#v", std.Value, mcp.Value)
-			}
-			// Messages are compared only where both transports are reporting
-			// the same thing to the same audience: a rejected input, built by
-			// both from one *services.ValidationError. A refusal or an internal
-			// fault is deliberately worded differently -- HTTP answers a client
-			// with a status and a sentence, MCP answers a model with prose it
-			// can act on -- and asserting those match would be asserting that a
-			// design decision had not been taken.
-			if std.Status == 400 && !sameMessages(std.Messages, mcp.Messages) {
-				t.Errorf("rejection messages diverge:\n  http: %v\n  mcp:  %v",
-					sorted(std.Messages), sorted(mcp.Messages))
+			for _, name := range []string{"adkx", "mcpx"} {
+				out := mapped[name]
+				if out.Leaked {
+					t.Errorf("%s leaked the internal error text: %s", name, out.Wire)
+				}
+
+				// Across transports, only what every transport can express.
+				if std.Failed != out.Failed {
+					t.Errorf("outcome diverges: HTTP failed=%v, %s failed=%v\n  http: %s\n  %s: %s",
+						std.Failed, name, out.Failed, std.Wire, name, out.Wire)
+				}
+				if !std.Failed && !reflect.DeepEqual(std.Value, out.Value) {
+					t.Errorf("success value diverges:\n  http: %#v\n  %s: %#v",
+						std.Value, name, out.Value)
+				}
+				// Messages are compared only where every transport is reporting
+				// the same thing to the same audience: a rejected input, built
+				// by all of them from one *services.ValidationError. A refusal
+				// or an internal fault is deliberately worded differently --
+				// HTTP answers a client with a status and a sentence, the other
+				// two answer a model with prose it can act on -- and asserting
+				// those match would be asserting that a design decision had not
+				// been taken.
+				if std.Status == 400 && !sameMessages(std.Messages, out.Messages) {
+					t.Errorf("rejection messages diverge:\n  http: %v\n  %s: %v",
+						sorted(std.Messages), name, sorted(out.Messages))
+				}
 			}
 		})
 	}

@@ -41,6 +41,9 @@ schemas with `jsonschema-go` at the version this kernel uses, and
 `genai.FunctionDeclaration` carries a `ParametersJsonSchema` field, so the
 schema the kernel already reflected is handed over as it is.
 
+`conformance` floors at Go 1.26.6 now, the highest of the modules it drives,
+which is `adkx`.
+
 `conformance` and `example` are the two modules here that are deliberately never
 tagged: they depend on all of the others, and exist to fail when two transports
 disagree and when a transaction boundary is wrong.
@@ -48,6 +51,23 @@ disagree and when a transaction boundary is wrong.
 ## [Unreleased]
 
 ### Added
+
+- **`adkx` has a column in the conformance suite**, which is what makes it a
+  fourth transport rather than a fourth thing that happens to compile. It is
+  compared against HTTP on what every transport can express: whether the call
+  failed, the value it produced, the per-field messages of a rejected input, and
+  that nothing an operator wrote reached the client.
+
+  Falsified on both axes rather than assumed. Removing `adkx`'s redaction fails
+  it with `adkx leaked the internal error text`; dropping a field from its
+  result fails it with the two maps printed side by side.
+
+  **One thing the column deliberately does not cover** is written into the
+  driver: in production ADK hands a tool a `map[string]any` it decoded itself,
+  so a large identifier is already a `float64`, while this harness calls the
+  tool directly with the case table's own `int64`. Reproducing that would mean
+  standing up an agent and a model to demonstrate a rounding `adkx` cannot
+  prevent. The limit is recorded so a green suite is not read as its absence.
 
 - **`adkx`, a fourth adapter: a registry as tools for Google's ADK.** The
   declaration carries the kernel's own `*jsonschema.Schema` object, asserted by
