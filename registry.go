@@ -90,6 +90,41 @@ func (e Entry) CheckCaptures(names ...string) error {
 		ErrConfiguration, e.Name, strings.Join(undeclared, ", "))
 }
 
+// CheckLocation reports whether a Location template names anything the
+// operation's output does not declare, as a single error naming all of them.
+//
+// It is the CheckCaptures argument on the other side of the call: a template
+// naming a field the output has no property for is broken in every response it
+// will ever produce, so it is refused at mount rather than discovered by
+// whoever follows the header. ExpandLocation refuses the same thing again at
+// request time, for the adapter that was handed a bare handler and has no
+// route table to inspect.
+//
+// A template with no placeholders is a fixed path and is accepted. That is a
+// real thing to want -- a collection endpoint whose Location is always the
+// collection -- and there is nothing in it to check.
+func (e Entry) CheckLocation(template string) error {
+	names, err := locationPlaceholders(template)
+	if err != nil {
+		return fmt.Errorf("%w (%s)", err, e.Name)
+	}
+
+	var undeclared []string
+	for _, name := range names {
+		if e.Output == nil || e.Output.Properties[name] == nil {
+			undeclared = append(undeclared, name)
+		}
+	}
+	if len(undeclared) == 0 {
+		return nil
+	}
+	slices.Sort(undeclared)
+	return fmt.Errorf(
+		"%w: %q builds a Location from %s, which the operation's output declares no "+
+			"field for, so the header would name a path nothing produced",
+		ErrConfiguration, e.Name, strings.Join(undeclared, ", "))
+}
+
 // Option configures a Registry.
 type Option[D any] func(*Registry[D])
 
