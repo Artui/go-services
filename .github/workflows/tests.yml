@@ -53,6 +53,10 @@ jobs:
       # The workspace file is gitignored, so CI already resolves each module on
       # its own. This makes that a stated check rather than a side effect.
       - run: make verify-modules
+      # A module's go.mod is metadata a published tag freezes forever, so the
+      # tidiness check runs beside the resolution one rather than being left to
+      # whoever remembers the mutating target.
+      - run: make tidy-check
       - run: make check-floors
 
   lint:
