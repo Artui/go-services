@@ -199,6 +199,45 @@ you ask what the alternative would be.
 
 ---
 
+## Mounting on AG-UI, added 2026-09-05
+
+### 9. The web component does not register itself
+
+Loading `@artooi/ag-ui-web-component` defines nothing. `defineAgUiChat()` is
+what upgrades `<ag-ui-chat>` from an unknown element into the chat, and without
+it the page renders, the element sits in the DOM, and absolutely nothing
+happens -- no error, no warning, no element.
+
+The published `dist/index.js` also carries bare imports for `@ag-ui/client`,
+which a browser cannot resolve on its own. A `<script type="module">` pointed
+straight at it fails with a module-specifier error that names the dependency
+rather than the package you asked for. jsDelivr's `+esm` build rewrites them.
+
+**Owed: nothing here, and possibly a line in the component's README.** Both are
+one-line fixes once you know, and both cost an afternoon if you do not. Recorded
+because this is the second consumer of that component in the workspace and the
+first one to load it from a CDN rather than a bundler.
+
+### 10. A scripted agent cannot see its own tool result
+
+Steps run in order and none sees what the previous produced, so a `Say` written
+after a `CallTool` is composed before the call has happened. The first version
+of this demo ended with "That is done." -- and said it over a refusal, with the
+tool result reading "no copy is on the shelf" directly above.
+
+The fix is not to give scripts a branch. A real agent gets the tool result back
+as a message and decides, which is a second turn; giving a script that ability
+would make it a small agent framework competing with the real ones the package
+exists to serve. The fix is that a script must not claim an outcome, and the
+`Librarian` rules now end at the call.
+
+**Owed: nothing, and the note is in `aguix/script.go` where someone writing a
+script will read it.** Caught by looking at the browser rather than at the
+tests, which were green throughout: every assertion held, because none of them
+had any opinion about whether the sentence was true.
+
+---
+
 ## What was expected to hurt and did not
 
 The plan asked for these to be measured, and a result of "nothing owed" is a

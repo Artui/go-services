@@ -23,3 +23,15 @@ github.com/Artui/go-services/adkx/result.go:succeed
 #   fail. The check stays because discarding an error to satisfy a coverage
 #   number is the worse trade -- the same call this file already makes for
 #   EncodeParams.
+
+github.com/Artui/go-services/aguix/stream.go:Emit
+#   The json.Marshal error branch. Event is a flat struct of strings and one
+#   EventType, every one of which marshals, so the error cannot occur. The
+#   check stays because a stream that silently dropped a frame it could not
+#   encode would be worse than one that stopped.
+
+github.com/Artui/go-services/aguix/toolbox.go:Definitions
+#   The json.Marshal error branch. The value is the *jsonschema.Schema the
+#   kernel reflected at registration, which Register already round-tripped to
+#   build the resolved schema it validates against -- an unmarshalable one
+#   could not have been registered.
