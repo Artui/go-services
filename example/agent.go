@@ -65,9 +65,21 @@ func Librarian(toolbox aguix.Caller) aguix.Agent {
 			},
 		},
 		aguix.Rule{
+			When: aguix.WhenUserSays("loans"),
+			Steps: []aguix.Step{
+				aguix.Say("Let me look at your card."),
+				// include_returned, so the answer carries all three loan states
+				// rather than only the ones still out. What a person is told
+				// about a fine is decided by whoever renders this; the service
+				// reports it in cents and says so in the field's name.
+				aguix.CallTool(toolbox, "list_loans",
+					json.RawMessage(`{"include_returned":true}`)),
+			},
+		},
+		aguix.Rule{
 			Steps: []aguix.Step{aguix.Say(
 				"I can list the books, or borrow one for you. " +
-					"Try \"show me the books\" or \"borrow book 10\".")},
+					"Try \"show me the books\", \"borrow book 10\" or \"my loans\".")},
 		},
 	)
 }

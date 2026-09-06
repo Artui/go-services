@@ -117,7 +117,8 @@ only thing in the system that knows the URL shape.
 a client following a Location must not reach a different place depending on
 which router the server was built with. This module's own `borrow_book` route
 now carries `"/loans/{loan_id}"`, and `TestACreatedLoanSaysWhereItLives` asserts
-both adapters answer `/loans/1`.
+both adapters answer `/loans/3` -- loan 3 rather than loan 1 since the seed grew
+a history, and each adapter still runs against a database of its own.
 
 One thing only writing it revealed: the two adapters build the header at
 different points -- `httpx` expands before marshalling and clears it if the
@@ -308,3 +309,212 @@ here, which is the opposite of how it would be summarised without measuring.
 The companion `TestBrokenBoundaryIsInvisibleWhenNothingFails` is the other half:
 on the happy path, the correct registry and the broken one are indistinguishable
 on every assertion. That is why the ordering rule needs a test at all.
+
+---
+
+## Whether an audience layer is owed, measured 2026-09-06
+
+Measured against the working tree rather than a tag, as this module always is:
+the kernel at `v0.5.0` plus whatever is uncommitted beside it, and every adapter
+through the `replace` directives in `go.mod`.
+
+Every finding above this line already carries a resolution -- `Done`, `Declined,
+and documented instead`, `Owed: nothing` -- written as prose in its closing
+paragraph rather than as a labelled field. That is a real record and it was
+maintained; it is simply not greppable, which is a different complaint and a
+smaller one. Findings below state theirs on their own line so that a reader, or
+a script, can tell without reading the argument.
+
+One resolution above has since gone stale, and it is worth knowing how. Finding
+10 closes with "still owed and still not by us ... a change in the component and
+is in flight alongside this one" -- and that change shipped, as web component
+0.36.0, which settles a tool card to error or declined on the outcome field. So
+the finding is closed and still reads as open. A resolution written while
+something is in flight becomes a dangling reference the moment it lands, and
+nothing points back from a release to the note that was waiting on it.
+
+### Why the silence above was not evidence
+
+Not one of the eleven findings above mentions output shaping, and that proved
+nothing. This module's whole domain was `int64` and `string`: no enum, no
+timestamp, no money, no opaque token. A testbed with none of those cannot record
+friction about any of them, so its silence was structural rather than a result.
+
+So the domain was given the field kinds that could hurt, kept plausible for a
+lending library rather than shaped as a probe:
+
+- a **due date** on a loan, `time.Time`, encoded RFC3339;
+- a **status enum**, `LoanStatus`, one of `on_loan`, `overdue`, `returned`;
+- a **fine in currency**, `fine_cents`, minor units in an `int64` because money
+  in a float is a rounding error waiting to happen;
+- an **opaque token**, `next_cursor`, added for a reason worth stating outright:
+  the first three cannot test the handle question at all. A marking that
+  distinguishes "an identifier another tool consumes" from "content a model may
+  read out" has nothing to bite on in a domain whose only identifiers are small
+  integers, so the catalogue was paged, which is the least contrived opaque
+  token any list API has.
+
+The seed grew the history that makes those readable: one loan still out and
+late, which is why book 11 has no copy on the shelf, and one returned late,
+which is why a fine can be non-zero without anything having to happen first.
+
+`audience_test.go` holds every payload below as a literal and asserts it against
+a real session on each transport, with the clock stopped. Nothing in this section
+was reasoned about without being run.
+
+## 12. Nothing shapes an output for its audience, and nothing needs to
+
+**Status: CLOSED. No change owed, in the kernel or in any adapter. This is the
+answer to the question the section was opened for.**
+
+Every transport serves one encoding of one value. `list_loans` over MCP, over
+AG-UI, and over plain HTTP to a browser, byte for byte:
+
+```json
+{"loans":[{"loan_id":1,"book_id":11,"title":"Structure and Interpretation","status":"overdue","due_at":"2026-08-15T09:00:00Z","fine_cents":550},{"loan_id":2,"book_id":10,"title":"The Mythical Man-Month","status":"returned","due_at":"2026-07-15T09:00:00Z","fine_cents":125}]}
+```
+
+MCP's `structuredContent` and ADK's required map answer carry the same fields
+with the keys sorted, because both have been through a Go map on the way out:
+
+```json
+{"loans":[{"book_id":11,"due_at":"2026-08-15T09:00:00Z","fine_cents":550,"loan_id":1,"status":"overdue","title":"Structure and Interpretation"},{"book_id":10,"due_at":"2026-07-15T09:00:00Z","fine_cents":125,"loan_id":2,"status":"returned","title":"The Mythical Man-Month"}]}
+```
+
+That is an ordering difference and nothing else: same fields, same values, same
+encoding of each, and neither reader is told anything the other is not.
+
+The paged catalogue, where the opaque token lives, and a created loan:
+
+```json
+{"books":[{"id":10,"title":"The Mythical Man-Month","author":"Brooks","available":2}],"next_cursor":"YWZ0ZXI6MTA"}
+{"loan_id":3,"book_id":10,"member_id":1,"remaining":1,"status":"on_loan","due_at":"2026-09-20T12:00:00Z"}
+```
+
+**Read them aloud and nothing goes wrong.** `"overdue"` and `"on_loan"` are
+already the words a person would use. `"2026-08-15T09:00:00Z"` is a date any
+reader renders correctly. `"loan_id":1` and `"member_id":1` are identifiers a
+librarian would say out loud anyway.
+
+Two things in there could be read imprecisely, and neither is what a handle
+marking is for. `"fine_cents":550` names its unit and not its currency, so a
+reader has to supply one; and the timestamp is UTC, so a library that is not on
+UTC is one conversion away from an hour that is wrong on the wall clock. Both
+are the value-formatter half of the sibling Python library's audience layer,
+which is already declined -- and the honest note is that this is where the
+declining costs something, not in the markings.
+
+**The sharpest thing in the whole capture that reads badly to a user is not a
+field at all.** It is this, which every agent transport serves verbatim:
+
+```
+permission denied: member 2 is suspended
+```
+
+An internal member id and an account state, written by a spec author, handed
+straight to a model. Finding 2 above settled that deliberately -- the words are
+the service's and a caller can act on them -- and no marking on an output field
+reaches a sentence in an error. If the worry is internal values reaching a
+person, the exposure this module actually has is there, and it is already a
+decision rather than a gap.
+
+## 13. A handle marking is expressible today, which is why it is not earned
+
+**Status: DECIDED. No. The answer to "is HANDLE earned" is no, and the evidence
+is that the mechanism it would need already exists and already arrives.**
+
+The question was whether a field needs a way to say "this is an identifier
+another tool consumes, never something to read out". It has one. `LoanStatus`
+declares its own schema through `services.SchemaFor`, and the kernel reflects
+that on the way OUT as well as on the way in, so what an MCP client is told
+about `list_loans` includes the three values as a list it can check:
+
+```json
+"status":{"description":"where the loan stands","enum":["on_loan","overdue","returned"],"type":"string"}
+```
+
+and `next_cursor` carries the field's own words, written once on the struct tag:
+
+```json
+"next_cursor":{"description":"an opaque token; pass it back as cursor to fetch the next page, and do not show it to a person or try to read it","type":"string"}
+```
+
+Both reach an MCP client and an ADK model unchanged, because `mcpx` publishes
+`OutputSchema` and `adkx` fills `ResponseJsonSchema` from the same object the
+kernel reflected.
+
+A *machine-readable* marking is available on the same channel, and
+`TestAFieldMarkingReachesTheWireWithNoKernelChange` is the probe that shows it
+rather than argues it. A named type declaring `jsonschema.Schema.Extra` with an
+unnamed keyword arrives on the wire untouched:
+
+```json
+{"additionalProperties":false,"properties":{"token":{"description":"an opaque token","type":"string","x-audience":"handle"}},"required":["token"],"type":"object"}
+```
+
+So the whole of what a marking system would add, over what a consumer can write
+today, is a **vocabulary** -- and nothing in this repository reads a vocabulary.
+Adding one would be a second place the truth about a field lives, which is the
+argument `mcpx.toolFor` already makes about hints it refuses to infer.
+
+The last thing worth writing down, because it is what makes the two options
+equal rather than merely similar: **a marking has exactly the enforcement power
+a description has, which is none.** `YWZ0ZXI6MTA` decodes to `after:10` with no
+key, so calling a field opaque is a convention on both sides of the wire. A
+marking would not stop a model reading a token aloud any more than a sentence
+does; it would only be terser about asking.
+
+## 14. `aguix` publishes no output schema, so nothing written on an output field reaches an AG-UI model
+
+**Status: OPEN, and it belongs to `aguix` rather than to this module. Reported,
+not fixed -- this module does not touch an adapter.**
+
+The definition an AG-UI agent is given for `list_loans` is the whole of what
+that transport says about the operation:
+
+```json
+{"name":"list_loans","description":"List the authenticated member's own loans, with what each one owes.","parameters":{"type":"object","properties":{"include_returned":{"type":"boolean","description":"also list loans that have already been returned"}},"additionalProperties":false}}
+```
+
+`Definitions` builds `Name`, `Description` and `Parameters` from `entry.Input`,
+and reads `entry.Output` nowhere. So the sentence on `next_cursor` that MCP and
+ADK both carry -- and any marking put beside it -- cannot arrive here at all. On
+this transport a model is handed `"next_cursor":"YWZ0ZXI6MTA"` with the field
+name as its only clue.
+
+This is the one place the measurement found a real hole, and it is worth being
+precise about what would fill it: **publishing the output schema, not inventing a
+marking.** A marking would be equally unable to reach an AG-UI model, because
+the channel that would carry it is the one that is missing.
+
+The only reason the AG-UI definition mentions the token at all is that the
+*input* field's description names it -- the author writing the same fact twice,
+on the one field this transport does publish. The test named
+`TestOnlySomeTransportsAdvertiseTheOutputSchema` pins all three answers, so if
+`aguix` starts publishing an output schema, the assertion that says it does not
+is what fails.
+
+## 15. `Validate` cannot hand `Run` the value it just parsed
+
+**Status: OPEN as an observation, no change requested. Recorded because the
+workaround is invisible and the next person will re-derive it.**
+
+`Validator` is `Validate() error`. A check that merely accepts or rejects fits
+it exactly. A check that *produces* something -- decoding a cursor into the id
+it pages from -- has nowhere to put the result, so the choice is to decode the
+token twice or to decode it once inside `Run` and return `services.Invalid` from
+there.
+
+`listBooks` does the second, and it works: the kernel maps a `ValidationError`
+to the same answer wherever it is raised, so the client sees a 400 naming
+`cursor` exactly as it would from `Validate`. What is lost is the ordering
+guarantee -- `Validate` runs before any transaction is opened, and a check moved
+into `Run` no longer does. For a read that costs nothing. For a mutation it
+would mean a transaction opened for a payload that was never going to be
+accepted.
+
+Nothing is asked for here. The alternative shape -- a validator that returns a
+parsed value -- would put a second type parameter on the interface for the sake
+of the minority of specs that need one. It is written down because the reason
+`listBooks` validates where it does is not visible from the code, and the
+comment on `ListIn.Validate` now says it.

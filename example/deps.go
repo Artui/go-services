@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	services "github.com/Artui/go-services"
 )
@@ -38,6 +39,15 @@ type Deps struct {
 	// MemberID is the authenticated borrower. A borrow takes no member in its
 	// input for this reason: a caller may say which book, never which member.
 	MemberID int64
+
+	// Now is the clock. It is a dependency rather than a call to time.Now
+	// inside the services because two of this module's answers are computed
+	// from it -- when a loan falls due, and what a late one has cost so far --
+	// and a test that cannot fix the clock can only assert those approximately.
+	//
+	// It is on Deps rather than on the spec input for the same reason MemberID
+	// is: a caller may not say what time it is.
+	Now func() time.Time
 }
 
 // txKey carries the transaction from the atomic callback to the resolver. It is
@@ -81,6 +91,12 @@ func atomicOver(db *sql.DB) func(context.Context, func(context.Context) error) e
 // undo them. brokenResolverOver in the test file is that mistake, written down
 // and asserted against.
 func resolverOver(db *sql.DB) func(context.Context, any) (Deps, error) {
+	return resolverAt(db, time.Now)
+}
+
+// resolverAt is resolverOver with the clock supplied, which is what lets a test
+// assert a due date and a fine as exact values rather than as ranges.
+func resolverAt(db *sql.DB, now func() time.Time) func(context.Context, any) (Deps, error) {
 	return func(ctx context.Context, principal any) (Deps, error) {
 		id, ok := principal.(int64)
 		if !ok || id <= 0 {
@@ -94,6 +110,6 @@ func resolverOver(db *sql.DB) func(context.Context, any) (Deps, error) {
 		if tx, ok := ctx.Value(txKey{}).(*sql.Tx); ok {
 			q = tx
 		}
-		return Deps{DB: q, MemberID: id}, nil
+		return Deps{DB: q, MemberID: id, Now: now}, nil
 	}
 }

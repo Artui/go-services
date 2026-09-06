@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"testing"
+	"time"
 
 	services "github.com/Artui/go-services"
 )
@@ -23,7 +24,10 @@ func brokenResolverOver(db *sql.DB) func(context.Context, any) (Deps, error) {
 		if !ok || id <= 0 {
 			return Deps{}, services.ErrPermission
 		}
-		return Deps{DB: db, MemberID: id}, nil
+		// Every other field is what resolverOver would have produced. The
+		// falsification is only worth something while the two registries differ
+		// in the boundary and in nothing else.
+		return Deps{DB: db, MemberID: id, Now: time.Now}, nil
 	}
 }
 

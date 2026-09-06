@@ -34,6 +34,7 @@ require (
 	github.com/Artui/go-services/httpx v0.0.0-00010101000000-000000000000
 	github.com/Artui/go-services/mcpx v0.0.0-00010101000000-000000000000
 	github.com/gin-gonic/gin v1.12.0
+	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.7.0
 	google.golang.org/adk/v2 v2.3.0
 	modernc.org/sqlite v1.58.0
@@ -60,7 +61,6 @@ require (
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.19.2 // indirect
 	github.com/google/go-cmp v0.7.0 // indirect
-	github.com/google/jsonschema-go v0.4.3 // indirect
 	github.com/google/s2a-go v0.1.9 // indirect
 	github.com/google/uuid v1.6.0 // indirect
 	github.com/googleapis/enterprise-certificate-proxy v0.3.20 // indirect

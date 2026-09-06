@@ -58,6 +58,7 @@ func mountHTTPX(t *testing.T, db *sql.DB) transport {
 			Location: "/loans/{loan_id}",
 		},
 		"list_books": {Method: "GET", Pattern: "/books"},
+		"list_loans": {Method: "GET", Pattern: "/loans"},
 	}, headerPrincipal)
 	if err != nil {
 		t.Fatalf("httpx mount: %v", err)
@@ -83,6 +84,7 @@ func mountGinx(t *testing.T, db *sql.DB) transport {
 			Location: "/loans/{loan_id}",
 		},
 		"list_books": {Method: "GET", Path: "/books"},
+		"list_loans": {Method: "GET", Path: "/loans"},
 	}, func(c *gin.Context) (any, error) { return headerPrincipal(c.Request) })
 	if err != nil {
 		t.Fatalf("ginx mount: %v", err)
@@ -168,8 +170,11 @@ func dumpState(t *testing.T, db *sql.DB) string {
 		t.Fatalf("books: %v", err)
 	}
 
+	// Only the loans this dispatch added, for the reason countLoans gives: the
+	// seed writes the library's history, and printing it in every expected
+	// state would bury the one row these tests are about.
 	loans, err := db.QueryContext(t.Context(),
-		`SELECT book_id, member_id FROM loans ORDER BY id`)
+		`SELECT book_id, member_id FROM loans WHERE id > ? ORDER BY id`, SeededLoans)
 	if err != nil {
 		t.Fatalf("loans: %v", err)
 	}

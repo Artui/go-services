@@ -2,11 +2,13 @@ package example
 
 import (
 	"database/sql"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	services "github.com/Artui/go-services"
 )
@@ -29,14 +31,34 @@ func newDB(t *testing.T) *sql.DB {
 }
 
 // countLoans is the assertion this whole module is built around: how many loan
-// rows survived.
+// rows the dispatch under test ADDED.
+//
+// The seed writes the library's history, and counting it too would spell every
+// "no orphan survived" below as a non-zero number. A rollback assertion whose
+// success reads "want 2" is one nobody can check at a glance, so the seeded
+// rows are excluded by id and the numbers stay 1 and 0.
 func countLoans(t *testing.T, db *sql.DB) int {
 	t.Helper()
 	var n int
-	if err := db.QueryRowContext(t.Context(), `SELECT count(*) FROM loans`).Scan(&n); err != nil {
+	if err := db.QueryRowContext(t.Context(),
+		`SELECT count(*) FROM loans WHERE id > ?`, SeededLoans).Scan(&n); err != nil {
 		t.Fatalf("count loans: %v", err)
 	}
 	return n
+}
+
+// testNow is the clock the fixed-clock registry runs on.
+//
+// It is after both seeded loans fall due, so the overdue one is overdue by a
+// number of whole days that does not move, and a fine asserted against it is an
+// exact value rather than a range.
+var testNow = time.Date(2026, 9, 6, 12, 0, 0, 0, time.UTC)
+
+// registryAt is the registry with the clock stopped. Every test that asserts a
+// due date or a fine uses it; the rest use Registry, which is what an
+// application builds.
+func registryAt(db *sql.DB) *services.Registry[Deps] {
+	return registryWith(db, resolverAt(db, func() time.Time { return testNow }))
 }
 
 func availableOf(t *testing.T, db *sql.DB, id int64) int64 {
@@ -261,3 +283,132 @@ var (
 	_ Queryer = (*sql.DB)(nil)
 	_ Queryer = (*sql.Tx)(nil)
 )
+
+// The lending rules, asserted where they are decided.
+//
+// assess is unexported and tested directly, because the two answers it computes
+// are a rule rather than a state of the world: a fine at its ceiling would need
+// a row nothing in the seed can justify, and inventing one would say that the
+// world is wrong rather than that the rule is unusual.
+func TestAFineStopsAtTheCeiling(t *testing.T) {
+	long := testNow.Add(-365 * 24 * time.Hour)
+	status, fine := assess(long, nil, testNow)
+	if status != StatusOverdue {
+		t.Errorf("status = %q, want %q", status, StatusOverdue)
+	}
+	if fine != MaxFineCents {
+		t.Errorf("fine = %d, want the ceiling %d", fine, MaxFineCents)
+	}
+}
+
+// A book back before it was due owes nothing, and neither does one that is
+// still out and not yet late. Both are the same statement in assess, and both
+// are worth naming because they are the answers a reader would assume.
+func TestNothingIsOwedUntilABookIsLate(t *testing.T) {
+	early := testNow.Add(-time.Hour)
+	cases := map[string]struct {
+		due      time.Time
+		returned *time.Time
+		want     LoanStatus
+	}{
+		"still out, not yet due": {testNow.Add(time.Hour), nil, StatusOnLoan},
+		"back before it was due": {testNow.Add(time.Hour), &early, StatusReturned},
+	}
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			status, fine := assess(tc.due, tc.returned, testNow)
+			if status != tc.want {
+				t.Errorf("status = %q, want %q", status, tc.want)
+			}
+			if fine != 0 {
+				t.Errorf("fine = %d, want 0", fine)
+			}
+		})
+	}
+}
+
+// A member sees their own loans and nobody else's, because the member is not a
+// field a caller can set.
+func TestLoansAreScopedToTheCaller(t *testing.T) {
+	db := newDB(t)
+	reg := registryAt(db)
+
+	res, err := reg.Dispatch(t.Context(), int64(1), "list_loans",
+		json.RawMessage(`{"include_returned":true}`))
+	if err != nil {
+		t.Fatalf("list_loans: %v", err)
+	}
+	if n := len(res.Value.(ListLoansOut).Loans); n != SeededLoans {
+		t.Errorf("Ada has %d loans, want the %d the seed wrote", n, SeededLoans)
+	}
+
+	// Grace is suspended, which is a rule about borrowing rather than about
+	// reading, so this succeeds and returns nothing.
+	res, err = reg.Dispatch(t.Context(), int64(2), "list_loans",
+		json.RawMessage(`{"include_returned":true}`))
+	if err != nil {
+		t.Fatalf("list_loans: %v", err)
+	}
+	loans := res.Value.(ListLoansOut).Loans
+	if len(loans) != 0 {
+		t.Errorf("Grace has %d loans, want none", len(loans))
+	}
+	if loans == nil {
+		t.Error("loans is nil, which marshals to null")
+	}
+}
+
+// Returned loans are out of the default answer, so "what do I have out" is one
+// call rather than a call and a filter.
+func TestReturnedLoansAreHiddenByDefault(t *testing.T) {
+	db := newDB(t)
+	res, err := registryAt(db).Dispatch(t.Context(), int64(1), "list_loans",
+		json.RawMessage(`{}`))
+	if err != nil {
+		t.Fatalf("list_loans: %v", err)
+	}
+	loans := res.Value.(ListLoansOut).Loans
+	if len(loans) != 1 || loans[0].Status != StatusOverdue {
+		t.Fatalf("loans = %v, want only the one still out", loans)
+	}
+}
+
+// A cursor this service did not issue is a validation failure naming the field,
+// on every route it could have arrived by.
+func TestACursorWeDidNotIssueIsRefused(t *testing.T) {
+	cases := map[string]string{
+		"not base64 at all":      "!! not base64 !!",
+		"base64 of nothing ours": base64.RawURLEncoding.EncodeToString([]byte("hello")),
+		"base64 of a cursor with no id": base64.RawURLEncoding.EncodeToString(
+			[]byte(cursorPrefix + "x")),
+	}
+
+	db := newDB(t)
+	reg := registryAt(db)
+	for name, cursor := range cases {
+		t.Run(name, func(t *testing.T) {
+			var invalid *services.ValidationError
+			_, err := reg.Dispatch(t.Context(), int64(1), "list_books",
+				json.RawMessage(fmt.Sprintf(`{"cursor":%q}`, cursor)))
+			if !errors.As(err, &invalid) {
+				t.Fatalf("err = %v, want ValidationError", err)
+			}
+			if got := invalid.FieldMap()["cursor"]; len(got) != 1 {
+				t.Errorf("field messages = %v, want one for cursor", invalid.FieldMap())
+			}
+		})
+	}
+}
+
+// The last page carries no cursor, which is how a caller stops.
+func TestTheLastPageCarriesNoCursor(t *testing.T) {
+	db := newDB(t)
+	res, err := registryAt(db).Dispatch(t.Context(), int64(1), "list_books",
+		json.RawMessage(`{"limit":100}`))
+	if err != nil {
+		t.Fatalf("list_books: %v", err)
+	}
+	if got := res.Value.(ListOut).NextCursor; got != "" {
+		t.Errorf("next_cursor = %q on a page that is not full", got)
+	}
+}

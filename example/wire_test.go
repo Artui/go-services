@@ -189,9 +189,10 @@ func TestACreatedLoanSaysWhereItLives(t *testing.T) {
 		if status != http.StatusCreated {
 			t.Fatalf("%s: status = %d, want 201 (body %s)", adapter, status, body)
 		}
-		// Loan 1, because each adapter runs against a database of its own.
-		if location != "/loans/1" {
-			t.Errorf("%s: Location = %q, want %q", adapter, location, "/loans/1")
+		// Loan 3, because each adapter runs against a database of its own and
+		// the seed has already written two.
+		if location != "/loans/3" {
+			t.Errorf("%s: Location = %q, want %q", adapter, location, "/loans/3")
 		}
 	}
 }
