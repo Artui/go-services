@@ -362,10 +362,36 @@ which is why a fine can be non-zero without anything having to happen first.
 a real session on each transport, with the clock stopped. Nothing in this section
 was reasoned about without being run.
 
-## 12. Nothing shapes an output for its audience, and nothing needs to
+## 12. Nothing shapes an output for its audience
 
-**Status: CLOSED. No change owed, in the kernel or in any adapter. This is the
-answer to the question the section was opened for.**
+**Status: OPEN. The measurement below stands; the verdict it carried does not.**
+
+This finding was written as "and nothing needs to", closed, on the strength of
+the captures below. The owner reopened it the same day on an argument the
+experiment was not scoped to test, and the argument is right.
+
+What was measured is still true: every transport serves one encoding of one
+value, and read aloud, nothing goes wrong. What was concluded from it does not
+follow. The question asked here was whether a *marking* is earned -- whether a
+field needs to be labelled as a handle or a label or plumbing -- and the answer
+to that is still no, in finding 13. The formatters were excluded from this
+section's scope before it was written, and then the evidence landed on them:
+`fine_cents: 550` names its unit and not its currency, and `due_at` is UTC.
+
+Those are not read-aloud problems, which is why reading the payloads aloud found
+nothing. They are missing information. An API is read by code that was written
+knowing the units; a model is a reader nobody told, and it cannot obtain the
+currency or the reader's timezone from anywhere in the payload. That is data loss
+at the boundary rather than a formatting preference, and it is why the same raw
+value is right for one audience and wrong for the other.
+
+⇒ *an experiment that lands on the thing you excluded from its scope is telling
+you the scope was wrong, not that the answer is no.*
+
+Left open rather than re-answered here, because the fork it turns on -- whether a
+struct tag should render the value or enrich the schema description that MCP and
+ADK already carry -- is a question these captures cannot settle. They are the
+before picture for whoever settles it.
 
 Every transport serves one encoding of one value. `list_loans` over MCP, over
 AG-UI, and over plain HTTP to a browser, byte for byte:
