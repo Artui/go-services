@@ -45,6 +45,9 @@ const html = `<!doctype html>
     <li><code>borrow book 10</code> writes two tables in one transaction.</li>
     <li><code>borrow book 11</code> is refused: no copy is on the shelf, and the
         loan row it had already written is rolled back.</li>
+    <li><code>my loans</code> answers with a status, a due date and a fine in
+        cents -- the same bytes every other transport serves, which is what the
+        module's payload tests are about.</li>
   </ul>
 </main>
 

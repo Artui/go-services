@@ -200,7 +200,7 @@ func TestTheAgentIsOfferedEveryOperation(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Definitions: %v", err)
 	}
-	if len(defs) != 2 {
+	if len(defs) != 3 {
 		t.Fatalf("published %d tools, want one per spec", len(defs))
 	}
 	for _, def := range defs {

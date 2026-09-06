@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"time"
 
 	// The pure-Go SQLite driver. No cgo, so the suite is a plain `go test` on
 	// every runner and the module's Go floor is decided by ginx rather than by
@@ -36,9 +37,18 @@ CREATE TABLE books (
 );
 
 CREATE TABLE loans (
-    id        INTEGER PRIMARY KEY,
-    book_id   INTEGER NOT NULL REFERENCES books(id),
-    member_id INTEGER NOT NULL REFERENCES members(id)
+    id          INTEGER PRIMARY KEY,
+    book_id     INTEGER NOT NULL REFERENCES books(id),
+    member_id   INTEGER NOT NULL REFERENCES members(id),
+    -- Unix seconds rather than a text timestamp. SQLite has no date type, so
+    -- the choice is between a string this package has to parse back and an
+    -- integer it does not; the integer has no malformed case, which removes an
+    -- error path that could only ever fire on rows this package wrote itself.
+    due_at      INTEGER NOT NULL,
+    -- Null while the book is still out. This is the column that separates a
+    -- loan that is merely late from one that was returned late, and the fine
+    -- is computed from whichever end of that pair applies.
+    returned_at INTEGER
 );
 `
 
@@ -81,8 +91,31 @@ func Open(ctx context.Context, name string) (*sql.DB, error) {
 	return db, nil
 }
 
-// Seed writes a small fixed world: two members, one of them suspended, and two
-// books, one of which has no copy on the shelf.
+// The library's history, as dates rather than as the Unix seconds the rows
+// actually hold. Both are in the past and stay there, so the status these
+// produce -- overdue for one, returned for the other -- does not drift as the
+// clock moves and a test asserting either does not rot.
+var (
+	// Still out, and late. This is why book 11 has no copy on the shelf.
+	overdueLoanDue = time.Date(2026, 8, 15, 9, 0, 0, 0, time.UTC)
+
+	// Returned, and returned late, so it carries a fine that stopped growing
+	// on the day it came back.
+	returnedLoanDue      = time.Date(2026, 7, 15, 9, 0, 0, 0, time.UTC)
+	returnedLoanReturned = time.Date(2026, 7, 20, 16, 30, 0, 0, time.UTC)
+)
+
+// SeededLoans is how many loan rows Seed writes.
+//
+// The tests count what a dispatch ADDED rather than what the table holds, and
+// this is the line between the two. Without it every "want 0" below would read
+// "want 2", and a rollback assertion whose success is spelled as a non-zero
+// count is one nobody can check at a glance.
+const SeededLoans = 2
+
+// Seed writes a small fixed world: two members, one of them suspended, two
+// books, one of which has no copy on the shelf, and the two loans that explain
+// why.
 //
 // Every case this module asserts is reachable from this world without further
 // setup, so a test that has to write its own rows is a signal that the world is
@@ -96,6 +129,19 @@ INSERT INTO books (id, title, author, available) VALUES
     (10, 'The Mythical Man-Month', 'Brooks',  2),
     (11, 'Structure and Interpretation', 'Abelson', 0);
 `
-	_, err := db.ExecContext(ctx, rows)
+	if _, err := db.ExecContext(ctx, rows); err != nil {
+		return err
+	}
+
+	// The loans are written with arguments rather than in the literal above,
+	// because a Unix second spelled out in SQL is a magic number nobody can
+	// check and the dates it comes from are the part worth reading.
+	const loans = `
+INSERT INTO loans (id, book_id, member_id, due_at, returned_at) VALUES
+    (1, 11, 1, ?, NULL),
+    (2, 10, 1, ?, ?);
+`
+	_, err := db.ExecContext(ctx, loans,
+		overdueLoanDue.Unix(), returnedLoanDue.Unix(), returnedLoanReturned.Unix())
 	return err
 }
