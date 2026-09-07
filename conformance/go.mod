@@ -26,7 +26,7 @@ replace github.com/Artui/go-services/mcpx => ../mcpx
 replace github.com/Artui/go-services/adkx => ../adkx
 
 require (
-	github.com/Artui/go-services v0.6.0
+	github.com/Artui/go-services v0.7.0
 	github.com/Artui/go-services/adkx v0.0.0-20260905112458-1746f3264ed4
 	github.com/Artui/go-services/ginx v0.0.0-00010101000000-000000000000
 	github.com/Artui/go-services/httpx v0.0.0-00010101000000-000000000000

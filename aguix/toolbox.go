@@ -9,6 +9,8 @@ import (
 	"strings"
 
 	services "github.com/Artui/go-services"
+
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 // ToolErrorPrefix marks a tool result as a failure, in the content itself.
@@ -75,10 +77,41 @@ type Toolbox[D any] struct {
 	reg       *services.Registry[D]
 	principal Principal
 	ids       func() string
+	renderer  *services.Renderer
+}
+
+// A ToolboxOption configures a toolbox.
+//
+// Distinct from Option, which configures the HTTP handler: the two are separate
+// objects a consumer builds separately, and one type serving both would let a
+// handler option compile at a toolbox call site and do nothing.
+type ToolboxOption func(*toolboxConfig)
+
+type toolboxConfig struct {
+	renderer *services.Renderer
+}
+
+// WithToolboxRenderer renders every success value for the reader who asked for
+// it, using the schema the kernel reflected for that operation.
+//
+// A toolbox without one streams exactly what the service returned, which is the
+// default because it is what an HTTP transport needs from the same spec.
+// Rendering is what an agent transport may additionally want: a model is a
+// reader nobody told what a field's units are, so an integer becomes an amount
+// and a UTC timestamp becomes a time in the reader's own zone -- facts about the
+// reader that no declaration can carry, because a declaration is written once
+// with nobody in front of it.
+//
+// The formatters are handed the principal this toolbox resolved, not Deps: Deps
+// belongs to a transaction that has closed by the time a result exists.
+func WithToolboxRenderer(r *services.Renderer) ToolboxOption {
+	return func(c *toolboxConfig) { c.renderer = r }
 }
 
 // NewToolbox builds one over a registry.
-func NewToolbox[D any](reg *services.Registry[D], principal Principal) (*Toolbox[D], error) {
+func NewToolbox[D any](
+	reg *services.Registry[D], principal Principal, opts ...ToolboxOption,
+) (*Toolbox[D], error) {
 	if reg == nil {
 		return nil, errors.New("aguix: a toolbox needs a registry")
 	}
@@ -86,7 +119,13 @@ func NewToolbox[D any](reg *services.Registry[D], principal Principal) (*Toolbox
 		return nil, errors.New(
 			"aguix: a toolbox needs a principal; pass aguix.Anonymous to authenticate nobody")
 	}
-	return &Toolbox[D]{reg: reg, principal: principal, ids: sequentialIDs("call")}, nil
+	var cfg toolboxConfig
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	return &Toolbox[D]{
+		reg: reg, principal: principal, ids: sequentialIDs("call"), renderer: cfg.renderer,
+	}, nil
 }
 
 // Definitions describes every operation, in the shape a model is shown.
@@ -189,7 +228,20 @@ func (t *Toolbox[D]) dispatch(
 	// returns is both prefixed and marked, and the two markers are set in the
 	// same place so they cannot come to disagree.
 
-	payload, err := json.Marshal(result.Value)
+	// Rendering is the toolbox's, not the kernel's: one declaration serves an
+	// HTTP route and an agent tool, and only one of those two readers wants an
+	// amount of money where the other wants an integer.
+	value := result.Value
+	if t.renderer != nil {
+		rendered, rerr := t.renderer.RenderValue(ctx, who, t.outputSchema(name), result.Value)
+		if rerr != nil {
+			return ToolResultError, OutcomeFailed,
+				fmt.Errorf("aguix: %q could not be rendered: %w", name, rerr)
+		}
+		value = rendered
+	}
+
+	payload, err := json.Marshal(value)
 	if err != nil {
 		// The service returned something no encoder can represent. That is this
 		// process's bug rather than anything the agent did, and it is the one
@@ -290,4 +342,22 @@ func explainValidation(e *services.ValidationError) string {
 		}
 	}
 	return b.String()
+}
+
+// outputSchema finds what the kernel reflected for one operation's result.
+//
+// Read live rather than cached at construction, matching Definitions, which
+// reads Entries on every call so that a toolbox describes the registry as it is
+// rather than as it was. The scan is only reached when a renderer is configured,
+// so a toolbox without one pays nothing for it.
+func (t *Toolbox[D]) outputSchema(name string) *jsonschema.Schema {
+	for _, entry := range t.reg.Entries() {
+		if entry.Name == name {
+			return entry.Output
+		}
+	}
+	// Unreachable through dispatch: the kernel already refused an unknown name
+	// before this point. A nil schema renders nothing, which is the right answer
+	// for a value nothing describes.
+	return nil
 }

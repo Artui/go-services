@@ -98,7 +98,18 @@ func (t *specTool[D]) Run(ctx agent.Context, args any) (map[string]any, error) {
 		return t.fail(ctx, err)
 	}
 
-	rendered, err := succeed(result.Value)
+	// Rendering is the toolset's, not the kernel's: one declaration serves an
+	// HTTP route and an agent tool, and only one of those two readers wants an
+	// amount of money where the other wants an integer.
+	value := result.Value
+	if t.owner.renderer != nil {
+		value, err = t.owner.renderer.RenderValue(ctx, who, t.entry.Output, result.Value)
+		if err != nil {
+			return t.fail(ctx, err)
+		}
+	}
+
+	rendered, err := succeed(value)
 	if err != nil {
 		// The service returned something no encoder can represent. That is this
 		// process's bug rather than the model's, so it is redacted and reported
