@@ -1,15 +1,18 @@
-package example
+package services
 
-// A prototype of the rendering mechanism, built here before it is proposed for
-// the kernel, because every other claim in this module was measured before it
-// was believed.
+// Rendering a value for the reader who asked for it.
 //
-// The problem it solves is one this module already recorded and could not close:
-// a description is declared once, at registration, with no reader in front of it
-// -- so it can say "in cents of US dollars" and can never say "half past two on
+// This is the one part of the library that is about presentation, and it is
+// offered rather than performed: nothing in Dispatch calls it, so a transport
+// that wants raw values -- which is every HTTP transport, and the reason an API
+// and an agent tool can share one Spec -- gets them by doing nothing.
+//
+// The problem it solves is one a description cannot:
+// a description is declared once, at registration, with no reader in front of
+// it -- so it can say "in minor units" and can never say "half past two on
 // Tuesday", because the second is a fact about who is asking. A struct tag has
-// the identical limit for the identical reason, which is why the earlier finding
-// concluded that a rendering *tag* was not the answer.
+// the identical limit for the identical reason: declaring is not the problem,
+// declaring is where the reader is absent.
 //
 // The split that works is to put each half where it belongs. The declaration
 // stays a fact about the FIELD: `x-render: "money-minor"` says this integer is
@@ -17,11 +20,18 @@ package example
 // formatter is a fact about the READER: it runs adapter-side, per call, with the
 // principal in hand, and it is what knows the currency and the timezone.
 //
-// Neither half touches Deps, which is what makes this legal at all. Deps is
+// Neither half touches Deps, which is what makes this safe at all. Deps is
 // resolved inside the transaction and its handle is dead by the time a Result
 // exists -- so a renderer that reached for it would be reaching into a closed
 // transaction. It does not need to: an adapter already holds ctx and the
-// principal, because it passed them to Dispatch.
+// principal, because it passed them to Dispatch, and a formatter is handed
+// exactly those two.
+//
+// It imports no transport, so it sits under every adapter like the rest of the
+// kernel. It is here rather than in a module of its own because the reason the
+// adapters are separate modules does not apply: they are split because each
+// drags a heavy dependency tree with its own Go floor, and this drags nothing
+// the kernel does not already have.
 
 import (
 	"context"

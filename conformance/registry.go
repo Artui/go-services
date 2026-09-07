@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	services "github.com/Artui/go-services"
+	"github.com/google/jsonschema-go/jsonschema"
 )
 
 // SecretText is what an unexpected error says. No transport may put it on a
@@ -39,10 +40,29 @@ func (in AuthorIn) Validate() error {
 }
 
 // AuthorOut is the success shape every transport has to render identically.
+//
+// Name is a Shouted, which declares a render keyword. Nothing here registers a
+// formatter and no adapter calls a Renderer, so every transport must serve the
+// raw string -- that is the property being asserted, and it is the whole of what
+// "the kernel offers rendering rather than performing it" means in practice. If
+// an adapter ever grew a renderer of its own, this field would start disagreeing
+// with the transports that did not, and the comparison below is what would say
+// so.
 type AuthorOut struct {
-	Name string `json:"name"`
-	Bio  string `json:"bio"`
-	ID   int64  `json:"id"`
+	Name Shouted `json:"name"`
+	Bio  string  `json:"bio"`
+	ID   int64   `json:"id"`
+}
+
+// Shouted is a string carrying a render keyword and nothing else.
+type Shouted string
+
+// JSONSchema declares the keyword an adapter would act on if any adapter did.
+func (Shouted) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{
+		Type:  "string",
+		Extra: map[string]any{services.RenderKeyword: "upper"},
+	}, nil
 }
 
 // PatchIn exercises the omitted-versus-zero distinction across transports.
@@ -76,14 +96,14 @@ func Registry() *services.Registry[Deps] {
 	services.MustRegister(r, services.Spec[Deps, AuthorIn, AuthorOut]{
 		Name: "create_author", Kind: services.Mutation, Status: 201,
 		Run: func(_ services.Ctx[Deps], in AuthorIn) (AuthorOut, error) {
-			return AuthorOut(in), nil
+			return AuthorOut{Name: Shouted(in.Name), Bio: in.Bio, ID: in.ID}, nil
 		},
 	})
 
 	services.MustRegister(r, services.Spec[Deps, AuthorIn, AuthorOut]{
 		Name: "get_author", Kind: services.Query,
 		Run: func(_ services.Ctx[Deps], in AuthorIn) (AuthorOut, error) {
-			return AuthorOut{Name: in.Name, ID: in.ID}, nil
+			return AuthorOut{Name: Shouted(in.Name), ID: in.ID}, nil
 		},
 	})
 

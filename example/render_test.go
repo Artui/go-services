@@ -113,7 +113,7 @@ func TestAFieldWithNoKeywordIsUntouched(t *testing.T) {
 // consumers that have never heard of a vocabulary, and dropping a value would
 // be a worse answer than showing it raw.
 func TestAnUnknownKeywordLeavesTheValueAlone(t *testing.T) {
-	empty := NewRenderer(map[string]Formatter{})
+	empty := services.NewRenderer(map[string]services.Formatter{})
 	decoded, schema := decodedResult(t, finedRegistry(t), int64(1))
 
 	rendered, err := empty.Render(t.Context(), int64(1), schema, decoded)
@@ -128,7 +128,7 @@ func TestAnUnknownKeywordLeavesTheValueAlone(t *testing.T) {
 // A formatter that refuses names the field, because the alternative is an error
 // saying only that something somewhere could not be rendered.
 func TestAFailingFormatterNamesTheField(t *testing.T) {
-	broken := NewRenderer(map[string]Formatter{
+	broken := services.NewRenderer(map[string]services.Formatter{
 		"money-minor": func(context.Context, any, any) (any, error) {
 			return nil, errString("no rate for this branch")
 		},

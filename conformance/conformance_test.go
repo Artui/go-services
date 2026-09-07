@@ -3,6 +3,7 @@ package conformance_test
 import (
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/Artui/go-services/conformance"
@@ -187,6 +188,21 @@ func TestEveryTransportAgrees(t *testing.T) {
 				if !std.Failed && !reflect.DeepEqual(std.Value, out.Value) {
 					t.Errorf("success value diverges:\n  http: %#v\n  %s: %#v",
 						std.Value, name, out.Value)
+				}
+				// Said out loud rather than left to DeepEqual above, because the
+				// two would fail for different reasons and only one of them is
+				// about this. AuthorOut.Name declares a render keyword; the
+				// kernel offers rendering and performs none, and no adapter
+				// calls a Renderer -- so every transport must serve the raw
+				// string. An adapter that grew one of its own would make this
+				// field disagree with the transports that had not, and that is a
+				// different defect from two transports encoding the same value
+				// differently.
+				if !std.Failed {
+					if got, ok := out.Value["name"].(string); ok && got != strings.ToLower(got) {
+						t.Errorf("%s rendered a marked field the kernel only offers to render: name=%q",
+							name, got)
+					}
 				}
 				// Messages are compared only where every transport is reporting
 				// the same thing to the same audience: a rejected input, built

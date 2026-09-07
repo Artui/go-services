@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	services "github.com/Artui/go-services"
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
@@ -30,7 +31,7 @@ func (Cents) JSONSchema() (*jsonschema.Schema, error) {
 	return &jsonschema.Schema{
 		Type:        "integer",
 		Description: "an amount of money in minor units, so 550 is 5.50 of whatever currency the branch keeps",
-		Extra:       map[string]any{RenderKeyword: "money-minor"},
+		Extra:       map[string]any{services.RenderKeyword: "money-minor"},
 	}, nil
 }
 
@@ -49,7 +50,7 @@ func (Instant) JSONSchema() (*jsonschema.Schema, error) {
 		Type:        "string",
 		Format:      "date-time",
 		Description: "a moment in time as an RFC 3339 timestamp in UTC",
-		Extra:       map[string]any{RenderKeyword: "instant"},
+		Extra:       map[string]any{services.RenderKeyword: "instant"},
 	}, nil
 }
 
@@ -118,8 +119,8 @@ func RenderInstant(_ context.Context, principal any, value any) (any, error) {
 }
 
 // LibraryRenderer is the set this module's own specs need.
-func LibraryRenderer() *Renderer {
-	return NewRenderer(map[string]Formatter{
+func LibraryRenderer() *services.Renderer {
+	return services.NewRenderer(map[string]services.Formatter{
 		"money-minor": MoneyMinor,
 		"instant":     RenderInstant,
 	})

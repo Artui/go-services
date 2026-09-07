@@ -860,8 +860,25 @@ by somebody remembering.
 
 ## 19. Rendering for a reader works, and the split is what makes it legal
 
-**Status: PROTOTYPED here, proposed for the kernel. Nothing in the kernel or any
-adapter changed to build it.**
+**Status: PROMOTED to the kernel 2026-09-07 as `render.go`, after being built and
+measured here first. The reusable half -- `Renderer`, `Formatter`,
+`RenderKeyword` and the walk -- is the kernel's; the domain half stays here,
+because `Cents`, `Instant` and who reads them are a consumer's business.**
+
+The kernel rather than a module of its own, and the reason is worth stating
+because the obvious rule points the other way. Adapters are separate modules
+because each drags a heavy dependency tree with its own Go floor -- Gin, the MCP
+SDK, adk-go at Go 1.26.6 -- so a consumer wanting an HTTP route is not pulled
+onto an agent framework. A renderer drags nothing: it needs `jsonschema-go`,
+which is the kernel's only dependency, and the standard library. The isolation
+would have bought nothing and cost a sixth module in every kernel-release sweep.
+
+`conformance` is the check that it stays offered rather than performed.
+`AuthorOut.Name` now declares a render keyword, no adapter calls a `Renderer`,
+and every transport must serve the raw string -- asserted out loud rather than
+left to the value comparison, because the two would fail for different reasons.
+Verified to have teeth: making one transport render turns it red, naming the
+adapter and the value.
 
 Finding 17 concluded that a rendering tag was not earned, and the reasoning still
 holds: a tag is declared once, at registration, with no reader in front of it, so
