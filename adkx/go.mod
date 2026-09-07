@@ -3,7 +3,7 @@ module github.com/Artui/go-services/adkx
 go 1.26.6
 
 require (
-	github.com/Artui/go-services v0.5.0
+	github.com/Artui/go-services v0.6.0
 	google.golang.org/adk/v2 v2.3.0
 	google.golang.org/genai v1.71.0
 )
