@@ -855,3 +855,61 @@ Not requested here, and deliberately not designed here either. Recorded with a
 test that fails the moment it stops being true -- and that test is written to say
 so, so a kernel that starts checking closes this finding by going red rather than
 by somebody remembering.
+
+---
+
+## 19. Rendering for a reader works, and the split is what makes it legal
+
+**Status: PROTOTYPED here, proposed for the kernel. Nothing in the kernel or any
+adapter changed to build it.**
+
+Finding 17 concluded that a rendering tag was not earned, and the reasoning still
+holds: a tag is declared once, at registration, with no reader in front of it, so
+it can no more name a timezone than a description can. What that argument missed
+is that a tag and a formatter are not the same thing and do not have to run at
+the same time.
+
+The split:
+
+- **the declaration is a fact about the field** -- `x-render: "money-minor"` says
+  this integer is money in minor units, which is true of every row and every
+  reader, and is exactly what a declaration is good at;
+- **the formatter is a fact about the reader** -- it runs adapter-side, per call,
+  with the principal in hand, and it is what knows the currency and the zone.
+
+One schema, one stored value, two readers:
+
+```json
+{"due_at":"Sat 15 Aug 2026 at 9:00pm (NZST)","fine":"NZD 5.50","loan_id":1}
+{"due_at":"Sat 15 Aug 2026 at 2:00am (PDT)","fine":"USD 5.50","loan_id":1}
+```
+
+and unrendered, which is what every HTTP consumer still gets:
+
+```json
+{"due_at":"2026-08-15T09:00:00Z","fine":550,"loan_id":1}
+```
+
+**Neither half touches `Deps`, which is what makes it legal at all.** `Deps` is
+resolved inside the transaction and its handle is dead by the time a `Result`
+exists, so a renderer reaching for it would be reaching into a closed
+transaction. It does not need to: an adapter already holds `ctx` and the
+principal, because it passed them to `Dispatch`.
+
+Four properties the prototype pins, because each is a way this could have been
+built wrong:
+
+- an adapter that renders nothing serves exactly what it served before, which is
+  what keeps HTTP raw and is the reason the kernel should *offer* rendering
+  rather than *perform* it;
+- a field with no keyword is untouched, so this is opt-in per field rather than a
+  pass over everything;
+- a keyword no formatter knows leaves the value alone, because a schema travels
+  to consumers that never heard of a vocabulary and dropping a value is worse
+  than showing it raw;
+- a formatter that fails names the field, not just itself.
+
+**The description stays even where a keyword is present**, and that is not
+redundancy. They serve different readers: an HTTP client and any adapter that
+never calls a renderer still get the raw integer, and the sentence is the only
+thing standing between them and a wrong answer.
