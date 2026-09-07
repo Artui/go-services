@@ -10,6 +10,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -479,5 +480,510 @@ func TestAFieldMarkingReachesTheWireWithNoKernelChange(t *testing.T) {
 		`"required":["token"],"type":"object"}`
 	if schema != want {
 		t.Errorf("output schema =\n  %s\nwant\n  %s", schema, want)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// What an annotation reaches, and where it stops. FRICTION.md finding 16.
+// ---------------------------------------------------------------------------
+
+// The words every annotated output field carries reach all three agent
+// transports, and reach them identically.
+//
+// This is the whole of what the ANNOTATE mechanism is, stated as an assertion:
+// a jsonschema struct tag on an OUTPUT field needs no library change, and the
+// three transports that publish an output schema carry it verbatim. The list is
+// exhaustive over the fields the annotation pass touched, so a field losing its
+// words fails here by name rather than by a diff nobody reads.
+func TestEveryAnnotatedOutputFieldReachesEveryAgentTransport(t *testing.T) {
+	said := []string{
+		"how many copies are on the shelf right now; this is a count and not a yes-or-no",
+		"the book's identifier; pass it as book_id to borrow this book",
+		"in cents of US dollars, so 550 means USD 5.50",
+		"convert it to the reader's own timezone before stating a date or a time",
+		"never null despite what the type says",
+	}
+
+	db := audienceDB(t)
+	_, _, mcpBooks := callMCPX(t, db, "list_books", map[string]any{"limit": 1})
+	_, _, mcpLoans := callMCPX(t, audienceDB(t), "list_loans", map[string]any{})
+	_, adkBooks := callADKX(t, audienceDB(t), "list_books", map[string]any{"limit": 1})
+	_, adkLoans := callADKX(t, audienceDB(t), "list_loans", map[string]any{})
+	_, aguiBooks := callAGUIX(t, audienceDB(t), "show me the books", "list_books")
+	_, aguiLoans := callAGUIX(t, audienceDB(t), "my loans", "list_loans")
+
+	published := map[string]string{
+		"mcpx list_books":  mcpBooks,
+		"mcpx list_loans":  mcpLoans,
+		"adkx list_books":  adkBooks,
+		"adkx list_loans":  adkLoans,
+		"aguix list_books": aguiBooks,
+		"aguix list_loans": aguiLoans,
+	}
+	for _, words := range said {
+		var found bool
+		for _, schema := range published {
+			if strings.Contains(schema, words) {
+				found = true
+			}
+		}
+		if !found {
+			t.Errorf("no transport carries %q", words)
+		}
+	}
+
+	// borrow_book's own fields, on the transport that has them.
+	_, _, mcpBorrow := callMCPX(t, audienceDB(t), "borrow_book", map[string]any{"book_id": 10})
+	for _, words := range []string{
+		"the new loan's identifier",
+		"taken from the authenticated caller and never from the request",
+		"how many copies of this book are left on the shelf after this loan",
+	} {
+		if !strings.Contains(mcpBorrow, words) {
+			t.Errorf("borrow_book's output schema lost %q:\n  %s", words, mcpBorrow)
+		}
+	}
+}
+
+// One output schema serves every reader, and it is one object rather than one
+// per caller.
+//
+// This is the structural half of the timezone finding, and it is the half that
+// cannot be argued with. Entries takes no principal, no context and no request;
+// Output is a pointer the kernel reflected once at Register and hands out
+// unchanged. So a description is a fact about a FIELD and can never be a fact
+// about a READER -- not because nobody wrote the code, but because the object
+// that would have to carry it is shared by everyone who asks.
+//
+// A struct tag that RENDERED the value instead of describing it would be read
+// at exactly the same moment, from exactly the same declaration, and would have
+// exactly the same reach. The fork between annotating and rendering is not what
+// decides this case.
+func TestOneOutputSchemaServesEveryReader(t *testing.T) {
+	reg := registryAt(audienceDB(t))
+
+	var first, second *jsonschema.Schema
+	for _, e := range reg.Entries() {
+		if e.Name == "list_loans" {
+			first = e.Output
+		}
+	}
+	for _, e := range reg.Entries() {
+		if e.Name == "list_loans" {
+			second = e.Output
+		}
+	}
+	if first == nil || first != second {
+		t.Fatalf("two reads of list_loans gave %p and %p; the schema is not one object",
+			first, second)
+	}
+
+	// Two members read the same operation and are served different ROWS from the
+	// one schema. That is the shape of everything this library can vary by
+	// reader: the data moves and the declaration does not.
+	answers := map[int64]string{
+		1: `{"loans":[{"loan_id":1,"book_id":11,"title":"Structure and Interpretation",` +
+			`"status":"overdue","due_at":"2026-08-15T09:00:00Z","fine_cents":550}]}`,
+		2: `{"loans":[]}`,
+	}
+	for member, want := range answers {
+		res, err := reg.Dispatch(t.Context(), member, "list_loans", json.RawMessage(`{}`))
+		if err != nil {
+			t.Fatalf("member %d: %v", member, err)
+		}
+		if got := encode(t, res.Value); got != want {
+			t.Errorf("member %d =\n  %s\nwant\n  %s", member, got, want)
+		}
+	}
+}
+
+// zonedOut is the probe that answers the timezone question rather than arguing
+// it: the same instant twice, once as the service stores it and once written
+// for whoever is reading.
+type zonedOut struct {
+	DueAt      time.Time `json:"due_at" jsonschema:"when the book must be back, RFC 3339 in UTC"`
+	DueAtLocal string    `json:"due_at_local" jsonschema:"the same instant in the reader's own timezone"`
+}
+
+// probeZones stands in for a member preference the real domain does not have.
+var probeZones = map[int64]string{1: "Pacific/Auckland", 2: "America/Los_Angeles"}
+
+// A reader's timezone travels as a value or it does not travel.
+//
+// Two members read one loan. The schema they are shown is byte-identical -- it
+// has to be, by the test above -- and the VALUES differ, because the layer that
+// produced them knew who was asking. That layer is Run, reading Deps, which is
+// the only thing in this library that sees the reader at all.
+//
+// Note what is NOT on Result: Deps. An adapter holds Value, Status and Input, so
+// a formatter running where the adapters marshal could not obtain the zone even
+// if it wanted to. The information is not merely absent from the declaration --
+// it is absent from the place a declaration-driven formatter would run.
+func TestAReadersTimezoneTravelsAsAValueOrNotAtAll(t *testing.T) {
+	db := audienceDB(t)
+	reg := services.New(resolverOver(db))
+	due := time.Date(2026, 8, 15, 9, 0, 0, 0, time.UTC)
+	services.MustRegister(reg, services.Spec[Deps, struct{}, zonedOut]{
+		Name: "zoned", Kind: services.Query,
+		Run: func(ctx services.Ctx[Deps], _ struct{}) (zonedOut, error) {
+			loc, err := time.LoadLocation(probeZones[ctx.Deps.MemberID])
+			if err != nil {
+				return zonedOut{}, err
+			}
+			return zonedOut{DueAt: due, DueAtLocal: due.In(loc).Format(time.RFC3339)}, nil
+		},
+	})
+
+	want := map[int64]string{
+		1: `{"due_at":"2026-08-15T09:00:00Z","due_at_local":"2026-08-15T21:00:00+12:00"}`,
+		2: `{"due_at":"2026-08-15T09:00:00Z","due_at_local":"2026-08-15T02:00:00-07:00"}`,
+	}
+	for member, expected := range want {
+		res, err := reg.Dispatch(t.Context(), member, "zoned", nil)
+		if err != nil {
+			t.Fatalf("member %d: %v", member, err)
+		}
+		if got := encode(t, res.Value); got != expected {
+			t.Errorf("member %d =\n  %s\nwant\n  %s", member, got, expected)
+		}
+	}
+
+	// One schema, both readers. Neither is told which zone they got.
+	entries := reg.Entries()
+	if len(entries) != 1 {
+		t.Fatalf("registered %d specs, want the probe", len(entries))
+	}
+	const schema = `{"type":"object","properties":` +
+		`{"due_at":{"type":"string","description":"when the book must be back, RFC 3339 in UTC"},` +
+		`"due_at_local":{"type":"string","description":"the same instant in the reader's own timezone"}},` +
+		`"required":["due_at","due_at_local"],"additionalProperties":false}`
+	if got := encode(t, entries[0].Output); got != schema {
+		t.Errorf("output schema =\n  %s\nwant\n  %s", got, schema)
+	}
+}
+
+// A jsonschema tag carries a description and refuses anything else.
+//
+// The kernel's documentation says a tag "carries a description and nothing
+// else", and this is that sentence as a fact rather than a claim: the reflector
+// reserves the "WORD=" prefix for future keywords and REFUSES a tag that uses
+// one, so `jsonschema:"format=date-time"` is not silently swallowed -- it is a
+// registration error. There is no output-side equivalent of Spec.Schema, so on
+// an output field of a standard type a description is the whole vocabulary.
+func TestADescriptionIsTheOnlyThingATagCanCarry(t *testing.T) {
+	type tagged struct {
+		DueAt time.Time `json:"due_at" jsonschema:"format=date-time"`
+	}
+	if _, err := jsonschema.For[tagged](nil); err == nil {
+		t.Fatal("a keyword-shaped tag was accepted; the tag vocabulary has grown")
+	} else if !strings.Contains(err.Error(), "must not begin with 'WORD='") {
+		t.Errorf("refused for the wrong reason: %v", err)
+	}
+
+	// Spec.Schema reaches the input and only the input.
+	reg := services.New(resolverOver(audienceDB(t)))
+	services.MustRegister(reg, services.Spec[Deps, ListIn, ListOut]{
+		Name: "hooked", Kind: services.Query,
+		Schema: func(s *jsonschema.Schema) { s.Title = "reached by the hook" },
+		Run:    func(services.Ctx[Deps], ListIn) (ListOut, error) { return ListOut{}, nil },
+	})
+	e := reg.Entries()[0]
+	if !strings.Contains(encode(t, e.Input), "reached by the hook") {
+		t.Error("Spec.Schema no longer reaches the input schema")
+	}
+	if strings.Contains(encode(t, e.Output), "reached by the hook") {
+		t.Error("Spec.Schema now reaches the output schema; finding 16 needs rewriting")
+	}
+}
+
+// DueDate is the answer to writing one sentence on two fields.
+//
+// It is EMBEDDED rather than defined -- `struct{ time.Time }` and not
+// `type DueDate time.Time` -- and that is the whole trap. A defined type over a
+// struct does not inherit its methods, so the defined spelling loses
+// time.Time's MarshalJSON and puts `{}` on the wire while its declared schema
+// still says "string". The embedded spelling promotes it and the bytes are
+// unchanged.
+type DueDate struct{ time.Time }
+
+const dueDateWords = "when the book must be back, as an RFC 3339 timestamp in UTC; " +
+	"convert it to the reader's own timezone before stating a date or a time"
+
+// JSONSchema says it once, for every field of this type anywhere.
+func (DueDate) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{
+		Type: "string", Format: "date-time", Description: dueDateWords,
+	}, nil
+}
+
+type datedOut struct {
+	Borrowed DueDate `json:"borrowed_due_at"`
+	Renewed  DueDate `json:"renewed_due_at"`
+}
+
+// A named type says it once, keeps the wire, and reaches a keyword a tag cannot.
+//
+// This is the measured answer to what annotation COSTS. The tag route is one
+// sentence per field, and this module already writes the due-date sentence
+// twice verbatim. The named-type route writes it once, gives both fields the
+// `format: date-time` no tag can express, and changes not one byte of any
+// payload -- which is what makes it a schema change rather than a wire change.
+//
+// What it costs in exchange is smaller than it looks, and the linter is what
+// established that: embedding PROMOTES time.Time's whole method set, so
+// `d.Equal(x)` and `d.Format(...)` read exactly as before and staticcheck flags
+// a `.Time` written out of habit. The cost is confined to the two places the
+// struct itself shows: constructing one (`DueDate{at}`) and handing the address
+// of the inner value to something that wants a time.Time, such as a SQL Scan.
+func TestANamedTypeSaysItOnceAndKeepsTheWire(t *testing.T) {
+	at := time.Date(2026, 9, 20, 12, 0, 0, 0, time.UTC)
+	const wire = `{"borrowed_due_at":"2026-09-20T12:00:00Z","renewed_due_at":"2026-09-20T12:00:00Z"}`
+
+	if got := encode(t, datedOut{Borrowed: DueDate{at}, Renewed: DueDate{at}}); got != wire {
+		t.Errorf("wire =\n  %s\nwant\n  %s", got, wire)
+	}
+	// And back, because a schema change that breaks decoding is a wire change.
+	var back datedOut
+	if err := json.Unmarshal([]byte(wire), &back); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	// Called on the DueDate rather than on its inner field, because that is the
+	// finding: the method set came with it.
+	if !back.Borrowed.Equal(at) {
+		t.Errorf("round trip gave %v, want %v", back.Borrowed, at)
+	}
+	// The one read that does need the field is handing a *time.Time onward.
+	when := &back.Renewed.Time
+	if !when.Equal(at) {
+		t.Errorf("addressed inner value gave %v, want %v", when, at)
+	}
+
+	reg := services.New(resolverOver(audienceDB(t)))
+	services.MustRegister(reg, services.Spec[Deps, struct{}, datedOut]{
+		Name: "dated", Kind: services.Query,
+		Run: func(services.Ctx[Deps], struct{}) (datedOut, error) { return datedOut{}, nil },
+	})
+	schema := encode(t, reg.Entries()[0].Output)
+	if strings.Count(schema, dueDateWords) != 2 {
+		t.Errorf("the sentence written once did not reach both fields:\n  %s", schema)
+	}
+	if !strings.Contains(schema, `"format":"date-time"`) {
+		t.Errorf("a named type could not carry a keyword either:\n  %s", schema)
+	}
+}
+
+// liarDate is the defined spelling, kept because the trap is the finding.
+type liarDate time.Time
+
+func (liarDate) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{Type: "string", Format: "date-time"}, nil
+}
+
+type liarOut struct {
+	DueAt liarDate `json:"due_at"`
+}
+
+// An output may contradict its own advertised schema, and nothing notices.
+//
+// The kernel validates INPUT against the input schema on every dispatch. It does
+// not validate output against the output schema, and neither does the MCP SDK:
+// this spec advertises `{"type":"string","format":"date-time"}` and serves `{}`,
+// with IsError false and no error anywhere.
+//
+// It matters here because SchemaFor is the ONLY channel by which an output field
+// can carry anything a description cannot, so it is the channel the cost finding
+// recommends -- and its failure mode is silent. Recorded rather than fixed:
+// output validation is a kernel decision and this module does not make those.
+func TestAnOutputMayContradictItsOwnSchemaUnnoticed(t *testing.T) {
+	reg := services.New(resolverOver(audienceDB(t)))
+	services.MustRegister(reg, services.Spec[Deps, struct{}, liarOut]{
+		Name: "liar", Kind: services.Query,
+		Run: func(services.Ctx[Deps], struct{}) (liarOut, error) {
+			return liarOut{DueAt: liarDate(time.Date(2026, 8, 15, 9, 0, 0, 0, time.UTC))}, nil
+		},
+	})
+
+	server := mcp.NewServer(&mcp.Implementation{Name: "liar", Version: "v0"}, nil)
+	if err := mcpx.Mount(server, reg,
+		func(context.Context, *mcp.CallToolRequest) (any, error) { return int64(1), nil }); err != nil {
+		t.Fatalf("mount: %v", err)
+	}
+	clientT, serverT := mcp.NewInMemoryTransports()
+	if _, err := server.Connect(t.Context(), serverT, nil); err != nil {
+		t.Fatal(err)
+	}
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "v0"}, nil).
+		Connect(t.Context(), clientT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	listed, err := session.ListTools(t.Context(), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(encode(t, listed.Tools[0].OutputSchema), `"format":"date-time"`) {
+		t.Fatalf("the probe did not advertise what it claims: %s",
+			encode(t, listed.Tools[0].OutputSchema))
+	}
+
+	res, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "liar"})
+	if err != nil {
+		t.Fatalf("mcp protocol error: %v", err)
+	}
+	if res.IsError {
+		t.Fatalf("the divergence was caught after all, which would close this finding: %v",
+			res.Content)
+	}
+	if got := encode(t, res.StructuredContent); got != `{"due_at":{}}` {
+		t.Errorf("structured content = %s, want the empty object the encoder produces", got)
+	}
+}
+
+// One description covers every row, so a fact that varies by row cannot be one.
+//
+// The fines below are the same integer and the same field, and they are not the
+// same amount of money. There is one place to write what fine_cents means and
+// two answers to write there -- which is why the annotation on the real Loan can
+// name a currency at all, and why it says so out loud rather than pretending the
+// question does not arise.
+//
+// A rendering tag has the identical problem for the identical reason: it is read
+// once, off the type, with no row in front of it. What reaches this is a sibling
+// field, which is data, and which reaches a browser too.
+type pricedRow struct {
+	FineCents int64  `json:"fine_cents" jsonschema:"the fine, in minor units of the branch's currency"`
+	Branch    string `json:"branch"`
+}
+
+type pricedOut struct {
+	Fines []pricedRow `json:"fines"`
+}
+
+func TestOneDescriptionCannotCoverRowsThatDisagree(t *testing.T) {
+	reg := services.New(resolverOver(audienceDB(t)))
+	services.MustRegister(reg, services.Spec[Deps, struct{}, pricedOut]{
+		Name: "fines", Kind: services.Query,
+		Run: func(services.Ctx[Deps], struct{}) (pricedOut, error) {
+			return pricedOut{Fines: []pricedRow{
+				{FineCents: 550, Branch: "London"},
+				{FineCents: 550, Branch: "Tokyo"},
+			}}, nil
+		},
+	})
+
+	res, err := reg.Dispatch(t.Context(), int64(1), "fines", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const wire = `{"fines":[{"fine_cents":550,"branch":"London"},` +
+		`{"fine_cents":550,"branch":"Tokyo"}]}`
+	if got := encode(t, res.Value); got != wire {
+		t.Fatalf("wire =\n  %s\nwant\n  %s", got, wire)
+	}
+
+	// One property, one description, both rows. There is no second place.
+	schema := encode(t, reg.Entries()[0].Output)
+	if strings.Count(schema, "minor units of the branch's currency") != 1 {
+		t.Errorf("the description is not written exactly once:\n  %s", schema)
+	}
+}
+
+// The sharpest prose a model reads here is not an output field.
+//
+// Finding 12 recorded this and nothing pinned it. Every agent transport serves a
+// spec author's sentence verbatim, internal member id included, and no marking,
+// description or formatter on an output field reaches a word of it. It is kept
+// deliberately -- finding 2 settled that the service's own words are what a
+// caller can act on -- and it is here so that the exposure this module actually
+// has is measured rather than assumed.
+func TestARefusalReachesEveryAgentTransportVerbatim(t *testing.T) {
+	const said = "permission denied: member 2 is suspended"
+
+	server := mcp.NewServer(&mcp.Implementation{Name: "l", Version: "v0"}, nil)
+	if err := mcpx.Mount(server, registryAt(audienceDB(t)),
+		func(context.Context, *mcp.CallToolRequest) (any, error) { return int64(2), nil }); err != nil {
+		t.Fatalf("mcpx mount: %v", err)
+	}
+	clientT, serverT := mcp.NewInMemoryTransports()
+	if _, err := server.Connect(t.Context(), serverT, nil); err != nil {
+		t.Fatal(err)
+	}
+	session, err := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "v0"}, nil).
+		Connect(t.Context(), clientT, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Close() })
+
+	res, err := session.CallTool(t.Context(),
+		&mcp.CallToolParams{Name: "borrow_book", Arguments: map[string]any{"book_id": 10}})
+	if err != nil {
+		t.Fatalf("mcp protocol error: %v", err)
+	}
+	var mcpText strings.Builder
+	for _, block := range res.Content {
+		if content, ok := block.(*mcp.TextContent); ok {
+			mcpText.WriteString(content.Text)
+		}
+	}
+	if !res.IsError || mcpText.String() != said {
+		t.Errorf("mcpx served isError=%v %q, want an error carrying %q",
+			res.IsError, mcpText.String(), said)
+	}
+
+	ts, err := adkx.Toolset(registryAt(audienceDB(t)), func(ctx agent.Context) (any, error) {
+		return strconv.ParseInt(ctx.UserID(), 10, 64)
+	})
+	if err != nil {
+		t.Fatalf("adkx toolset: %v", err)
+	}
+	actx := &adkContext{StrictContextMock: agent.NewStrictContextMock(t.Context()), member: 2}
+	tools, err := ts.Tools(actx)
+	if err != nil {
+		t.Fatalf("adkx tools: %v", err)
+	}
+	var ran bool
+	for _, one := range tools {
+		if one.Name() != "borrow_book" {
+			continue
+		}
+		ran = true
+		if _, err := one.(adkx.RunnableTool).Run(actx, map[string]any{"book_id": 10}); err == nil {
+			t.Error("adkx allowed a suspended member to borrow")
+		} else if err.Error() != said {
+			t.Errorf("adkx served %q, want %q", err, said)
+		}
+	}
+	if !ran {
+		t.Fatal("adkx published no borrow_book")
+	}
+
+	toolbox, err := aguix.NewToolbox(registryAt(audienceDB(t)), func(context.Context) (any, error) {
+		return int64(2), nil
+	})
+	if err != nil {
+		t.Fatalf("NewToolbox: %v", err)
+	}
+	handler, err := aguix.Handler(Librarian(toolbox))
+	if err != nil {
+		t.Fatalf("Handler: %v", err)
+	}
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/agent", strings.NewReader(
+		`{"threadId":"t","runId":"r","messages":[{"id":"u","role":"user","content":"borrow book 10"}]}`)))
+	var content string
+	for _, block := range strings.Split(strings.TrimSpace(rec.Body.String()), "\n\n") {
+		var event map[string]any
+		if json.Unmarshal([]byte(strings.TrimPrefix(block, "data: ")), &event) != nil {
+			continue
+		}
+		if event["type"] == "TOOL_CALL_RESULT" {
+			content = fmt.Sprint(event["content"])
+		}
+	}
+	if content != "Error: "+said {
+		t.Errorf("aguix served %q, want the refusal behind its error prefix", content)
 	}
 }

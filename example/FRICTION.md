@@ -364,7 +364,15 @@ was reasoned about without being run.
 
 ## 12. Nothing shapes an output for its audience
 
-**Status: OPEN. The measurement below stands; the verdict it carried does not.**
+**Status: CLOSED by findings 16 to 18, 2026-09-07. The measurement below stands
+and the captures are still the before picture; the fork it was left open on --
+render the value or enrich the description -- has been run as an experiment and
+answered. Annotation, no renderer.**
+
+This heading is updated rather than left to rot, because the paragraph below is
+the one that names why: a resolution written while something is in flight
+becomes a dangling reference the moment it lands. This finding was that
+reference for a day.
 
 This finding was written as "and nothing needs to", closed, on the strength of
 the captures below. The owner reopened it the same day on an argument the
@@ -543,3 +551,303 @@ parsed value -- would put a second type parameter on the interface for the sake
 of the minority of specs that need one. It is written down because the reason
 `listBooks` validates where it does is not visible from the code, and the
 comment on `ListIn.Validate` now says it.
+
+---
+
+## Whether an annotation is enough, measured 2026-09-07
+
+Same tree and same method as the section above: the kernel and every adapter
+through this module's `replace` directives, the clock stopped, and every schema
+and payload quoted below captured from a real session rather than reasoned
+about. `audience_test.go` holds all of it.
+
+Finding 12 was left open on a fork its captures could not settle -- whether a
+struct tag should RENDER the value at the agent boundary or ANNOTATE the schema
+description the agent transports already carry. This is that experiment. The
+three findings below are its output, and the first thing they cost was the
+assumption in the question.
+
+## 16. What a model is told, field by field, and what annotating it changed
+
+**Status: DONE. Sixteen of nineteen output fields now carry their own words on
+all three agent transports. It took no library change and moved no payload
+byte.**
+
+The inventory first, because the previous section reasoned from a sample and
+this is the whole population. Nineteen fields across three output types:
+
+| Spec | Field | Before | After |
+| --- | --- | --- | --- |
+| `borrow_book` | `loan_id` | bare `integer` | annotated |
+| `borrow_book` | `book_id` | bare `integer` | annotated |
+| `borrow_book` | `member_id` | bare `integer` | annotated |
+| `borrow_book` | `remaining` | bare `integer` | annotated |
+| `borrow_book` | `status` | enum, from `SchemaFor` | unchanged |
+| `borrow_book` | `due_at` | described | reworded |
+| `list_books` | `books` | bare `["null","array"]` | annotated |
+| `list_books` | `books[].id` | bare `integer` | annotated |
+| `list_books` | `books[].title` | bare `string` | left bare, on purpose |
+| `list_books` | `books[].author` | bare `string` | left bare, on purpose |
+| `list_books` | `books[].available` | bare `integer` | annotated |
+| `list_books` | `next_cursor` | described | unchanged |
+| `list_loans` | `loans` | bare `["null","array"]` | annotated |
+| `list_loans` | `loans[].loan_id` | bare `integer` | annotated |
+| `list_loans` | `loans[].book_id` | bare `integer` | annotated |
+| `list_loans` | `loans[].title` | bare `string` | left bare, on purpose |
+| `list_loans` | `loans[].status` | enum, from `SchemaFor` | unchanged |
+| `list_loans` | `loans[].due_at` | described | reworded |
+| `list_loans` | `loans[].fine_cents` | described | reworded |
+
+Six of nineteen carried words before, sixteen do now, and the three left bare
+are `title` twice and `author` once -- where the field name and the value
+together say what they are to any reader, and a sentence would be noise. That
+the answer is "most but not all" is worth stating: a rule that every field must
+be annotated would have produced three descriptions nobody needed.
+
+The two the owner named read like this before:
+
+```json
+"fine_cents":{"description":"the fine owed on this loan, in cents","type":"integer"}
+"due_at":{"description":"when the book must be back","type":"string"}
+```
+
+and like this now:
+
+```json
+"fine_cents":{"description":"the fine owed on this loan, in cents of US dollars, so 550 means USD 5.50; it stops growing when the book comes back and never exceeds 1000","type":"integer"}
+"due_at":{"description":"when the book must be back, as an RFC 3339 timestamp in UTC; convert it to the reader's own timezone before stating a date or a time","type":"string"}
+```
+
+What a model now knows that it did not: that the fine is US dollars and that 550
+is 5.50 of them, that it stops accruing on return and cannot exceed 1000, and
+that the timestamp is UTC and is not the reader's wall clock. The first three are
+information the value did not carry. The fourth is an instruction the model
+cannot follow, and finding 17 is about exactly that.
+
+Two fields that read badly were not on anybody's list and are the better catch,
+because both are ambiguous rather than merely terse:
+
+```json
+"remaining":{"type":"integer"}
+"available":{"type":"integer"}
+```
+
+`remaining` is as likely to be days as copies, and `available` is an integer
+wearing the name of a boolean -- `"available":2` is a reader's guess either way.
+They now say `how many copies of this book are left on the shelf after this loan`
+and `how many copies are on the shelf right now; this is a count and not a
+yes-or-no, and zero means no copy can be borrowed`.
+
+One annotation had to argue with the schema beside it:
+
+```json
+"loans":{"description":"the member's loans, oldest first; always a list, empty when there are none, and never null despite what the type says","type":["null","array"]}
+```
+
+A Go slice reflects to `["null","array"]` because a nil slice marshals to null,
+and `listLoans` guarantees it never returns one. The type is derived from the Go
+type; **there is no output-side equivalent of `Spec.Schema`**, which enriches the
+input schema only, so prose contradicting the type is the only channel left.
+`TestADescriptionIsTheOnlyThingATagCanCarry` pins both halves of that.
+
+Two facts about the mechanism, both measured rather than assumed:
+
+- **It needed no library change.** `jsonschema:"..."` on an output field already
+  worked, because `reflectSchema` is one function for input and output, and all
+  three agent transports publish `Entry.Output` --  `mcpx` as `OutputSchema`,
+  `adkx` as `ResponseJsonSchema`, `aguix` as `outputSchema` since finding 14.
+  `TestEveryAnnotatedOutputFieldReachesEveryAgentTransport` asserts every new
+  sentence arrives on every one of them.
+- **It moved no payload byte.** Every literal in this file's captures -- the
+  loan list, the paged catalogue, the created loan, over MCP and ADK and AG-UI
+  and plain HTTP -- passed unchanged through the annotation pass without being
+  touched. That is not a happy accident; it is the property that makes
+  annotation free of the conformance question, and it is asserted by tests that
+  were written before the pass and were not edited during it.
+
+## 17. The line an annotation cannot cross is the reader, and a rendering tag does not cross it either
+
+**Status: DECIDED. No. A rendering mechanism is not earned, and the reason is not
+that annotation is good enough -- it is that the residue annotation leaves is not
+reachable by a struct tag of any kind.**
+
+The hypothesis under test was the reader's timezone: that no description can tell
+a model something the server did not send, and that "UTC" is not the reader's
+zone. It is correct, and the evidence is structural rather than rhetorical.
+
+`Registry.Entries()` takes no principal, no context and no request.
+`Entry.Output` is a `*jsonschema.Schema` the kernel reflected once at `Register`
+and hands out unchanged -- `TestOneOutputSchemaServesEveryReader` asserts two
+reads return the identical pointer. So a description is a fact about a field and
+structurally cannot be a fact about a reader: the object that would carry it is
+shared by everyone who asks.
+
+**And that is the sentence that decides the experiment, because it is equally
+true of a rendering tag.** A `render:"money"` tag would be read at the same
+moment, off the same declaration, with no reader in front of it. The fork the
+question posed -- describe the value or format it -- is not the axis this turns
+on. The axis is declared-once against known-per-call, and both candidates are on
+the same side of it.
+
+Walking it to the place a formatter would have to run makes it concrete.
+`Dispatch` returns `Result{Value, Status, Input}`. **`Deps` is not on it**, and
+`Deps` is the only thing in this library that knows who is asking. So a formatter
+running where the adapters marshal could not obtain the reader's zone even if the
+tag vocabulary existed to ask for it. The information is not merely missing from
+the declaration; it is missing from the site.
+
+What does reach it is a value, and `TestAReadersTimezoneTravelsAsAValueOrNotAtAll`
+is the probe rather than the argument. One spec, two members, one schema:
+
+```json
+{"due_at":"2026-08-15T09:00:00Z","due_at_local":"2026-08-15T21:00:00+12:00"}
+{"due_at":"2026-08-15T09:00:00Z","due_at_local":"2026-08-15T02:00:00-07:00"}
+```
+
+The schema they are shown is byte-identical and says nothing about a zone. The
+values differ because the layer that produced them knew the member -- which is
+`Run`, reading `Deps`, and is where per-reader answers already belong. That the
+extra field also reaches a browser is a feature: a library that is not on UTC has
+the same problem in its own web UI.
+
+Two more of the same shape turned up, so the class is real rather than one
+awkward case:
+
+- **A currency that varies per row.** One property has one description and covers
+  every row of the array beneath it.
+  `TestOneDescriptionCannotCoverRowsThatDisagree` serves two rows of `550` from
+  branches in different currencies; the honest annotation is `in minor units of
+  the branch's currency`, which is a pointer at a sibling field rather than an
+  answer. A rendering tag has the identical problem for the identical reason. It
+  is why the real `Loan.FineCents` can name a currency at all -- this library
+  charges in one -- and the tag says so in as many words rather than pretending
+  the question does not arise.
+- **Locale-dependent formatting**, which is the timezone case wearing different
+  clothes: whether 1234.5 is written `1,234.50` or `1.234,50` is a fact about
+  the reader, arrives by no declaration, and is not something the server was
+  told either.
+
+⇒ *the discriminator is not description against formatter, it is declared-once
+against known-per-call -- and everything the owner's framing calls "missing
+information" is on the per-call side, where neither candidate reaches.*
+
+The sharper version of the same result: **in this domain, every case a renderer
+could serve is a case the model can already recover, and the one case the model
+cannot recover is a case the renderer cannot serve either.** Cents to dollars is
+a division by 100 with the currency now named beside it. An enum is already the
+word a person would use. An opaque token has nothing to render. UTC to the
+reader's wall clock is the only irrecoverable one, and it is the one a tag cannot
+do. That is a complete partition of this module's fields, and it is what makes
+the answer "no" rather than "not yet".
+
+Three things this experiment did **not** establish, said plainly because a
+confident answer on them would be invented:
+
+- **Whether a model reading `550` with a good description gets it right more or
+  less often than a model reading `"$5.50"`.** Nothing here runs a model. That is
+  the one genuine argument left for rendering, it is an empirical question about
+  model behaviour rather than about this library, and it wants a different
+  experiment -- one with an evaluation harness, not a schema capture.
+- **What a renderer would cost the conformance suite.** It was not built, so this
+  is reasoning rather than measurement: `conformance` asserts `success value
+  diverges` across HTTP, MCP and ADK, so a mechanism whose entire purpose is that
+  an agent sees different bytes from a browser needs an audience-shaped exception
+  in the one module that exists to prove the transports agree. Cheap to say,
+  unpleasant to discover after building.
+- **Whether any of this generalises past a lending library.** Nineteen fields of
+  one domain is a small population, chosen for the field kinds that could hurt.
+
+**The loudest thing this experiment found is outside the question it was asked.**
+The brief scoped it to output fields, and the sharpest prose a model reads here
+is not one:
+
+```
+permission denied: member 2 is suspended
+```
+
+`TestARefusalReachesEveryAgentTransportVerbatim` pins it on all three -- MCP as
+an error result, ADK as an error, AG-UI as `Error: ` plus the same sentence with
+`outcome: denied`. An internal member id and an account state, written by a spec
+author for an operator, handed to a model verbatim. **No annotation, marking or
+formatter on an output field reaches a word of it**, because it is not a field.
+Finding 12 noticed this and nothing pinned it; it is pinned now. Finding 2
+settled deliberately that the service's own words are what a caller can act on,
+so this is a decision rather than a gap -- but if the worry that started this
+question is what a model is told and cannot interpret, the error path is the
+larger surface and has never been measured as one.
+
+⇒ *an experiment scoped to output fields will find nothing about errors, and that
+silence is structural rather than a result -- which is the same trap finding 12
+recorded, one section earlier, about the formatters.*
+
+## 18. `SchemaFor` is the only channel for anything but a sentence, and nothing checks that what it says is true
+
+**Status: OPEN. Reported, not fixed: output validation is a kernel decision and
+this module does not make those.**
+
+Annotation's ergonomic cost is real and was the fourth question: every money
+field needs the same tag written by hand. It is visible in this module already at
+three specs -- the due-date sentence is written **twice, verbatim**, on
+`BorrowOut.DueAt` and `Loan.DueAt`, because a description is a property of a
+field and two fields are two places.
+
+The answer is a named type, and it already ships.
+`TestANamedTypeSaysItOnceAndKeepsTheWire` measures it: `DueDate` declares the
+sentence once through `services.SchemaFor`, both fields carry it, the wire is
+unchanged byte for byte, and it round-trips. It also carries `"format":
+"date-time"` -- which **no struct tag can express**, because `jsonschema-go`
+reserves the `WORD=` prefix and refuses `jsonschema:"format=date-time"` at
+registration rather than swallowing it.
+
+**So this is not the same problem as finding 5**, and the comparison is worth
+drawing because the shapes rhyme and the resolutions do not. Finding 5 --  every
+consumer writing the same `sql.ErrNoRows` mapping -- was answered with
+documentation, because the kernel *cannot* ship the mapping without importing a
+driver. The barrier there was structural. Here there is no barrier: the DRY
+mechanism exists, is public, is better than the tag on both counts, and what was
+missing was that nothing said so. That is a documentation answer too, but for the
+opposite reason -- not "we cannot help you", but "the help is already here and
+undiscoverable".
+
+The trap is why it needs writing down rather than assuming. The obvious spelling
+is wrong and fails silently:
+
+```go
+type DueDate time.Time          // loses time.Time's MarshalJSON: the wire becomes {}
+type DueDate struct{ time.Time }  // promotes it: the wire is unchanged
+```
+
+A defined type over a struct does not inherit its methods. The defined spelling
+still compiles, still registers, and still advertises `{"type":"string","format":
+"date-time"}` -- while serving `{}`.
+
+The same sentence is why the embedded spelling costs less than it looks, which
+the linter established rather than the argument: embedding promotes the whole
+method set, so `d.Equal(x)` and `d.Format(...)` read as they did and
+`golangci-lint` flags a `.Time` written out of habit. The cost is confined to
+constructing one and to handing the inner value's address onward, as a SQL
+`Scan` wants. This finding claimed "every construction and every read grows a
+`.Time`" until `make lint` refused it -- worth recording, because it is the
+cheap half of the trade being mis-stated in the direction that would have made
+the recommendation look worse than it is.
+
+**And nothing catches it.** `TestAnOutputMayContradictItsOwnSchemaUnnoticed`
+drives that spec through a real MCP session: the tool is advertised with the
+date-time schema, the call returns `structuredContent` of `{"due_at":{}}`,
+`IsError` is false, and the kernel returned no error. The kernel validates INPUT
+against the input schema on every dispatch and does not validate output against
+the output schema; the MCP SDK does not either.
+
+That is worth the kernel's attention on its own terms, and it is sharper now than
+before this experiment, because finding 16 established that **`SchemaFor` is the
+only way an output field can say anything a sentence cannot** -- so it is the
+channel this file recommends, and its failure mode is silence. The library's
+central claim is that no second object exists which could disagree with the
+schema the kernel enforces. That holds. What this reaches is a different pair:
+the schema and the **encoder**, which are two objects and can disagree, on the
+output side where nothing compares them.
+
+Not requested here, and deliberately not designed here either. Recorded with a
+test that fails the moment it stops being true -- and that test is written to say
+so, so a kernel that starts checking closes this finding by going red rather than
+by somebody remembering.

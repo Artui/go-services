@@ -32,13 +32,23 @@ func (in BorrowIn) Validate() error {
 }
 
 // BorrowOut reports the loan, when it falls due, and what it left on the shelf.
+//
+// Every field carries its own words. That is not decoration: a reflected schema
+// says "integer" and stops, so a field with no tag arrives at a model as a name
+// and a type, and "remaining" on its own is as likely to be days as copies.
 type BorrowOut struct {
-	LoanID    int64      `json:"loan_id"`
-	BookID    int64      `json:"book_id"`
-	MemberID  int64      `json:"member_id"`
-	Remaining int64      `json:"remaining"`
+	LoanID    int64      `json:"loan_id" jsonschema:"the new loan's identifier"`
+	BookID    int64      `json:"book_id" jsonschema:"the book that was borrowed"`
+	MemberID  int64      `json:"member_id" jsonschema:"the member who borrowed it, taken from the authenticated caller and never from the request"`
+	Remaining int64      `json:"remaining" jsonschema:"how many copies of this book are left on the shelf after this loan"`
 	Status    LoanStatus `json:"status"`
-	DueAt     time.Time  `json:"due_at" jsonschema:"when the book must be back"`
+
+	// DueAt is annotated as far as an annotation reaches, which is the point of
+	// the wording. It can name the encoding and it can tell a reader to convert
+	// -- it cannot supply the zone to convert INTO, because there is one schema
+	// for every reader and the reader's zone is a fact about the reader. See
+	// FRICTION.md finding 16.
+	DueAt time.Time `json:"due_at" jsonschema:"when the book must be back, as an RFC 3339 timestamp in UTC; convert it to the reader's own timezone before stating a date or a time"`
 }
 
 // ListIn filters the catalogue. Every field is optional, which is what makes it
@@ -74,17 +84,27 @@ func (in ListIn) Validate() error {
 }
 
 // Book is one catalogue row.
+//
+// title and author carry no tag and want none: the name and the value together
+// say what they are to any reader. available is the opposite case and is the
+// clearest one in this module -- an integer named like a boolean, which a reader
+// meeting `"available":2` has to guess at.
 type Book struct {
-	ID        int64  `json:"id"`
+	ID        int64  `json:"id" jsonschema:"the book's identifier; pass it as book_id to borrow this book"`
 	Title     string `json:"title"`
 	Author    string `json:"author"`
-	Available int64  `json:"available"`
+	Available int64  `json:"available" jsonschema:"how many copies are on the shelf right now; this is a count and not a yes-or-no, and zero means no copy can be borrowed"`
 }
 
 // ListOut wraps the rows in an object rather than returning a bare array,
 // because an object can grow a field and a top-level array cannot.
 type ListOut struct {
-	Books []Book `json:"books"`
+	// The description has to contradict the type, which is worth reading twice.
+	// A Go slice reflects to ["null","array"] because a nil slice marshals to
+	// null, and listBooks guarantees it never returns one -- but the type is
+	// derived from the Go type and there is no output-side hook to correct it,
+	// so the only channel left is prose arguing with the schema beside it.
+	Books []Book `json:"books" jsonschema:"the matching books, in catalogue order; always a list, empty when nothing matched, and never null despite what the type says"`
 
 	// NextCursor is the token that fetches the page after this one. It is
 	// absent on the last page.
@@ -144,16 +164,27 @@ const (
 
 // Loan is one row of a member's own lending history.
 type Loan struct {
-	LoanID int64  `json:"loan_id"`
-	BookID int64  `json:"book_id"`
+	LoanID int64  `json:"loan_id" jsonschema:"this loan's identifier"`
+	BookID int64  `json:"book_id" jsonschema:"the book on loan; pass it as book_id to borrow another copy"`
 	Title  string `json:"title"`
 
 	Status LoanStatus `json:"status"`
-	DueAt  time.Time  `json:"due_at" jsonschema:"when the book must be back"`
 
-	// FineCents is what this loan has cost so far, in cents. It stops growing
-	// when the book comes back.
-	FineCents int64 `json:"fine_cents" jsonschema:"the fine owed on this loan, in cents"`
+	// The same wording as BorrowOut.DueAt, written a second time, because a
+	// description is a property of the field and two fields are two places.
+	DueAt time.Time `json:"due_at" jsonschema:"when the book must be back, as an RFC 3339 timestamp in UTC; convert it to the reader's own timezone before stating a date or a time"`
+
+	// FineCents is what this loan has cost so far, in minor units. It stops
+	// growing when the book comes back.
+	//
+	// The currency is named here rather than left to the field name, which is
+	// the whole of what an annotation adds over `fine_cents` on its own: the
+	// unit was already in the name and the currency was nowhere. It can be
+	// named because this library charges in one currency. A library charging in
+	// several could not write this sentence, and the reason is in FRICTION.md
+	// finding 16 -- one description covers every row, so a fact that varies by
+	// row has to travel as a value.
+	FineCents int64 `json:"fine_cents" jsonschema:"the fine owed on this loan, in cents of US dollars, so 550 means USD 5.50; it stops growing when the book comes back and never exceeds 1000"`
 }
 
 // ListLoansIn scopes a member's own history. There is no member field, for the
@@ -164,7 +195,7 @@ type ListLoansIn struct {
 
 // ListLoansOut wraps the rows, for the reason ListOut does.
 type ListLoansOut struct {
-	Loans []Loan `json:"loans"`
+	Loans []Loan `json:"loans" jsonschema:"the member's loans, oldest first; always a list, empty when there are none, and never null despite what the type says"`
 }
 
 // assess reports where a loan stands and what it has cost.
