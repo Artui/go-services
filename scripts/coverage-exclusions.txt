@@ -40,3 +40,12 @@ github.com/Artui/go-services/aguix/toolbox.go:Definitions
 #   an empty struct, so Register never stores a nil. It is kept because mcpx and
 #   adkx carry the identical guard, and a reader comparing the three adapters
 #   should find them agreeing rather than wondering which one is wrong.
+
+github.com/Artui/go-services/schema.go:checkDeclarationMarshals
+#   The json.Unmarshal error branch. encoding/json compacts whatever MarshalJSON
+#   returns and fails there, so anything json.Marshal accepts is valid JSON by
+#   construction and this arm cannot be reached -- the marshal arm above catches
+#   the case instead, which TestADeclaringTypeThatMarshalsNonJSONIsRefused
+#   asserts explicitly so this justification fails loudly if it stops holding.
+#   The check stays because reading the bytes without decoding them would be
+#   trusting a promise this function exists to stop trusting.

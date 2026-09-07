@@ -5,12 +5,19 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/jsonschema-go/jsonschema"
 )
 
 // The unexported field is the point: a type declaring its own schema must
 // advertise that schema and not its Go representation.
+//
+// MarshalJSON is not decoration. Without it this double claimed to be the very
+// thing it stands in for -- a type whose JSON form differs from its struct form
+// -- while having no marshaller at all, so its JSON form *was* its struct form
+// and the declaration was a lie no test could see. The check in
+// checkDeclarationMarshals found it on its first run.
 type declaredString struct {
 	internal int //nolint:unused // must never reach the advertised schema
 }
@@ -18,6 +25,8 @@ type declaredString struct {
 func (declaredString) JSONSchema() (*jsonschema.Schema, error) {
 	return &jsonschema.Schema{Type: "string"}, nil
 }
+
+func (declaredString) MarshalJSON() ([]byte, error) { return []byte(`"declared"`), nil }
 
 type brokenSchema struct{}
 
@@ -149,4 +158,213 @@ func TestReflectSchemaPointerToDeclaringType(t *testing.T) {
 		t.Errorf("the pointer's element must still carry its declared schema: %s", b)
 	}
 	t.Logf("pointer property schema: %s", b)
+}
+
+// A defined type over one with a MarshalJSON method does not inherit it, which
+// is the trap this refuses. `type DueDate time.Time` compiles, registers, and
+// then advertises a string while serving `{}` -- because time.Time's fields are
+// unexported and its MarshalJSON did not come along.
+type lyingDate time.Time
+
+func (lyingDate) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{Type: "string", Format: "date-time"}, nil
+}
+
+func TestADeclarationItsOwnTypeCannotServeIsRefused(t *testing.T) {
+	type out struct {
+		DueAt lyingDate `json:"due_at"`
+	}
+
+	_, err := reflectSchema(reflect.TypeFor[out]())
+
+	if err == nil {
+		t.Fatal("accepted a type declaring a string that marshals to an object")
+	}
+	for _, want := range []string{"lyingDate", `"string"`, "object", "embed the type"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %s", err, want)
+		}
+	}
+}
+
+// The embedded spelling keeps the method, and must still be accepted.
+type honestDate struct{ time.Time }
+
+func (honestDate) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{Type: "string", Format: "date-time"}, nil
+}
+
+func TestTheEmbeddedSpellingIsAccepted(t *testing.T) {
+	type out struct {
+		DueAt honestDate `json:"due_at"`
+	}
+
+	if _, err := reflectSchema(reflect.TypeFor[out]()); err != nil {
+		t.Fatalf("refused a type that marshals to what it declares: %v", err)
+	}
+}
+
+// The false positive this check is deliberately narrow to avoid. An enum's zero
+// value is rarely one of its own members, so validating a zero value against the
+// whole declaration would refuse an honest type. Only the kind is compared, and
+// "" is a string.
+type zeroOutsideItsEnum string
+
+func (zeroOutsideItsEnum) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{Type: "string", Enum: []any{"on_loan", "overdue"}}, nil
+}
+
+func TestAnEnumWhoseZeroValueIsNotAMemberIsAccepted(t *testing.T) {
+	type out struct {
+		Status zeroOutsideItsEnum `json:"status"`
+	}
+
+	if _, err := reflectSchema(reflect.TypeFor[out]()); err != nil {
+		t.Fatalf("refused an enum for having a zero value outside itself: %v", err)
+	}
+}
+
+// A declaration naming no type promises nothing about the kind, so there is
+// nothing for a zero value to contradict.
+type declaresNoType struct{ internal int } //nolint:unused // never reaches the schema
+
+func (declaresNoType) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{Description: "anything at all"}, nil
+}
+
+func TestADeclarationNamingNoTypeIsAccepted(t *testing.T) {
+	type out struct {
+		Thing declaresNoType `json:"thing"`
+	}
+
+	if _, err := reflectSchema(reflect.TypeFor[out]()); err != nil {
+		t.Fatalf("refused a declaration that names no type: %v", err)
+	}
+}
+
+// A zero integer is a whole JSON number, so a type declaring "number" is served
+// correctly by one and must not be refused for it.
+type declaresNumber int
+
+func (declaresNumber) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{Type: "number"}, nil
+}
+
+func TestAWholeZeroSatisfiesANumberDeclaration(t *testing.T) {
+	type out struct {
+		Rate declaresNumber `json:"rate"`
+	}
+
+	if _, err := reflectSchema(reflect.TypeFor[out]()); err != nil {
+		t.Fatalf("refused a number declaration served by a whole zero: %v", err)
+	}
+}
+
+// Every kind a declaration can name. jsonKind decides what a mismatch message
+// says, so a wrong branch here would misname the thing a reader is told to fix.
+//
+// Driven through jsonKind directly rather than through a declaring type,
+// because a per-case type cannot exist: the check marshals a *zero* value, so
+// the case would have to be carried by the type rather than by a field on it.
+func TestEveryDeclarableKindIsRecognised(t *testing.T) {
+	for _, c := range []struct{ declared, marshals string }{
+		{"null", "null"},
+		{"boolean", "true"},
+		{"string", `"s"`},
+		{"integer", "7"},
+		{"number", "7.5"},
+		{"number", "7"}, // a whole number still serves "number"
+		{"array", "[1]"},
+		{"object", "{}"},
+	} {
+		// The zero value is what gets marshalled, so the case has to be carried
+		// by the type rather than by a value -- which is the same constraint a
+		// real declaring type is under.
+		got := jsonKind(decodeForTest(t, c.marshals))
+		// A whole number reads as "integer" and still serves a "number"
+		// declaration, which is the one case where the two disagree by design.
+		served := got == c.declared || (got == "integer" && c.declared == "number")
+		if !served {
+			t.Errorf("jsonKind(%s) = %q, want %q", c.marshals, got, c.declared)
+		}
+	}
+}
+
+func decodeForTest(t *testing.T, raw string) any {
+	t.Helper()
+	var v any
+	if err := json.Unmarshal([]byte(raw), &v); err != nil {
+		t.Fatalf("Unmarshal(%s): %v", raw, err)
+	}
+	return v
+}
+
+// A declaration listing several kinds is satisfied by any one of them, which is
+// how a nullable field is spelt.
+type declaresNullableString struct{}
+
+func (declaresNullableString) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{Types: []string{"null", "string"}}, nil
+}
+
+func (declaresNullableString) MarshalJSON() ([]byte, error) { return []byte("null"), nil }
+
+func TestADeclarationNamingSeveralKindsAcceptsAnyOfThem(t *testing.T) {
+	type out struct {
+		Maybe declaresNullableString `json:"maybe"`
+	}
+
+	if _, err := reflectSchema(reflect.TypeFor[out]()); err != nil {
+		t.Fatalf("refused a nullable declaration served by null: %v", err)
+	}
+}
+
+// A MarshalJSON that fails is a type that cannot be served at all, and saying so
+// at registration beats discovering it on the first response.
+type marshalFails struct{}
+
+func (marshalFails) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{Type: "string"}, nil
+}
+
+func (marshalFails) MarshalJSON() ([]byte, error) { return nil, errString("cannot marshal") }
+
+func TestADeclaringTypeThatCannotMarshalIsRefused(t *testing.T) {
+	type out struct {
+		Bad marshalFails `json:"bad"`
+	}
+
+	_, err := reflectSchema(reflect.TypeFor[out]())
+
+	if err == nil || !strings.Contains(err.Error(), "cannot be marshalled") {
+		t.Fatalf("err = %v, want it to name the failed marshal", err)
+	}
+}
+
+// A MarshalJSON returning bytes that are not JSON is refused, and by the earlier
+// arm rather than the later one: encoding/json compacts what MarshalJSON returns
+// and fails there, so nothing json.Marshal accepts can fail to decode. That is
+// why the Unmarshal arm beside it is unreachable and named in the exclusions.
+type marshalsNonJSON struct{}
+
+func (marshalsNonJSON) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{Type: "string"}, nil
+}
+
+func (marshalsNonJSON) MarshalJSON() ([]byte, error) { return []byte(`not json`), nil }
+
+func TestADeclaringTypeThatMarshalsNonJSONIsRefused(t *testing.T) {
+	type out struct {
+		Bad marshalsNonJSON `json:"bad"`
+	}
+
+	_, err := reflectSchema(reflect.TypeFor[out]())
+
+	if err == nil {
+		t.Fatal("accepted a type whose MarshalJSON returns something that is not JSON")
+	}
+	if !strings.Contains(err.Error(), "cannot be marshalled") {
+		t.Errorf("err = %v, want the marshal arm -- if this moves, the exclusion "+
+			"for the unmarshal arm has stopped being true", err)
+	}
 }

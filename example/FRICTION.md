@@ -782,8 +782,12 @@ recorded, one section earlier, about the formatters.*
 
 ## 18. `SchemaFor` is the only channel for anything but a sentence, and nothing checks that what it says is true
 
-**Status: OPEN. Reported, not fixed: output validation is a kernel decision and
-this module does not make those.**
+**Status: FIXED in the kernel 2026-09-07. `collectSchemaOverrides` now refuses a
+`JSONSchema` declaration its own type cannot serve, at registration rather than
+per dispatch -- it is a fact about a type, so it costs nothing on the request
+path and a consumer learns before serving anything. Only the JSON kind is
+compared: validating a zero value against the whole declaration would refuse an
+enum, whose zero value is rarely one of its own members.**
 
 Annotation's ergonomic cost is real and was the fourth question: every money
 field needs the same tag written by hand. It is visible in this module already at
