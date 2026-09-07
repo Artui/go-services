@@ -49,3 +49,19 @@ github.com/Artui/go-services/schema.go:checkDeclarationMarshals
 #   asserts explicitly so this justification fails loudly if it stops holding.
 #   The check stays because reading the bytes without decoding them would be
 #   trusting a promise this function exists to stop trusting.
+
+github.com/Artui/go-services/aguix/toolbox.go:outputSchema
+#   The not-found return. dispatch is the only caller and it runs after
+#   Registry.Dispatch has already answered, which refuses an unknown name before
+#   this point -- so the loop always finds its entry. Kept rather than replaced
+#   with a panic because a nil schema renders nothing, which is the right answer
+#   for a value nothing describes, and a lookup that cannot fail is a worse
+#   thing to be wrong about than one that returns nil.
+
+github.com/Artui/go-services/render.go:RenderValue
+#   The json.Unmarshal error branch, unreachable for the same reason as the one
+#   in checkDeclarationMarshals: encoding/json compacts whatever it produces, so
+#   anything json.Marshal accepts is valid JSON by construction. The marshal arm
+#   above it is reachable and tested -- a service returning a channel is a bug in
+#   that service, and it has to surface as an error rather than as a
+#   half-rendered payload.

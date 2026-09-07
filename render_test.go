@@ -157,3 +157,43 @@ func TestARendererDoesNotShareTheCallersMap(t *testing.T) {
 		t.Errorf("rendered = %s, want the renderer to have kept its own formatter", got)
 	}
 }
+
+// RenderValue is what an adapter calls: it does the JSON round trip Render
+// needs its input already to have had, so a Go value goes in and the rendered
+// decoded form comes out.
+func TestRenderValueRoundTripsAGoValue(t *testing.T) {
+	type row struct {
+		Name  string `json:"name"`
+		Count int    `json:"count"`
+	}
+	schema := &jsonschema.Schema{
+		Type: "object",
+		Properties: map[string]*jsonschema.Schema{
+			"name":  marked("upper"),
+			"count": {Type: "integer"},
+		},
+	}
+
+	out, err := upperRenderer().RenderValue(t.Context(), nil, schema, row{Name: "ada", Count: 2})
+	if err != nil {
+		t.Fatalf("RenderValue: %v", err)
+	}
+
+	encoded, err := json.Marshal(out)
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if string(encoded) != `{"count":2,"name":"ADA"}` {
+		t.Errorf("rendered = %s, want the marked field rendered and the rest intact", encoded)
+	}
+}
+
+// A value that cannot be marshalled is a bug in the service that produced it,
+// and it has to surface as an error rather than as a half-rendered payload.
+func TestRenderValueReportsAnUnencodableValue(t *testing.T) {
+	_, err := upperRenderer().RenderValue(t.Context(), nil, marked("upper"), make(chan int))
+
+	if err == nil {
+		t.Fatal("an unencodable value was not reported")
+	}
+}

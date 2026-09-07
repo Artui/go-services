@@ -35,6 +35,7 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/google/jsonschema-go/jsonschema"
@@ -109,6 +110,32 @@ func (r *Renderer) Render(
 	default:
 		return value, nil
 	}
+}
+
+// RenderValue renders a service's return value, doing the JSON round trip that
+// Render needs its input already to have had.
+//
+// Render walks decoded JSON -- maps, slices and scalars -- because that is the
+// shape a formatter can change freely: replacing an integer with a string is
+// ordinary there and impossible in the Go value, where the field has a type. So
+// something has to marshal first, and every adapter would otherwise write the
+// same three lines.
+//
+// The cost is one extra encode/decode per rendered call, and it is only paid
+// when a renderer is configured: an adapter that has none calls nothing here and
+// serves what it always served.
+func (r *Renderer) RenderValue(
+	ctx context.Context, principal any, schema *jsonschema.Schema, value any,
+) (any, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	var decoded any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		return nil, err
+	}
+	return r.Render(ctx, principal, schema, decoded)
 }
 
 func (r *Renderer) renderObject(
