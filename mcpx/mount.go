@@ -6,6 +6,7 @@ import (
 	"log/slog"
 
 	"github.com/Artui/go-services"
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
@@ -35,6 +36,23 @@ type ErrorReporter func(ctx context.Context, tool string, err error)
 // An Option configures a mount.
 type Option func(*mount)
 
+// WithRenderer renders every success value for the reader who asked for it,
+// using the schema the kernel reflected for that operation.
+//
+// A mount without one serves exactly what the service returned, which is the
+// default because it is the answer an HTTP transport needs and the one a spec
+// shared between the two must keep. Rendering is what an agent transport may
+// additionally want: a model is a reader nobody told what a field's units are,
+// so `550` becomes an amount and a UTC timestamp becomes a time in the reader's
+// own zone -- facts about the reader that no declaration can carry, because a
+// declaration is written once with nobody in front of it.
+//
+// The formatters are handed the principal this mount resolved, not Deps: Deps
+// belongs to a transaction that has closed by the time a result exists.
+func WithRenderer(r *services.Renderer) Option {
+	return func(m *mount) { m.renderer = r }
+}
+
 // WithErrorReporter registers fn to receive every error mcpx replaces with
 // InternalErrorText.
 //
@@ -50,6 +68,7 @@ func WithErrorReporter(fn ErrorReporter) Option {
 type mount struct {
 	principal Principal
 	report    ErrorReporter
+	renderer  *services.Renderer
 }
 
 // Mount adds every spec in reg to srv as an MCP tool.
@@ -89,7 +108,7 @@ func Mount[D any](
 		if err != nil {
 			return err
 		}
-		ready = append(ready, pending{tool: tool, handler: handlerFor(m, reg, e.Name)})
+		ready = append(ready, pending{tool: tool, handler: handlerFor(m, reg, e.Name, e.Output)})
 	}
 	if err := rehearse(ready); err != nil {
 		return err
@@ -168,7 +187,9 @@ func addOnce(srv *mcp.Server, p pending) (err error) {
 // schema that is advertised and validated against while a different one is
 // enforced. The non-generic form passes the arguments through untouched, and
 // the kernel is what decides whether they are acceptable.
-func handlerFor[D any](m *mount, reg *services.Registry[D], name string) mcp.ToolHandler {
+func handlerFor[D any](
+	m *mount, reg *services.Registry[D], name string, output *jsonschema.Schema,
+) mcp.ToolHandler {
 	return func(ctx context.Context, req *mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 		var principal any
 		if m.principal != nil {
@@ -189,7 +210,18 @@ func handlerFor[D any](m *mount, reg *services.Registry[D], name string) mcp.Too
 			return m.failed(ctx, name, err), nil
 		}
 
-		result, err := succeed(res)
+		// Rendering is the mount's, not the kernel's: a spec serves an HTTP
+		// route and an agent tool from one declaration, and only one of those
+		// two readers wants an amount of money where the other wants an integer.
+		value := res.Value
+		if m.renderer != nil {
+			value, err = m.renderer.RenderValue(ctx, principal, output, res.Value)
+			if err != nil {
+				return m.failed(ctx, name, err), nil
+			}
+		}
+
+		result, err := succeed(value)
 		if err != nil {
 			return m.failed(ctx, name, err), nil
 		}

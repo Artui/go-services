@@ -59,8 +59,8 @@ const (
 // carries for the transports that have status codes; MCP has none, and
 // inventing a field to carry it would put an HTTP concept on this wire for no
 // reader's benefit.
-func succeed(res services.Result) (*mcp.CallToolResult, error) {
-	payload, err := json.Marshal(res.Value)
+func succeed(value any) (*mcp.CallToolResult, error) {
+	payload, err := json.Marshal(value)
 	if err != nil {
 		// Reached when a service returns something unencodable, which is a bug
 		// in that service rather than anything the caller did. Returning it as
@@ -70,7 +70,7 @@ func succeed(res services.Result) (*mcp.CallToolResult, error) {
 	}
 	return &mcp.CallToolResult{
 		Content:           []mcp.Content{&mcp.TextContent{Text: string(payload)}},
-		StructuredContent: res.Value,
+		StructuredContent: value,
 	}, nil
 }
 

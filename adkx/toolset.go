@@ -27,6 +27,23 @@ func WithErrorReporter(fn ErrorReporter) Option {
 	return func(t *toolset) { t.report = fn }
 }
 
+// WithRenderer renders every success value for the reader who asked for it,
+// using the schema the kernel reflected for that operation.
+//
+// A toolset without one answers with exactly what the service returned, which is
+// the default because it is what an HTTP transport needs from the same spec.
+// Rendering is what an agent transport may additionally want: a model is a
+// reader nobody told what a field's units are, so an integer becomes an amount
+// and a UTC timestamp becomes a time in the reader's own zone -- facts about the
+// reader that no declaration can carry, because a declaration is written once
+// with nobody in front of it.
+//
+// The formatters are handed the principal this toolset resolved, not Deps: Deps
+// belongs to a transaction that has closed by the time a result exists.
+func WithRenderer(r *services.Renderer) Option {
+	return func(t *toolset) { t.renderer = r }
+}
+
 // WithName sets the toolset's name, which ADK uses to group and filter tools.
 func WithName(name string) Option {
 	return func(t *toolset) { t.name = name }
@@ -64,9 +81,10 @@ func Toolset[D any](
 // toolset is the built set. Every field is set at construction and read-only
 // afterwards, so one toolset serves concurrent invocations with no state.
 type toolset struct {
-	name   string
-	tools  []tool.Tool
-	report ErrorReporter
+	name     string
+	tools    []tool.Tool
+	report   ErrorReporter
+	renderer *services.Renderer
 }
 
 func (t *toolset) Name() string { return t.name }
