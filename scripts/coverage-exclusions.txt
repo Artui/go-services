@@ -31,7 +31,12 @@ github.com/Artui/go-services/aguix/stream.go:Emit
 #   encode would be worse than one that stopped.
 
 github.com/Artui/go-services/aguix/toolbox.go:Definitions
-#   The json.Marshal error branch. The value is the *jsonschema.Schema the
-#   kernel reflected at registration, which Register already round-tripped to
-#   build the resolved schema it validates against -- an unmarshalable one
-#   could not have been registered.
+#   Two json.Marshal error branches, input and output, on the same argument.
+#   Each value is the *jsonschema.Schema the kernel reflected at registration,
+#   which Register already round-tripped to build the resolved schema it
+#   validates against -- an unmarshalable one could not have been registered.
+#   The `entry.Output != nil` guard beside the second is unreachable for the
+#   same reason: reflectSchema returns a schema for every output type, including
+#   an empty struct, so Register never stores a nil. It is kept because mcpx and
+#   adkx carry the identical guard, and a reader comparing the three adapters
+#   should find them agreeing rather than wondering which one is wrong.

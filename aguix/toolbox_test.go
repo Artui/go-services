@@ -199,6 +199,61 @@ func TestDefinitionsCarryTheKernelsSchema(t *testing.T) {
 	}
 }
 
+func TestDefinitionsPublishTheOutputSchemaAModelIsOwed(t *testing.T) {
+	// AG-UI's own Tool has no field for this, so it rides as an addition -- but
+	// the reader is the model, not the browser, and mcpx and adkx both advertise
+	// it from the same services.Entry. Without it an AG-UI model is the only one
+	// of the three told what an operation takes and not what it answers with, so
+	// an enum's values and a field's units stop at this adapter.
+	defs, err := toolboxFor(t, signedIn).Definitions()
+	if err != nil {
+		t.Fatalf("Definitions: %v", err)
+	}
+	if len(defs) != 1 {
+		t.Fatalf("published %d tools, want one per spec", len(defs))
+	}
+	if !strings.Contains(string(defs[0].OutputSchema), "loan_id") {
+		t.Errorf("outputSchema = %s, want the reflected output schema", defs[0].OutputSchema)
+	}
+
+	// Serialized, because the point is what a client receives: the key has to
+	// carry MCP's spelling, since that is the vocabulary a model already knows.
+	encoded, err := json.Marshal(defs[0])
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !strings.Contains(string(encoded), `"outputSchema"`) {
+		t.Errorf("encoded = %s, want an outputSchema key", encoded)
+	}
+}
+
+func TestAClientsInboundToolCarriesNoOutputSchema(t *testing.T) {
+	// ToolDefinition runs both ways: Definitions describes this server's
+	// operations, and RunInput.Tools decodes the browser tools a client offers.
+	// A client has no output schema to send and the protocol has no field for
+	// one, so the key has to be absent rather than present and empty -- which is
+	// what omitempty is doing, and the only direction where a nil Output is
+	// actually reachable. Through Register it is not: the kernel reflects a
+	// schema for every output type, so the guard in Definitions is defensive in
+	// the same way mcpx's and adkx's are.
+	var in aguix.RunInput
+	if err := json.Unmarshal([]byte(`{"tools":[{"name":"highlight",`+
+		`"description":"Highlight a field.","parameters":{"type":"object"}}]}`), &in); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	if in.Tools[0].OutputSchema != nil {
+		t.Errorf("outputSchema = %s, want it absent on a client's own tool", in.Tools[0].OutputSchema)
+	}
+
+	encoded, err := json.Marshal(in.Tools[0])
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if strings.Contains(string(encoded), "outputSchema") {
+		t.Errorf("encoded = %s, want no outputSchema key at all", encoded)
+	}
+}
+
 func TestToolboxRefusesAMissingRegistryOrPrincipal(t *testing.T) {
 	if _, err := aguix.NewToolbox[deps](nil, signedIn); err == nil {
 		t.Error("NewToolbox accepted a nil registry")

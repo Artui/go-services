@@ -103,11 +103,24 @@ func (t *Toolbox[D]) Definitions() ([]ToolDefinition, error) {
 			return nil, fmt.Errorf("aguix: %q has an input schema that cannot be encoded: %w",
 				entry.Name, err)
 		}
-		defs = append(defs, ToolDefinition{
+		def := ToolDefinition{
 			Name:        entry.Name,
 			Description: entry.Description,
 			Parameters:  parameters,
-		})
+		}
+		// Only when the spec declared one. A nil Output is a spec that says
+		// nothing about its result, which is different from one that answers
+		// with nothing, and inventing an empty schema for it would advertise
+		// the second.
+		if entry.Output != nil {
+			output, err := json.Marshal(entry.Output)
+			if err != nil {
+				return nil, fmt.Errorf("aguix: %q has an output schema that cannot be encoded: %w",
+					entry.Name, err)
+			}
+			def.OutputSchema = output
+		}
+		defs = append(defs, def)
 	}
 	return defs, nil
 }

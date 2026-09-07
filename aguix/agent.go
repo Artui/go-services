@@ -29,6 +29,24 @@ type ToolDefinition struct {
 	Name        string          `json:"name"`
 	Description string          `json:"description"`
 	Parameters  json.RawMessage `json:"parameters"`
+
+	// OutputSchema is what the operation answers with, when the spec declared
+	// it. Absent otherwise, and absent on every tool a client sends inbound.
+	//
+	// AG-UI's own Tool carries a name, a description and parameters, and
+	// nothing else -- so this is an addition rather than a field of the
+	// protocol. It is spelt the way MCP spells it, because that is the
+	// vocabulary a model has already been trained against and inventing a
+	// second name for the same thing helps nobody. The protocol's models allow
+	// unknown keys, so a client that has never heard of it parses the tool and
+	// ignores the field rather than rejecting the run.
+	//
+	// It is here because the reader is the model, not the browser. mcpx and
+	// adkx both advertise this from the same `services.Entry`, and without it
+	// an AG-UI model is the only one of the three told what an operation takes
+	// and not what it returns -- so an enum's values, a field's units, and
+	// anything else the schema carries stop at this adapter.
+	OutputSchema json.RawMessage `json:"outputSchema,omitempty"`
 }
 
 // RunInput is one request from a client.

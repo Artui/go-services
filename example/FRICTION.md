@@ -492,11 +492,10 @@ does; it would only be terser about asking.
 
 ## 14. `aguix` publishes no output schema, so nothing written on an output field reaches an AG-UI model
 
-**Status: OPEN, and it belongs to `aguix` rather than to this module. Reported,
-not fixed -- this module does not touch an adapter.**
-
-The definition an AG-UI agent is given for `list_loans` is the whole of what
-that transport says about the operation:
+**Status: FIXED in `aguix` 2026-09-07. `Toolbox.Definitions` now publishes the
+output schema the kernel already reflected, and
+`TestEveryTransportAdvertisesTheOutputSchema` in this module is what noticed --
+it was written to assert the gap and went red the moment the gap closed.**
 
 ```json
 {"name":"list_loans","description":"List the authenticated member's own loans, with what each one owes.","parameters":{"type":"object","properties":{"include_returned":{"type":"boolean","description":"also list loans that have already been returned"}},"additionalProperties":false}}
