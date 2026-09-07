@@ -783,61 +783,43 @@ type liarOut struct {
 	DueAt liarDate `json:"due_at"`
 }
 
-// An output may contradict its own advertised schema, and nothing notices.
+// A declaration its own type cannot serve is refused at registration.
 //
-// The kernel validates INPUT against the input schema on every dispatch. It does
-// not validate output against the output schema, and neither does the MCP SDK:
-// this spec advertises `{"type":"string","format":"date-time"}` and serves `{}`,
-// with IsError false and no error anywhere.
+// It used to be served. This spec advertises `{"type":"string","format":
+// "date-time"}` and marshals to `{}`, because `liarDate` is a *defined* type
+// over time.Time and so does not inherit its MarshalJSON -- and time.Time's
+// fields are unexported. The kernel validated INPUT against the input schema on
+// every dispatch, never validated output at all, and neither did the MCP SDK:
+// the contradiction reached a model with IsError false and no error anywhere.
 //
-// It matters here because SchemaFor is the ONLY channel by which an output field
-// can carry anything a description cannot, so it is the channel the cost finding
-// recommends -- and its failure mode is silent. Recorded rather than fixed:
-// output validation is a kernel decision and this module does not make those.
-func TestAnOutputMayContradictItsOwnSchemaUnnoticed(t *testing.T) {
+// It mattered here because SchemaFor is the only channel by which an output
+// field can carry anything a description cannot, so it is the channel the cost
+// finding recommends -- and its failure mode was silence.
+//
+// This test was written to fail the day a kernel started checking, and that is
+// exactly how the change announced itself: it panicked through MustRegister
+// rather than quietly passing. What it asserts now is the refusal, and that the
+// message names the fix rather than only the fault.
+func TestADeclarationItsOwnTypeCannotServeIsRefusedAtRegistration(t *testing.T) {
 	reg := services.New(resolverOver(audienceDB(t)))
-	services.MustRegister(reg, services.Spec[Deps, struct{}, liarOut]{
+
+	err := services.Register(reg, services.Spec[Deps, struct{}, liarOut]{
 		Name: "liar", Kind: services.Query,
 		Run: func(services.Ctx[Deps], struct{}) (liarOut, error) {
 			return liarOut{DueAt: liarDate(time.Date(2026, 8, 15, 9, 0, 0, 0, time.UTC))}, nil
 		},
 	})
 
-	server := mcp.NewServer(&mcp.Implementation{Name: "liar", Version: "v0"}, nil)
-	if err := mcpx.Mount(server, reg,
-		func(context.Context, *mcp.CallToolRequest) (any, error) { return int64(1), nil }); err != nil {
-		t.Fatalf("mount: %v", err)
+	if err == nil {
+		t.Fatal("registered a spec whose output contradicts its own schema")
 	}
-	clientT, serverT := mcp.NewInMemoryTransports()
-	if _, err := server.Connect(t.Context(), serverT, nil); err != nil {
-		t.Fatal(err)
-	}
-	session, err := mcp.NewClient(&mcp.Implementation{Name: "c", Version: "v0"}, nil).
-		Connect(t.Context(), clientT, nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = session.Close() })
-
-	listed, err := session.ListTools(t.Context(), nil)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.Contains(encode(t, listed.Tools[0].OutputSchema), `"format":"date-time"`) {
-		t.Fatalf("the probe did not advertise what it claims: %s",
-			encode(t, listed.Tools[0].OutputSchema))
-	}
-
-	res, err := session.CallTool(t.Context(), &mcp.CallToolParams{Name: "liar"})
-	if err != nil {
-		t.Fatalf("mcp protocol error: %v", err)
-	}
-	if res.IsError {
-		t.Fatalf("the divergence was caught after all, which would close this finding: %v",
-			res.Content)
-	}
-	if got := encode(t, res.StructuredContent); got != `{"due_at":{}}` {
-		t.Errorf("structured content = %s, want the empty object the encoder produces", got)
+	// The message has to carry the remedy, not only the fault: the defect is
+	// invisible in the type declaration, and the fix is a one-word change from
+	// defining over the type to embedding it.
+	for _, want := range []string{"liarDate", `"string"`, "object", "embed the type"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %s", err, want)
+		}
 	}
 }
 
