@@ -260,20 +260,12 @@ func TestAWholeZeroSatisfiesANumberDeclaration(t *testing.T) {
 	}
 }
 
-// Every kind a declaration can name, against a type that actually serves it.
-// jsonKind decides what a mismatch message says, so a wrong branch here would
-// misname the thing a reader is being told to fix.
-type kindProbe struct {
-	declared string
-	marshals string
-}
-
-func (k kindProbe) JSONSchema() (*jsonschema.Schema, error) {
-	return &jsonschema.Schema{Type: k.declared}, nil
-}
-
-func (k kindProbe) MarshalJSON() ([]byte, error) { return []byte(k.marshals), nil }
-
+// Every kind a declaration can name. jsonKind decides what a mismatch message
+// says, so a wrong branch here would misname the thing a reader is told to fix.
+//
+// Driven through jsonKind directly rather than through a declaring type,
+// because a per-case type cannot exist: the check marshals a *zero* value, so
+// the case would have to be carried by the type rather than by a field on it.
 func TestEveryDeclarableKindIsRecognised(t *testing.T) {
 	for _, c := range []struct{ declared, marshals string }{
 		{"null", "null"},
@@ -288,8 +280,11 @@ func TestEveryDeclarableKindIsRecognised(t *testing.T) {
 		// The zero value is what gets marshalled, so the case has to be carried
 		// by the type rather than by a value -- which is the same constraint a
 		// real declaring type is under.
-		if got := jsonKind(decodeForTest(t, c.marshals)); got != c.declared &&
-			!(got == "integer" && c.declared == "number") {
+		got := jsonKind(decodeForTest(t, c.marshals))
+		// A whole number reads as "integer" and still serves a "number"
+		// declaration, which is the one case where the two disagree by design.
+		served := got == c.declared || (got == "integer" && c.declared == "number")
+		if !served {
 			t.Errorf("jsonKind(%s) = %q, want %q", c.marshals, got, c.declared)
 		}
 	}
