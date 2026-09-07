@@ -337,10 +337,13 @@ func TestACursorFetchesTheNextPage(t *testing.T) {
 // What each transport tells a model about the OUTPUT, which is the only channel
 // in this library through which a field could say "I am not for reading aloud".
 //
-// The three answers differ, and the difference is the finding: two of the three
-// carry the description a spec author wrote on the field, and the third
-// publishes no output schema at all.
-func TestOnlySomeTransportsAdvertiseTheOutputSchema(t *testing.T) {
+// All three carry it now. They did not: aguix published a name, a description
+// and the input parameters, and nothing about the output at all, so a
+// description written on an output field stopped at that adapter whatever it
+// said. That was finding 14, and this test is what held it -- it was written to
+// assert the gap and went red the moment the gap closed, which is the only way a
+// pinned finding tells you it is done.
+func TestEveryTransportAdvertisesTheOutputSchema(t *testing.T) {
 	_, _, mcpSchema := callMCPX(t, audienceDB(t), "list_books", map[string]any{"limit": 1})
 	_, adkSchema := callADKX(t, audienceDB(t), "list_books", map[string]any{"limit": 1})
 	_, aguiDefinition := callAGUIX(t, audienceDB(t), "show me the books", "list_books")
@@ -351,23 +354,29 @@ func TestOnlySomeTransportsAdvertiseTheOutputSchema(t *testing.T) {
 	const said = "an opaque token; pass it back as cursor to fetch the next page, " +
 		"and do not show it to a person or try to read it"
 
-	if !strings.Contains(mcpSchema, said) {
-		t.Errorf("mcpx advertised an output schema without the field's own words:\n  %s", mcpSchema)
+	for name, got := range map[string]string{
+		"mcpx":  mcpSchema,
+		"adkx":  adkSchema,
+		"aguix": aguiDefinition,
+	} {
+		if !strings.Contains(got, said) {
+			t.Errorf("%s advertised no output schema carrying the field's own words:\n  %s", name, got)
+		}
 	}
-	if !strings.Contains(adkSchema, said) {
-		t.Errorf("adkx advertised an output schema without the field's own words:\n  %s", adkSchema)
+
+	// aguix spells the key MCP's way rather than inventing a second name for the
+	// same thing, because that is the vocabulary a model has already met. The
+	// protocol has no field for it -- AG-UI's Tool is a name, a description and
+	// parameters -- so this rides as an addition its models tolerate, the same
+	// mechanism that let a tool result say it failed.
+	if !strings.Contains(aguiDefinition, `"outputSchema"`) {
+		t.Errorf("aguix published the schema under some other key:\n  %s", aguiDefinition)
 	}
-	// aguix publishes Name, Description and Parameters, and nothing about the
-	// output. A description written on an output field cannot reach a model on
-	// this transport, whatever it says.
-	if strings.Contains(aguiDefinition, said) {
-		t.Errorf("aguix now carries the output field's words; the finding has changed:\n  %s",
-			aguiDefinition)
-	}
-	// It does mention next_cursor, and only because the INPUT field's own
-	// description names it. That is the author writing the same fact twice, on
-	// the one field this transport publishes, and it is the whole of what an
-	// AG-UI model is told about the token it will be handed back.
+
+	// The input field's own description still names next_cursor. That was the
+	// whole of what an AG-UI model used to be told about the token -- the author
+	// writing the same fact twice, on the one field this transport published.
+	// Kept because it should stay true, not because it is still load-bearing.
 	if !strings.Contains(aguiDefinition,
 		`"cursor":{"type":"string","description":"the next_cursor of a previous answer, passed back unchanged"}`) {
 		t.Errorf("aguix no longer carries the input field's words:\n  %s", aguiDefinition)
