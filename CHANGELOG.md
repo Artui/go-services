@@ -5,8 +5,19 @@ All notable changes to this project are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-Each module in this repository is versioned and tagged independently. Entries
-below cover the kernel module, `github.com/Artui/go-services`.
+Each module in this repository is versioned and tagged independently, and the
+`## Adapters` section below carries their tag lines.
+
+The dated version headings are the **kernel's** versions, and they cover a
+release ROUND rather than only the kernel module: a kernel tag is followed by a
+sweep raising every adapter's floor, so the adapter work that ships alongside it
+is written up under the same heading. The alternative -- six changelogs, or an
+adapter's entry filed under a version it does not have -- is worse than one
+heading meaning "the round that kernel version opened".
+
+Corrected 2026-09-08. This paragraph read "entries below cover the kernel
+module", which the entries themselves had not obeyed since `aguix` was added,
+and a rule nothing follows is worse than no rule.
 
 ## Adapters
 
@@ -63,6 +74,8 @@ tagged: they depend on all of the others, and exist to fail when two transports
 disagree and when a transaction boundary is wrong.
 
 ## [Unreleased]
+
+## [0.7.1] - 2026-09-08
 
 ### Fixed
 
@@ -508,7 +521,8 @@ is what a first consumer is for.
 - Framework-agnostic errors: `ErrNotFound`, `ErrConflict`, `ErrPermission` and
   `ValidationError`.
 
-[Unreleased]: https://github.com/Artui/go-services/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Artui/go-services/compare/v0.7.1...HEAD
+[0.7.1]: https://github.com/Artui/go-services/releases/tag/v0.7.1
 [0.7.0]: https://github.com/Artui/go-services/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Artui/go-services/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Artui/go-services/releases/tag/v0.5.0
