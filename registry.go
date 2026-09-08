@@ -136,6 +136,26 @@ type Option[D any] func(*Registry[D])
 // Registry then resolves dependencies with that context, so Deps holds the
 // transactional handle -- see Registry.Dispatch for why the ordering matters.
 //
+// That ordering has a consequence on any engine that will not let two
+// connections upgrade a read to a write, and SQLite is the one most consumers
+// meet first. Resolving is a read, so every write transaction opens as a reader
+// and then tries to upgrade -- which SQLite refuses rather than queues, with
+// SQLITE_BUSY, as soon as two mutations overlap. The DSN that survives it takes
+// the write lock up front and waits rather than failing:
+//
+//	file:app.sqlite?_pragma=journal_mode(WAL)&_pragma=busy_timeout(5000)&_txlock=immediate
+//
+// All three are needed and no pair is enough, which was measured rather than
+// reasoned: over eight concurrent mutations, foreign keys with _txlock=immediate
+// alone failed 8 of 8, adding busy_timeout left 3 of 8, and only the three
+// together failed none. The obvious-looking DSN is the worst of them.
+//
+// This is not a defect to work around -- resolving inside the boundary is the
+// whole reason a Permit function can read the row it gates, inside the same
+// transaction as the write. It is written here because a single-threaded suite
+// cannot discover it: the consumer that did had 40 of its 41 tests green under
+// the broken DSN.
+//
 // Only an atomic entry runs inside the callback, which decides the shape of D
 // and is the first thing to get wrong. A Query resolves its dependencies with a
 // context that has no transaction in it, so a D holding a concrete transaction

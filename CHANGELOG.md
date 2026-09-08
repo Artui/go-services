@@ -87,6 +87,23 @@ combination nobody runs.
 
 ## [Unreleased]
 
+### Documentation
+
+- **`WithAtomic` now names the write-lock consequence of its own ordering.**
+  Resolving dependencies inside the transaction is deliberate and is what lets a
+  `Permit` function read the row it gates -- but resolving is a read, so on
+  SQLite every write transaction opens as a reader and then tries to upgrade,
+  which it refuses rather than queues as soon as two mutations overlap.
+
+  The doc carries the DSN that survives it and the measurement behind it: over
+  eight concurrent mutations, `_txlock=immediate` alone failed 8 of 8, adding
+  `busy_timeout` left 3 of 8, and only WAL plus the timeout plus immediate
+  failed none. The obvious-looking DSN is the worst of them.
+
+  Written down because a single-threaded suite structurally cannot find it. The
+  consumer that did had 40 of its 41 tests green under the broken DSN.
+
+
 ## [0.7.1] - 2026-09-08
 
 ### Fixed
