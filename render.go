@@ -144,13 +144,36 @@ func (r *Renderer) renderObject(
 	// A copy, so a formatter cannot mutate the value an adapter may still hold.
 	out := make(map[string]any, len(value))
 	for key, field := range value {
-		rendered, err := r.Render(ctx, principal, schema.Properties[key], field)
+		rendered, err := r.Render(ctx, principal, propertySchema(schema, key), field)
 		if err != nil {
 			return nil, fmt.Errorf("%s: %w", key, err)
 		}
 		out[key] = rendered
 	}
 	return out, nil
+}
+
+// propertySchema finds the schema describing one member of an object.
+//
+// The fallback to additionalProperties is what makes a Go map work. A
+// map[string]T has no named properties at all -- its value schema is the open
+// tail, which is the object-shaped counterpart of an array's items -- so
+// consulting Properties alone dropped the keyword on every entry of every map.
+//
+// It dropped it silently, which is why this is worth a named function rather
+// than a second index expression: the schema still declared the field, the
+// transport still forwarded it, and the reader got the raw integer. A consumer
+// outside this repository found it on an MCP wire where one payload carried the
+// same amount twice, rendered in a list of line items and raw in the map of
+// totals directly beside it.
+//
+// Named properties win, because a schema may declare both and the declaration
+// is the more specific statement about that key.
+func propertySchema(schema *jsonschema.Schema, key string) *jsonschema.Schema {
+	if named, ok := schema.Properties[key]; ok {
+		return named
+	}
+	return schema.AdditionalProperties
 }
 
 func (r *Renderer) renderArray(

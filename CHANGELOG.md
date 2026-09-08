@@ -44,9 +44,19 @@ schema the kernel already reflected is handed over as it is.
 `conformance` floors at Go 1.26.6 now, the highest of the modules it drives,
 which is `adkx`.
 
-`aguix` is unreleased. It serves an agent over AG-UI -- Server-Sent Events over
-one POST -- and bridges a registry into it, so a spec becomes a tool an agent
-can call and the client watches the call happen.
+`aguix/v0.1.0` on 2026-09-06 serves an agent over AG-UI -- Server-Sent Events
+over one POST -- and bridges a registry into it, so a spec becomes a tool an
+agent can call and the client watches the call happen. `aguix/v0.2.0` publishes
+the output schema of every tool it announces, which the other two adapters
+already carried; AG-UI's `Tool` has no field for one, so it rides as an addition
+its models tolerate, spelt MCP's way because that is the vocabulary a model
+already knows.
+
+Every adapter moved again on 2026-09-07 for the renderer: `mcpx/v0.1.4`,
+`adkx/v0.1.2` and `aguix/v0.2.2` gained `WithRenderer` / `WithToolboxRenderer`,
+and `httpx/v0.2.2` and `ginx/v0.2.2` moved for the floor alone -- deliberately
+gaining nothing, because an HTTP client wants the value it can compute with and
+"raw" is best delivered by having nothing to turn on.
 
 `conformance` and `example` are the two modules here that are deliberately never
 tagged: they depend on all of the others, and exist to fail when two transports
@@ -54,7 +64,86 @@ disagree and when a transaction boundary is wrong.
 
 ## [Unreleased]
 
+### Fixed
+
+- **The renderer walked straight past a map-valued field.** `Render` looked up
+  each member of an object in `schema.Properties`, which a `map[string]T` does
+  not have: its value schema is the open tail, `additionalProperties`, and every
+  entry fell through carrying its `x-render` keyword untouched.
+
+  It failed silently, which is what makes it worth a changelog entry longer than
+  the fix. The schema still declared the field, the adapter still forwarded it,
+  and the reader got the raw integer -- so one MCP payload carried the same
+  amount twice, rendered inside a list of line items and raw in the map of
+  totals beside it. Named properties still win where a schema declares both.
+
+- **`aguix.WhenUserSays` is a conjunction, and `WhenUserSaysAny` is now beside
+  it.** The doc comment always said "every one of these"; the name reads as "any
+  of these" to most people, and nothing distinguishes them at the call site --
+  an unmatched rule simply loses to the next one, so a script with a fallback
+  answers something plausible and nothing fails.
+
+  Every call in this repository passes a single word, which is the one case
+  where the two readings agree, so nothing here could have shown the difference.
+  A consumer wrote four rules listing synonyms and got the fallback for all of
+  them.
+
+  Note the empty case differs on purpose: `WhenUserSays()` matches every run,
+  because a conjunction over nothing holds, and `WhenUserSaysAny()` matches
+  none.
+
+Both were found by an outside consumer resolving the published tags rather than
+this working tree -- the gap `example/` and `conformance/` cannot cover, because
+both carry `replace` directives and have never read a published module.
+
+## [0.7.0] - 2026-09-07
+
 ### Added
+
+- **`Renderer.RenderValue`**, which does the JSON round trip `Render` needs its
+  input already to have had. `Render` walks decoded JSON -- maps, slices and
+  scalars -- because that is the shape a formatter can change freely: replacing
+  an integer with a string is ordinary there and impossible in the Go value.
+  So something has to marshal first, and every adapter would otherwise write
+  the same three lines. The cost is one encode/decode per rendered call, paid
+  only where a renderer is configured.
+
+## [0.6.0] - 2026-09-07
+
+### Added
+
+- **A renderer, so an agent-facing transport can show a value to the reader who
+  asked for it.** `RenderKeyword` (`x-render`) is a schema extension a field
+  uses to ask for formatting; `Formatter` is the function that does it, handed
+  the request context and the principal; `NewRenderer` and `Renderer.Render`
+  walk a decoded value against its schema and apply what the schema asks for.
+
+  The split is the whole design. A declaration is a fact about the FIELD, true
+  of every row and every reader -- "this integer is money in minor units" -- and
+  it is made once, at registration, with no reader in front of it. A formatter
+  is a fact about the READER: it runs adapter-side, per call, and it is what
+  knows the currency and the timezone. A description can say "in minor units"
+  and can never say "half past two on Tuesday", and a struct tag has the
+  identical limit for the identical reason.
+
+  Nothing in `Dispatch` calls it. An HTTP transport gets raw values by doing
+  nothing, which is what lets an API route and an agent tool share one `Spec`.
+
+  A formatter is handed the principal rather than `Deps`, and that is a safety
+  property rather than a convenience: `Deps` is resolved inside the transaction
+  and its handle is dead by the time a `Result` exists, so a renderer reaching
+  for it would be reaching into a closed transaction.
+
+- **`Register` refuses a `SchemaFor` declaration the declaring type cannot
+  serve.** A type that advertises a string and marshals an object was accepted
+  and then contradicted itself on every wire. The check compares the JSON
+  *kind* only -- full validation would refuse enums whose zero value is not a
+  member, which is legal and common.
+
+  This is what makes `type Instant time.Time` fail loudly instead of quietly:
+  a defined type does not inherit `MarshalJSON`, and `time.Time`'s fields are
+  unexported, so it would advertise a date-time string and serve `{}`.
+
 
 - **`aguix`, a fifth adapter: an agent over AG-UI.** An HTTP handler that
   decodes `RunAgentInput` and streams the protocol's events, a `Toolbox` that
@@ -419,7 +508,9 @@ is what a first consumer is for.
 - Framework-agnostic errors: `ErrNotFound`, `ErrConflict`, `ErrPermission` and
   `ValidationError`.
 
-[Unreleased]: https://github.com/Artui/go-services/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Artui/go-services/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Artui/go-services/releases/tag/v0.7.0
+[0.6.0]: https://github.com/Artui/go-services/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Artui/go-services/releases/tag/v0.5.0
 [0.4.0]: https://github.com/Artui/go-services/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Artui/go-services/releases/tag/v0.3.0

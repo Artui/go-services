@@ -81,8 +81,15 @@ type Rule struct {
 	Steps []Step
 }
 
-// WhenUserSays matches when the last user message contains every one of these,
-// case-insensitively.
+// WhenUserSays matches when the last user message contains EVERY one of these,
+// case-insensitively. For "any of these", see WhenUserSaysAny.
+//
+// The emphasis is not decoration. A consumer read the name as a disjunction,
+// wrote four rules listing synonyms, and got the fallback for every phrase --
+// silently, because an unmatched rule loses to the next one and a script with a
+// fallback then answers something plausible. Every call in this repository
+// passes a single word, which is the one case where the two readings agree, so
+// nothing here could have shown the difference.
 //
 // Substring matching is not a pretence at understanding. It is the smallest
 // thing that lets a demo respond to what was typed, and being obviously crude
@@ -100,6 +107,34 @@ func WhenUserSays(words ...string) func(RunInput) bool {
 			}
 		}
 		return true
+	}
+}
+
+// WhenUserSaysAny matches when the last user message contains ANY of these,
+// case-insensitively.
+//
+// This is the one a rule listing synonyms wants, and it exists because every
+// consumer was writing it: a handful of lines wrapping WhenUserSays in a loop,
+// which is a reliable sign the package is missing the shape rather than the
+// consumer being unusual.
+//
+// Note the empty case is the opposite of WhenUserSays' and both are correct: a
+// conjunction over no words holds, so WhenUserSays() is a fallback written the
+// long way, while a disjunction over no words does not, so WhenUserSaysAny() is
+// a rule that can never fire.
+func WhenUserSaysAny(words ...string) func(RunInput) bool {
+	return func(in RunInput) bool {
+		message, ok := in.LastUserMessage()
+		if !ok {
+			return false
+		}
+		content := strings.ToLower(message.Content)
+		for _, word := range words {
+			if strings.Contains(content, strings.ToLower(word)) {
+				return true
+			}
+		}
+		return false
 	}
 }
 
