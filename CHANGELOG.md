@@ -73,6 +73,18 @@ gaining nothing, because an HTTP client wants the value it can compute with and
 tagged: they depend on all of the others, and exist to fail when two transports
 disagree and when a transaction boundary is wrong.
 
+Every module moved again on 2026-09-08 for kernel `v0.7.1`. `aguix/v0.3.0` is
+the only one with a change of its own -- `WhenUserSaysAny`, a new exported
+symbol, hence the minor. `httpx/v0.2.3`, `ginx/v0.2.3`, `mcpx/v0.1.5` and
+`adkx/v0.1.3` change nothing but their floor.
+
+That is not the same as changing nothing. `mcpx` and `adkx` are where the map
+rendering actually reaches a client, and they gain it entirely through the
+floor, because the walk that was wrong lives in the kernel. `httpx` and `ginx`
+gain nothing and are tagged anyway, which is the rule rather than an oversight:
+Go takes the maximum kernel across a build, so a module left behind is the one
+combination nobody runs.
+
 ## [Unreleased]
 
 ## [0.7.1] - 2026-09-08
