@@ -87,6 +87,32 @@ combination nobody runs.
 
 ## [Unreleased]
 
+### Security
+
+- **`google.golang.org/grpc` raised to v1.83.2 in `adkx`, and in the two
+  modules that resolve it through a `replace`.** GHSA-2v4p-qf9q-27wj was
+  reported against three manifests -- `adkx/go.mod`, `conformance/go.mod` and
+  `example/go.mod` -- because the latter two replace `adkx` with the working
+  tree rather than requiring a published version, so its transitive pins are
+  theirs too.
+
+  Patched in all three together, which is also the only shape that builds: a
+  bump inside a replaced module leaves its consumers' `go.mod` naming the old
+  version, and `go vet` refuses a module whose manifest it would have to rewrite
+  rather than rewriting it. An update touching one directory alone lands red,
+  every time, on a repository whose suite is otherwise green.
+
+### Changed
+
+- **Dependabot now watches every module in the repository, in one grouped
+  entry.** Four were missing from the list -- `adkx`, `aguix`, `conformance`
+  and `example` -- so nothing was ever proposed for them, which is precisely
+  what the comment above that list warned would happen without anything failing
+  to say so. The grouped `directories` form replaces one entry per module
+  because the `replace` edges mean these modules are not independently
+  updatable: they have to move in a single pull request or none of them can be
+  green.
+
 ### Documentation
 
 - **`WithAtomic` now names the write-lock consequence of its own ordering.**
