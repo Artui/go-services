@@ -85,22 +85,18 @@ gain nothing and are tagged anyway, which is the rule rather than an oversight:
 Go takes the maximum kernel across a build, so a module left behind is the one
 combination nobody runs.
 
+`adkx/v0.1.4` on 2026-09-14 carries one thing: `google.golang.org/grpc` raised
+to v1.83.2 for GHSA-2v4p-qf9q-27wj (high). Only `adkx` moves, because it is the
+only tagged module that resolves grpc at all; its kernel floor was already
+v0.7.1 and nothing else changed, so this is a patch.
+
+A tag is the whole delivery here, and that is worth saying plainly: the fix was
+on `main` and in no tag for several hours, which means `go get` still resolved
+the vulnerable version from the module proxy the entire time. There is no
+publish step to forget in this repository -- there is only the tag, which is
+easier to forget.
+
 ## [Unreleased]
-
-### Security
-
-- **`google.golang.org/grpc` raised to v1.83.2 in `adkx`, and in the two
-  modules that resolve it through a `replace`.** GHSA-2v4p-qf9q-27wj was
-  reported against three manifests -- `adkx/go.mod`, `conformance/go.mod` and
-  `example/go.mod` -- because the latter two replace `adkx` with the working
-  tree rather than requiring a published version, so its transitive pins are
-  theirs too.
-
-  Patched in all three together, which is also the only shape that builds: a
-  bump inside a replaced module leaves its consumers' `go.mod` naming the old
-  version, and `go vet` refuses a module whose manifest it would have to rewrite
-  rather than rewriting it. An update touching one directory alone lands red,
-  every time, on a repository whose suite is otherwise green.
 
 ### Changed
 
