@@ -6,26 +6,33 @@ updates:
     groups:
       actions: { patterns: ["*"] }
 
-  # One entry per module. Go has no workspace-wide manifest that Dependabot can
-  # read, so a module missing from this list is a module that never gets an
-  # update proposed -- silently, and with nothing failing to say so.
+  # Every module, in one entry rather than one entry each, and both halves of
+  # that matter.
+  #
+  # Every module, because Go has no workspace-wide manifest Dependabot can read:
+  # a module missing from this list is a module that never gets an update
+  # proposed -- silently, and with nothing failing to say so. This list was
+  # short of adkx, aguix, conformance and example, which is exactly what that
+  # sentence predicted.
+  #
+  # One entry, because conformance and example `replace` the other six rather
+  # than requiring published versions, so a bump inside a replaced module
+  # changes what they resolve. Their own go.mod still pins the old transitive
+  # version, and `go vet` refuses to build against a go.mod it would have to
+  # rewrite -- so a PR touching one module alone lands untidy and red. Grouping
+  # the directories makes Dependabot move them together in a single PR, which is
+  # the only shape that can be green: the replace edges mean these modules are
+  # not independently updatable, whatever the directory layout suggests.
   - package-ecosystem: "gomod"
-    directory: "/"
-    schedule: { interval: "weekly" }
-    groups:
-      go: { patterns: ["*"] }
-  - package-ecosystem: "gomod"
-    directory: "/httpx"
-    schedule: { interval: "weekly" }
-    groups:
-      go: { patterns: ["*"] }
-  - package-ecosystem: "gomod"
-    directory: "/ginx"
-    schedule: { interval: "weekly" }
-    groups:
-      go: { patterns: ["*"] }
-  - package-ecosystem: "gomod"
-    directory: "/mcpx"
+    directories:
+      - "/"
+      - "/httpx"
+      - "/ginx"
+      - "/mcpx"
+      - "/adkx"
+      - "/aguix"
+      - "/conformance"
+      - "/example"
     schedule: { interval: "weekly" }
     groups:
       go: { patterns: ["*"] }
