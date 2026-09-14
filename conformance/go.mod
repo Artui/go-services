@@ -33,7 +33,7 @@ require (
 	github.com/Artui/go-services/mcpx v0.0.0-00010101000000-000000000000
 	github.com/gin-gonic/gin v1.12.0
 	github.com/google/jsonschema-go v0.4.3
-	github.com/modelcontextprotocol/go-sdk v1.7.0
+	github.com/modelcontextprotocol/go-sdk v1.8.0
 	google.golang.org/adk/v2 v2.3.0
 )
 
