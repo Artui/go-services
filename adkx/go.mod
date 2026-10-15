@@ -6,7 +6,7 @@ require (
 	github.com/Artui/go-services v0.7.1
 	github.com/google/jsonschema-go v0.4.3
 	google.golang.org/adk/v2 v2.5.0
-	google.golang.org/genai v1.72.0
+	google.golang.org/genai v1.73.0
 )
 
 require (
