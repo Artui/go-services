@@ -247,6 +247,25 @@ func TestTranslateResultOutcome(t *testing.T) {
 		`RESULT m2 c2 outcome="" {}`)
 }
 
+func TestTranslateOnlyALoneErrorTextIsAFailure(t *testing.T) {
+	for name, tc := range map[string]struct {
+		response map[string]any
+		want     aguix.ToolOutcome
+	}{
+		"error text alone":         {map[string]any{"error": "no copy"}, aguix.OutcomeFailed},
+		"output with error field":  {map[string]any{"loan": 1, "error": "none"}, aguix.OutcomeSuccess},
+		"error that is not text":   {map[string]any{"error": map[string]any{"code": 1}}, aguix.OutcomeSuccess},
+		"result without error key": {map[string]any{"result": "ok"}, aguix.OutcomeSuccess},
+	} {
+		t.Run(name, func(t *testing.T) {
+			got := trFeed(t, newTranslator(trIDs()), trResponse("c1", "borrow_book", tc.response))
+			if len(got) != 1 || got[0].Outcome != tc.want {
+				t.Errorf("got %v, want outcome %q", trLines(got), tc.want)
+			}
+		})
+	}
+}
+
 func TestTranslateTracksLongRunningCalls(t *testing.T) {
 	tr := newTranslator(trIDs())
 	calls := trEvent(false, trCall("c1", "ask", nil), trCall("c2", "ping", nil), trCall("c3", "ask", nil))

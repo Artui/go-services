@@ -136,20 +136,26 @@ func (t *translator) call(
 	return out
 }
 
-// result reports a tool's answer. ADK writes a tool's returned error as the
-// response {"error": text}, and tells the two apart by that key alone, so this
-// does the same; adkx has already redacted the text by then.
+// result reports a tool's answer. Every ADK and adkx error site writes a failed
+// call as the response {"error": text} and nothing else (base_flow.go's tool
+// paths, adkx's refuse); adkx has already redacted the text by then. A response
+// with other keys is a success, even one whose output has an "error" field.
 func (t *translator) result(
 	out []aguix.Event, fr *genai.FunctionResponse, content json.RawMessage,
 ) []aguix.Event {
 	outcome := aguix.OutcomeSuccess
-	if _, failed := fr.Response["error"]; failed {
+	if failed(fr.Response) {
 		outcome = aguix.OutcomeFailed
 	}
 	out = t.endText(out)
 	out = append(out, aguix.ToolCallResult(t.newID(), fr.ID, string(content), outcome))
 	t.waiting = slices.DeleteFunc(t.waiting, func(id string) bool { return id == fr.ID })
 	return out
+}
+
+func failed(response map[string]any) bool {
+	_, isText := response["error"].(string)
+	return isText && len(response) == 1
 }
 
 // encodeParts encodes every call's arguments and every response up front, so a

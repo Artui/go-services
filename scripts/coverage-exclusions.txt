@@ -65,3 +65,9 @@ github.com/Artui/go-services/render.go:RenderValue
 #   above it is reachable and tested -- a service returning a channel is a bug in
 #   that service, and it has to surface as an error rather than as a
 #   half-rendered payload.
+
+github.com/Artui/go-services/aguiadk/client.go:ProcessRequest
+#   The PackTool error branch. PackTool fails only on a name already in
+#   req.Tools, and the line above skips exactly those names, so the error
+#   cannot occur. The check stays because discarding an error to satisfy a
+#   coverage number is the worse trade.
