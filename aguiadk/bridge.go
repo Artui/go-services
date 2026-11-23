@@ -162,7 +162,9 @@ func (b *bridge) prepare(
 // model again with the client's call still unanswered. So once a step has
 // named a long-running call, the run ends after the event carrying that step's
 // responses. Anything ADK yields after it, such as a confirmation request, is
-// not reached; the client answers the pending call first.
+// not reached; the client answers the pending call first. For the same reason
+// ADK's own tool confirmation is unsupported: its request is a long-running
+// call the browser never declared.
 func (b *bridge) drive(
 	ctx context.Context, r *runner.Runner, userID, sessionID string,
 	tail *genai.Content, tr *translator, out *aguix.Stream,
