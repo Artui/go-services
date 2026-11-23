@@ -1,0 +1,15 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-deny"}
+
+data: {"type":"TOOL_CALL_RESULT","messageId":"run-deny-1","role":"tool","toolCallId":"c1","content":"{\"error\":\"error tool \\\"discard_book\\\" call is rejected\"}","outcome":"denied","metadata":{"outcome":"denied"}}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"run-deny-2","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-deny-2","delta":"I "}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-deny-2","delta":"left "}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-deny-2","delta":"it."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"run-deny-2"}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-deny"}

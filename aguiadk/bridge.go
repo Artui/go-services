@@ -69,6 +69,9 @@ func New(root agent.Agent, opts ...Option) (aguix.Agent, error) {
 	for _, opt := range opts {
 		opt(b)
 	}
+	if b.optErr != nil {
+		return nil, b.optErr
+	}
 	if b.userID == nil {
 		return nil, errors.New(
 			"aguiadk: New needs WithUserID; pass aguiadk.Anonymous for an unauthenticated mount")
@@ -86,12 +89,21 @@ type bridge struct {
 	userID     func(context.Context) (string, error)
 	newService func() session.Service
 	newRunner  func(session.Service) (*runner.Runner, error)
+	approval   *Approval
+	optErr     error
 }
 
 func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) error {
 	history, tail, err := rebuild(in.Messages, b.root.Name())
 	if err != nil {
 		return err
+	}
+	var denied map[string]bool
+	if len(in.Resume) > 0 {
+		history, tail, denied, err = resumed(in.Messages, in.Resume, history, tail, b.root.Name())
+		if err != nil {
+			return err
+		}
 	}
 	// ADK would still call the model, on a conversation whose last turn is its
 	// own; there is nothing to answer, so the run ends here.
@@ -108,6 +120,7 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 	}
 
 	tr := newTranslator(messageIDs(in.RunID))
+	tr.approval, tr.denied = b.approval, denied
 	runErr := b.drive(withClientTools(ctx, tools), r, userID, in.ThreadID, tail, tr, out)
 	// Whatever the run opened is closed before it ends, so a failed run still
 	// leaves a well-formed stream ahead of the handler's RUN_ERROR.
@@ -116,6 +129,11 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 	}
 	if runErr != nil {
 		return runErr
+	}
+	// A gated call outranks a browser call of the same step: the client answers
+	// the browser call as not finished when it resumes.
+	if len(tr.interrupts) > 0 {
+		return out.Finish(aguix.Interrupted(tr.interrupts...))
 	}
 	if pending := tr.pending(); len(pending) > 0 {
 		return out.Finish(aguix.Success(pending...))
@@ -161,10 +179,8 @@ func (b *bridge) prepare(
 // own: ADK runs the server tool, yields its response, and would then call the
 // model again with the client's call still unanswered. So once a step has
 // named a long-running call, the run ends after the event carrying that step's
-// responses. Anything ADK yields after it, such as a confirmation request, is
-// not reached; the client answers the pending call first. For the same reason
-// ADK's own tool confirmation is unsupported: its request is a long-running
-// call the browser never declared.
+// responses, unless that event says a call is waiting for confirmation: the
+// request follows it, and becomes the run's interrupt.
 func (b *bridge) drive(
 	ctx context.Context, r *runner.Runner, userID, sessionID string,
 	tail *genai.Content, tr *translator, out *aguix.Stream,
@@ -187,7 +203,7 @@ func (b *bridge) drive(
 		}
 		if len(ev.LongRunningToolIDs) > 0 {
 			awaitingClient = true
-		} else if awaitingClient && hasResponses(ev) {
+		} else if awaitingClient && hasResponses(ev) && len(ev.Actions.RequestedToolConfirmations) == 0 {
 			return nil
 		}
 	}

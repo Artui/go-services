@@ -1,0 +1,9 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-pause"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"c1","toolCallName":"discard_book"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"book_id\":7}","toolCallId":"c1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"c1"}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-pause","outcome":{"type":"interrupt","interrupts":[{"id":"int-c1","reason":"tool_call","message":"Approve discard_book({\"book_id\":7})?","toolCallId":"c1","responseSchema":{"properties":{"approved":{"type":"boolean"},"editedArgs":{"type":"object"}},"required":["approved"],"type":"object"},"metadata":{"x-confirm":"Discard this book?"}}]}}

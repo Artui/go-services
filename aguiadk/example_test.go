@@ -16,7 +16,8 @@ import (
 
 type signedIn struct{}
 
-// The server's specs and the browser's tools side by side, served at /agent.
+// The server's specs and the browser's tools side by side, served at /agent,
+// with destructive specs waiting for a person and their labels at /agent/tools.
 func Example() {
 	var llm model.LLM // a provider model, such as anthropicmodel's
 
@@ -28,9 +29,10 @@ func Example() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	approval := aguiadk.NewApproval(reg.Entries())
 	root, err := llmagent.New(llmagent.Config{
 		Name: "assistant", Model: llm,
-		Toolsets: []tool.Toolset{specs, aguiadk.ClientToolset()},
+		Toolsets: []tool.Toolset{approval.Gate(specs), aguiadk.ClientToolset()},
 	})
 	if err != nil {
 		log.Fatal(err)
@@ -38,7 +40,7 @@ func Example() {
 	bridge, err := aguiadk.New(root, aguiadk.WithUserID(func(ctx context.Context) (string, error) {
 		user, _ := ctx.Value(signedIn{}).(string) // set by the server's authentication
 		return user, nil
-	}))
+	}), aguiadk.WithApproval(approval))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -47,4 +49,5 @@ func Example() {
 		log.Fatal(err)
 	}
 	http.Handle("/agent", handler)
+	http.Handle("/agent/tools", aguiadk.ToolCatalog(reg.Entries())) // behind the same authentication
 }

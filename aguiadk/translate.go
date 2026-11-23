@@ -8,6 +8,7 @@ import (
 
 	"github.com/Artui/go-services/aguix"
 	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool/toolconfirmation"
 	"google.golang.org/genai"
 )
 
@@ -38,6 +39,12 @@ type translator struct {
 	streamed bool
 
 	waiting []string
+
+	// approval names the prompts of gated specs, and denied the calls this run
+	// resumed with a denial. interrupts are the confirmations the run asked for.
+	approval   *Approval
+	denied     map[string]bool
+	interrupts []aguix.Interrupt
 }
 
 func newTranslator(newID func() string) *translator {
@@ -75,6 +82,20 @@ func (t *translator) translate(ev *session.Event) ([]aguix.Event, error) {
 	if err != nil {
 		return nil, err
 	}
+	var interrupts []aguix.Interrupt
+	for _, p := range parts {
+		if confirmation(p, ev) {
+			in, err := t.approval.interruptFor(p.FunctionCall)
+			if err != nil {
+				return nil, err
+			}
+			interrupts = append(interrupts, in)
+		}
+	}
+	t.interrupts = append(t.interrupts, interrupts...)
+	// A gated call is answered by a placeholder until the person decides; the
+	// client is told nothing, so the call's card waits for the real result.
+	awaiting := ev.Actions.RequestedToolConfirmations
 
 	streamed := t.streamed
 	t.streamed = false
@@ -83,6 +104,8 @@ func (t *translator) translate(ev *session.Event) ([]aguix.Event, error) {
 		switch {
 		// Thought parts are reasoning, which this bridge does not stream yet.
 		case p == nil, p.Thought:
+		case confirmation(p, ev):
+		case p.FunctionResponse != nil && hasKey(awaiting, p.FunctionResponse.ID):
 		case p.FunctionCall != nil:
 			out = t.call(out, p.FunctionCall, encoded[i], ev.LongRunningToolIDs)
 		case p.FunctionResponse != nil:
@@ -145,7 +168,10 @@ func (t *translator) result(
 	out []aguix.Event, fr *genai.FunctionResponse, content json.RawMessage,
 ) []aguix.Event {
 	outcome := aguix.OutcomeSuccess
-	if failed(fr.Response) {
+	switch {
+	case t.denied[fr.ID]:
+		outcome = aguix.OutcomeDenied
+	case failed(fr.Response):
 		outcome = aguix.OutcomeFailed
 	}
 	out = t.endText(out)
@@ -153,6 +179,18 @@ func (t *translator) result(
 	t.waiting = slices.DeleteFunc(t.waiting, func(id string) bool { return id == fr.ID })
 	t.last = ""
 	return out
+}
+
+// confirmation reports whether p is ADK's own request to confirm a call. It is
+// long-running, which a model's call to a tool of that name is not.
+func confirmation(p *genai.Part, ev *session.Event) bool {
+	return p != nil && p.FunctionCall != nil && p.FunctionCall.Name == toolconfirmation.FunctionCallName &&
+		slices.Contains(ev.LongRunningToolIDs, p.FunctionCall.ID)
+}
+
+func hasKey[V any](m map[string]V, key string) bool {
+	_, ok := m[key]
+	return ok
 }
 
 func failed(response map[string]any) bool {

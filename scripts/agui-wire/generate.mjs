@@ -215,6 +215,33 @@ for (const [name, body] of Object.entries(written)) {
   writeFileSync(join(inbound, `${name}.json`), `${body}\n`);
 }
 
+// The resume runs aguiadk's approval tests post: the conversation as the web
+// component sends it after a gated call paused, the call left unanswered, and
+// the answer to its interrupt. They live beside the bridge that reads them.
+const approvalInbound = join(here, "..", "..", "aguiadk", "testdata", "agui", "inbound");
+const paused = [
+  { id: "u1", role: "user", content: "Discard book 7." },
+  {
+    id: "a1",
+    role: "assistant",
+    toolCalls: [{ id: "c1", type: "function", function: { name: "discard_book", arguments: '{"book_id":7}' } }],
+  },
+];
+const approvals = {
+  approve: { status: "resolved", payload: { approved: true } },
+  edit: { status: "resolved", payload: { approved: true, editedArgs: { book_id: 9 } } },
+  deny: { status: "cancelled" },
+};
+rmSync(approvalInbound, { recursive: true, force: true });
+mkdirSync(approvalInbound, { recursive: true });
+for (const [name, answer] of Object.entries(approvals)) {
+  const body = await capture(name, {
+    messages: paused,
+    params: { resume: [{ interruptId: "int-c1", ...answer }] },
+  });
+  writeFileSync(join(approvalInbound, `${name}.json`), `${body}\n`);
+}
+
 const call = { id: "c1", type: "function", function: { name: "borrow_book", arguments: '{"book_id":4}' } };
 
 const frames = {
