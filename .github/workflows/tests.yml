@@ -113,6 +113,12 @@ jobs:
             git diff -- aguix/testdata
             exit 1
           fi
+      # aguiadk's tests record whole runs as Go wrote them and fail on drift;
+      # this hands those bytes to the client's own schemas and event verifier,
+      # so a frame out of order fails here rather than in a browser.
+      - name: Check aguiadk's recorded runs with the pinned client
+        working-directory: scripts/agui-wire
+        run: node verify-transcripts.mjs
 
   secrets:
     name: secret scan
