@@ -47,6 +47,10 @@ type Message struct {
 	// Metadata is the protocol's open slot, kept raw: its keys are the
 	// producer's, and decoding them would round every number past 2^53.
 	Metadata json.RawMessage `json:"metadata,omitempty"`
+
+	// SubagentRunID names the subagent invocation that produced the message,
+	// absent for the top-level agent's own.
+	SubagentRunID string `json:"subagentRunId,omitempty"`
 }
 
 // Text returns the message's content as text, the way @ag-ui/core's

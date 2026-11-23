@@ -47,9 +47,12 @@ func decoded(t *testing.T, body string) aguix.RunInput {
 // @ag-ui/core 1.0, the first of these was a 400: a user turn sent as parts is an
 // array where a string was expected.
 func TestEveryClientFixtureStartsARun(t *testing.T) {
-	for _, name := range []string{
-		"parts", "tool-round", "activity", "activity-history", "reasoning", "resume",
-	} {
+	paths, err := filepath.Glob(filepath.Join("testdata", "agui", "inbound", "*.json"))
+	if err != nil || len(paths) == 0 {
+		t.Fatalf("no fixtures found: %v", err)
+	}
+	for _, path := range paths {
+		name := strings.TrimSuffix(filepath.Base(path), ".json")
 		t.Run(name, func(t *testing.T) {
 			rec := run(t, aguix.AgentFunc(
 				func(context.Context, aguix.RunInput, *aguix.Stream) error { return nil }),
@@ -165,6 +168,9 @@ func TestReasoningCarriesItsSignatureBack(t *testing.T) {
 	if string(assistant.Metadata) != `{"model":"test"}` {
 		t.Errorf("metadata = %s", assistant.Metadata)
 	}
+	if assistant.SubagentRunID != "subagent-call-9" {
+		t.Errorf("subagentRunId = %q", assistant.SubagentRunID)
+	}
 	if string(in.State) != `{"draft":"sunset","turns":2}` {
 		t.Errorf("state = %s", in.State)
 	}
@@ -216,6 +222,7 @@ func TestTextReadsEveryShapeOfContent(t *testing.T) {
 		{"absent", ``, ""},
 		{"a string", `"hello"`, "hello"},
 		{"parts", `[{"type":"text","text":"a"},{"type":"image"},{"type":"text","text":"b"}]`, "ab"},
+		{"a part that is not text", `[{"type":"image","text":"alt"}]`, ""},
 		{"no parts", `[]`, ""},
 		{"an object", `{"removed":1}`, ""},
 		{"null", `null`, ""},

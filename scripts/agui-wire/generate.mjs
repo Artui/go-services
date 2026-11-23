@@ -19,7 +19,7 @@
 // Run it with `npm ci && node generate.mjs` in this directory; CI does the same
 // and fails when the committed fixtures differ from what it wrote.
 
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -127,6 +127,7 @@ const fixtures = {
         role: "assistant",
         content: "Because of Rayleigh scattering.",
         metadata: { model: "test" },
+        subagentRunId: "subagent-call-9",
       },
       { id: "u2", role: "user", content: "And at sunset?" },
     ],
@@ -185,7 +186,8 @@ function enforced(name, { messages }) {
     state: {},
     forwardedProps: {},
   });
-  // Serialised as HttpAgent serialises its request body.
+  // JSON.stringify, as HttpAgent's request body; unlike HttpAgent, this adds
+  // no protocolVersion.
   return JSON.stringify(input);
 }
 
@@ -195,6 +197,9 @@ for (const [name, spec] of Object.entries(fixtures)) {
 }
 written.activity = enforced("activity", fixtures["activity-history"]);
 
+// The directory is emptied first, so a fixture this script no longer writes is
+// gone rather than left behind looking like client output.
+rmSync(inbound, { recursive: true, force: true });
 mkdirSync(inbound, { recursive: true });
 for (const [name, body] of Object.entries(written)) {
   writeFileSync(join(inbound, `${name}.json`), `${body}\n`);

@@ -130,8 +130,8 @@ kernel floor stays v0.7.1, still the newest kernel tag.
   field.
 - **`Message` models every role of `@ag-ui/core` 1.0**: `toolCalls` on an
   assistant turn, `toolCallId` and `error` on a tool result, `activityType`,
-  `encryptedValue` and `metadata`, with the roles `reasoning` and `activity`
-  among the ones it keeps. A browser tool's call and its result arrive on
+  `encryptedValue`, `metadata` and `subagentRunId`, with the roles `reasoning`
+  and `activity` among the ones it keeps. A browser tool's call and its result arrive on
   different runs, and these ids are what pair them. A role this package has
   never heard of is kept as sent.
 - **`RunInput` gains `Context` and `Resume`**, the protocol's ambient context
