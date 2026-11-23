@@ -207,9 +207,10 @@ func (in RunInput) LastUserMessage() (Message, bool) {
 // Agent runs one turn.
 //
 // It is handed the decoded input and a stream, and everything it emits reaches
-// the client as it is written. The run's own lifecycle is not its business: the
-// handler emits RUN_STARTED before this is called and RUN_FINISHED or RUN_ERROR
-// after it returns, so an agent cannot leave a run half-open by returning early.
+// the client as it is written. The run's lifecycle is the handler's: it emits
+// RUN_STARTED before this is called and RUN_FINISHED or RUN_ERROR after it
+// returns, so an agent cannot leave a run half-open by returning early. All an
+// agent chooses is the outcome RUN_FINISHED carries, with Stream.Finish.
 //
 // Returning an error ends the run as a RUN_ERROR. The error's own words do not
 // reach the client unless the handler is told they may -- see Handler.

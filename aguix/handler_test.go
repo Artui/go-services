@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	services "github.com/Artui/go-services"
@@ -250,6 +251,9 @@ func TestFinishRefusesAnInvalidOutcome(t *testing.T) {
 			out.Finish(aguix.Interrupted(aguix.Interrupt{ID: "i1"})),
 			out.Finish(aguix.Interrupted(aguix.Interrupt{Reason: "r"})),
 			out.Finish(aguix.Success("")),
+			out.Finish(aguix.Interrupted(aguix.Interrupt{ID: "i", Reason: "r", ResponseSchema: "x"})),
+			out.Finish(aguix.Interrupted(aguix.Interrupt{ID: "i", Reason: "r", Metadata: []int{1}})),
+			out.Finish(aguix.Interrupted(aguix.Interrupt{ID: "i", Reason: "r", Metadata: map[string]any(nil)})),
 		)
 		return nil
 	})
@@ -289,4 +293,46 @@ func TestTheLastFinishWins(t *testing.T) {
 	if !reflect.DeepEqual(outcome["pendingToolCallIds"], []any{"c2"}) {
 		t.Errorf("outcome = %v", outcome)
 	}
+}
+
+// Only the half of an outcome its type names is written.
+func TestFinishDropsTheOtherTypesFields(t *testing.T) {
+	agent := aguix.AgentFunc(func(_ context.Context, _ aguix.RunInput, out *aguix.Stream) error {
+		return out.Finish(aguix.RunOutcome{
+			Type: "success", PendingToolCallIDs: []string{"c1"},
+			Interrupts: []aguix.Interrupt{{ID: "i", Reason: "r"}},
+		})
+	})
+	got := lastFrame(t, run(t, agent, `{"threadId":"t","runId":"r","messages":[]}`))
+	outcome, _ := got["outcome"].(map[string]any)
+	if _, has := outcome["interrupts"]; has {
+		t.Errorf("outcome = %v, want no interrupts", outcome)
+	}
+	agent = aguix.AgentFunc(func(_ context.Context, _ aguix.RunInput, out *aguix.Stream) error {
+		return out.Finish(aguix.RunOutcome{
+			Type: "interrupt", PendingToolCallIDs: []string{"c1"},
+			Interrupts: []aguix.Interrupt{{ID: "i", Reason: "r"}},
+		})
+	})
+	got = lastFrame(t, run(t, agent, `{"threadId":"t","runId":"r","messages":[]}`))
+	outcome, _ = got["outcome"].(map[string]any)
+	if _, has := outcome["pendingToolCallIds"]; has {
+		t.Errorf("outcome = %v, want no pendingToolCallIds", outcome)
+	}
+}
+
+func TestFinishIsSafeFromManyGoroutines(t *testing.T) {
+	stream, err := aguix.NewStream(httptest.NewRecorder())
+	if err != nil {
+		t.Fatalf("NewStream: %v", err)
+	}
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = stream.Finish(aguix.Success("c"))
+		}()
+	}
+	wg.Wait()
 }

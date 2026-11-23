@@ -13,7 +13,7 @@ import (
 )
 
 // outboundFrames pairs each fixture, encoded by @ag-ui/core 1.0.4 through
-// testdata/agui/gen, with the Go frame that must equal it.
+// scripts/agui-wire/generate.mjs, with the Go frame that must equal it.
 func outboundFrames() map[string]aguix.Event {
 	call := aguix.ToolCall{
 		ID: "c1", Type: "function",
@@ -130,8 +130,12 @@ func TestPayloadFramesAreByteExact(t *testing.T) {
 			`{"type":"CUSTOM","name":"x","value":{"big":12345678901234567890}}`},
 		{"activity snapshot", aguix.ActivitySnapshot("m", "chart", map[string]any{"a": 1}),
 			`{"type":"ACTIVITY_SNAPSHOT","messageId":"m","activityType":"chart","content":{"a":1}}`},
-		{"activity snapshot replace false", aguix.ActivitySnapshot("m", "chart", 1).WithReplace(false),
-			`{"type":"ACTIVITY_SNAPSHOT","messageId":"m","activityType":"chart","replace":false,"content":1}`},
+		{"activity snapshot replace false", aguix.ActivitySnapshot("m", "chart", map[string]any{"a": 1}).WithReplace(false),
+			`{"type":"ACTIVITY_SNAPSHOT","messageId":"m","activityType":"chart","replace":false,"content":{"a":1}}`},
+		{"activity delta of nothing", aguix.ActivityDelta("m", "chart"),
+			`{"type":"ACTIVITY_DELTA","messageId":"m","activityType":"chart","patch":[]}`},
+		{"messages snapshot of nothing", aguix.MessagesSnapshot(nil),
+			`{"type":"MESSAGES_SNAPSHOT","messages":[]}`},
 		{"state delta", aguix.StateDelta(aguix.PatchOperation{Op: "remove", Path: "/a"}),
 			`{"type":"STATE_DELTA","delta":[{"op":"remove","path":"/a"}]}`},
 		{"state delta of nothing", aguix.StateDelta(),

@@ -147,8 +147,10 @@ kernel floor stays v0.7.1, still the newest kernel tag.
   `activity` message back, so object content reaches a server only from other
   producers.
 
-`aguix/v0.5.0` writes every frame `@artooi/agents-web-components` reads, and
-lets an agent decide how its run ends. The kernel floor stays v0.7.1.
+`aguix/v0.5.0` writes the state, messages-snapshot, reasoning, activity and
+custom frames `@artooi/agents-web-components` reads, and lets an agent decide
+how its run ends. The sub-agent frames (`SUBAGENT_STARTED`, `SUBAGENT_FINISHED`,
+`SUBAGENT_ERROR`) are not written yet. The kernel floor stays v0.7.1.
 
 - **New constructors for the frames the flat `Event` could not carry:**
   `StateSnapshot`, `StateDelta`, `MessagesSnapshot`, `ReasoningStart` through
@@ -164,9 +166,10 @@ lets an agent decide how its run ends. The kernel floor stays v0.7.1.
   `pendingToolCallIds`; `Stream.Finish(aguix.Interrupted(aguix.Interrupt{...}))`
   ends it asking for a decision, which the next run answers in
   `RunInput.Resume`. The handler writes it as `RUN_FINISHED`'s `outcome`, where
-  it used to write the event itself with none. An outcome the schema refuses
-  (no interrupts, an interrupt without an id or reason, an empty pending id) is
-  an error from `Finish`. An agent that returns an error after `Finish` still
+  it used to write the event itself with none. `Finish` returns an error for an outcome
+  the client's parser would reject (no interrupts, a `responseSchema` or
+  `metadata` that is not a JSON object) and for this package's own rule that an
+  interrupt id and reason, and a pending id, are not empty. An agent that returns an error after `Finish` still
   ends the run in `RUN_ERROR`. `Agent` is unchanged.
 - **Each new frame is asserted against bytes `@ag-ui/core` 1.0.4 wrote.**
   `scripts/agui-wire/generate.mjs` writes `aguix/testdata/agui/outbound`

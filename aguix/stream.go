@@ -73,10 +73,10 @@ func (s *Stream) Emit(event Event) error {
 // outcome. Without it the run finishes bare, as it always did.
 //
 // The handler still ends the run in RUN_ERROR if the agent then returns an
-// error, and a later Finish replaces an earlier one. An outcome the schema
-// would refuse is an error here, not a frame the client drops: an interrupt
-// needs at least one entry with an id and a reason, and a pending tool call id
-// cannot be empty.
+// error, and a later Finish replaces an earlier one. Finish checks what makes
+// the client's parser reject the frame and end its run: an interrupt needs at
+// least one entry, and its responseSchema and metadata must be JSON objects.
+// It also holds this package's own rule that ids and reasons are not empty.
 func (s *Stream) Finish(outcome RunOutcome) error {
 	switch outcome.Type {
 	case "success":
@@ -93,6 +93,9 @@ func (s *Stream) Finish(outcome RunOutcome) error {
 		for _, interrupt := range outcome.Interrupts {
 			if interrupt.ID == "" || interrupt.Reason == "" {
 				return errors.New("aguix: an interrupt needs an id and a reason")
+			}
+			if !isObjectOrAbsent(interrupt.ResponseSchema) || !isObjectOrAbsent(interrupt.Metadata) {
+				return errors.New("aguix: an interrupt's responseSchema and metadata must be JSON objects")
 			}
 		}
 		outcome.PendingToolCallIDs = nil
@@ -112,4 +115,12 @@ func (s *Stream) finishedWith() (RunOutcome, bool) {
 		return RunOutcome{}, false
 	}
 	return *s.outcome, true
+}
+
+func isObjectOrAbsent(value any) bool {
+	if value == nil {
+		return true
+	}
+	raw, err := json.Marshal(value)
+	return err == nil && len(raw) > 0 && raw[0] == '{'
 }
