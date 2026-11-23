@@ -114,6 +114,11 @@ func TestAnUnencodableToolResultEndsTheRun(t *testing.T) {
 	if got := result["outcome"]; got != string(aguix.OutcomeFailed) {
 		t.Errorf("outcome = %v, want %q", got, aguix.OutcomeFailed)
 	}
+	// The web component reads the outcome from metadata alone, because its
+	// client strips the top-level key, so this is the copy that reaches the card.
+	if metadata, _ := result["metadata"].(map[string]any); metadata["outcome"] != string(aguix.OutcomeFailed) {
+		t.Errorf("metadata = %v, want outcome %q", result["metadata"], aguix.OutcomeFailed)
+	}
 	if reported == nil {
 		t.Error("the encoding failure was not reported")
 	}
@@ -190,7 +195,7 @@ func TestCallToolFromReadsTheRun(t *testing.T) {
 	agent := aguix.Scripted(aguix.Rule{Steps: []aguix.Step{
 		aguix.CallToolFrom(box, "borrow_book", func(in aguix.RunInput) (json.RawMessage, error) {
 			message, _ := in.LastUserMessage()
-			if strings.Contains(message.Content, "hello") {
+			if strings.Contains(message.Text(), "hello") {
 				return json.RawMessage(`{"book_id":4}`), nil
 			}
 			return nil, errors.New("nothing to borrow")

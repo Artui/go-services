@@ -9,7 +9,7 @@ import (
 // said builds the smallest run that carries one user message.
 func said(text string) aguix.RunInput {
 	return aguix.RunInput{
-		Messages: []aguix.Message{{ID: "m", Role: "user", Content: text}},
+		Messages: []aguix.Message{{ID: "m", Role: "user", Content: aguix.TextContent(text)}},
 	}
 }
 
@@ -68,7 +68,7 @@ func TestAMatcherWithNoWordsIsTrueForAllAndFalseForAny(t *testing.T) {
 // A run with nothing from the user matches neither, which is the guard that
 // keeps a scripted agent from acting on a conversation it was not addressed in.
 func TestNeitherMatcherActsOnARunWithNoUserMessage(t *testing.T) {
-	empty := aguix.RunInput{Messages: []aguix.Message{{ID: "a", Role: "assistant", Content: "tariff"}}}
+	empty := aguix.RunInput{Messages: []aguix.Message{{ID: "a", Role: "assistant", Content: aguix.TextContent("tariff")}}}
 
 	if aguix.WhenUserSays("tariff")(empty) {
 		t.Error("WhenUserSays matched an assistant message")

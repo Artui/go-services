@@ -84,6 +84,33 @@ jobs:
           go-version: stable
       - run: make cover
 
+  # The AG-UI bodies aguix's tests decode are written by @ag-ui/client itself,
+  # at the version pinned in scripts/agui-wire's lockfile. This regenerates them
+  # and fails on any difference, a new or deleted file included, so a fixture
+  # cannot drift from the producer it claims to be.
+  wire-fixtures:
+    name: wire fixtures
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: scripts/agui-wire/.nvmrc
+      - name: Regenerate the fixtures with the pinned client
+        working-directory: scripts/agui-wire
+        run: |
+          npm ci --ignore-scripts
+          node generate.mjs
+      - name: Fail if they differ from the committed ones
+        run: |
+          changes="$(git status --porcelain -- aguix/testdata)"
+          if [ -n "$changes" ]; then
+            echo "::error::the committed wire fixtures differ from what @ag-ui/client writes"
+            echo "$changes"
+            git diff -- aguix/testdata
+            exit 1
+          fi
+
   secrets:
     name: secret scan
     runs-on: ubuntu-latest
@@ -108,7 +135,7 @@ jobs:
     # always(), never !cancelled(): a skipped job reports a skipped check, and
     # branch protection counts a skipped required check as passing.
     if: always()
-    needs: [floor, stable, lint, coverage, secrets]
+    needs: [floor, stable, lint, coverage, wire-fixtures, secrets]
     runs-on: ubuntu-latest
     steps:
       # Pass on an exact `success` from every job above, rather than failing on

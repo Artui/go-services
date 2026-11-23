@@ -21,7 +21,7 @@ func BorrowArgs(in aguix.RunInput) (json.RawMessage, error) {
 	if !ok {
 		return nil, errors.New("the run carries no user message")
 	}
-	found := bookID.FindString(message.Content)
+	found := bookID.FindString(message.Text())
 	if found == "" {
 		return nil, errors.New("the message names no book")
 	}

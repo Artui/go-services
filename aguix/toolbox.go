@@ -38,11 +38,11 @@ import (
 //     before the reason rather than after it.
 //
 // Where this stands, stated so nobody has to infer it: the field is proposed
-// upstream and emitted ahead of standardisation. A client that has not adopted
-// it sees exactly the stream it saw before -- see ToolOutcome for why that is
-// checked rather than assumed -- and that includes the card still reading
-// "done", which remains the component's to fix and is why the prefix is not a
-// stopgap to be dropped once the field is standard.
+// upstream and emitted ahead of standardisation, in the event's metadata and at
+// its top level -- see ToolOutcome for which client reads which. A client that
+// reads neither sees the stream it saw before, card reading "done" included,
+// which is why the prefix is not a stopgap to be dropped once the field is
+// standard.
 const ToolErrorPrefix = "Error: "
 
 // ToolResultError is what a tool result says when a call failed for a reason

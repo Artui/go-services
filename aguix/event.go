@@ -53,15 +53,21 @@ const (
 // absent: it describes a run that was stopped rather than a call that ended,
 // and it is not part of what a client is asked to render.
 //
-// The field is proposed upstream and emitted ahead of standardisation, which is
-// a position rather than an accident: a consumer that reads it gains the
-// distinction now, and one that does not sees exactly the stream it saw before.
-// That second half is checked rather than assumed -- @ag-ui/core builds every
-// event schema on a BaseEventSchema ending in .passthrough(), so an unrecognised
-// key is neither stripped nor refused by the client's own parser. Verified at
-// 0.0.59, the version the web component resolves; a schema that later turned
-// strict would refuse this field, which is a thing to re-check rather than a
-// thing to hope about.
+// The field is proposed upstream and emitted ahead of standardisation, and it
+// is written twice, under the one key, as the family's Python transport writes
+// it:
+//
+//   - In the event's metadata, which is what a client on @ag-ui/client 1.0 reads,
+//     @artooi/agents-web-components 0.4.0 among them. Metadata is the one slot on an
+//     event that 1.0 declares open by key, and the client folds a result's
+//     metadata onto the tool message it appends, so the outcome survives into
+//     the saved thread.
+//   - At the top level, which is what a 0.x client read. 1.0 does not keep it:
+//     its enforcement stage strips every key a schema does not declare before
+//     any subscriber runs, which is why a server writing only this copy has its
+//     denied calls rendered as done.
+//
+// Either way a client that reads neither sees the stream it saw before.
 type ToolOutcome string
 
 const (
@@ -128,6 +134,11 @@ type Event struct {
 	// field existed, which is the compatibility claim stated as a property of
 	// the struct rather than as a promise in a comment.
 	Outcome ToolOutcome `json:"outcome,omitempty"`
+
+	// Metadata is the protocol's open slot on an event. It is declared after
+	// Outcome for the same reason, and a constructor sets it only when it has
+	// something to say, so a frame without it is the frame it always was.
+	Metadata map[string]any `json:"metadata,omitempty"`
 }
 
 // RunStarted opens a run. Every stream begins with one, and a client that
@@ -197,10 +208,18 @@ func ToolCallEnd(toolCallID string) Event {
 // that has an answer always knows which kind it is, and a signature that can be
 // satisfied by saying nothing is one a later emit site will satisfy that way.
 // Pass OutcomeSuccess, which is the empty value and therefore writes no field.
+//
+// A call that did not succeed carries its outcome twice, at the top level and in
+// metadata, because clients on either side of @ag-ui/client 1.0 read only one
+// of the two -- see ToolOutcome.
 func ToolCallResult(messageID, toolCallID, content string, outcome ToolOutcome) Event {
-	return Event{
+	event := Event{
 		Type: EventToolCallResult, MessageID: messageID,
 		ToolCallID: toolCallID, Content: content, Role: "tool",
 		Outcome: outcome,
 	}
+	if outcome != OutcomeSuccess {
+		event.Metadata = map[string]any{"outcome": string(outcome)}
+	}
+	return event
 }

@@ -117,6 +117,36 @@ placeholder errors and its Go floor, and v2.8.0's path containment in
 `configurable`. A consumer's agent is affected by the first two. `conformance`
 and `example` follow to 1.26.10 and ADK v2.8.0; they are never tagged.
 
+`aguix/v0.4.0` on 2026-11-23 decodes what `@artooi/agents-web-components`
+0.4.0 sends, on `@ag-ui/client` 1.0, and makes its outcome visible to it. The
+kernel floor stays v0.7.1, still the newest kernel tag.
+
+- **Breaking: `Message.Content` is `json.RawMessage`, read with
+  `Message.Text()`.** A user turn sent as content parts -- text beside an
+  image -- was an array where a string was expected, so the whole run was a
+  400. `Text()` reads content the way `@ag-ui/core`'s `contentToText` does,
+  and `TextContent` builds it in Go. The change fails at compile time rather
+  than at run time, which is the reason it is a type change and not a second
+  field.
+- **`Message` models every role of `@ag-ui/core` 1.0**: `toolCalls` on an
+  assistant turn, `toolCallId` and `error` on a tool result, `activityType`,
+  `encryptedValue`, `metadata` and `subagentRunId`, with the roles `reasoning`
+  and `activity` among the ones it keeps. A browser tool's call and its result
+  arrive on different runs, and these ids are what pair them. A role this package has
+  never heard of is kept as sent.
+- **`RunInput` gains `Context` and `Resume`**, the protocol's ambient context
+  and the answers to the interrupts a previous run ended on.
+- **A denied or failed `TOOL_CALL_RESULT` carries its outcome in `metadata`
+  as well as at the top level.** The 1.0 client strips every undeclared key
+  before a subscriber sees the event, and the web component reads the outcome
+  from `metadata` alone, so until now a refused call rendered as done. A
+  success still carries neither key.
+- The wire fixtures the tests decode are written by `@ag-ui/client` itself,
+  pinned with a lockfile under `scripts/agui-wire/`, and CI regenerates them
+  and fails on a difference. They found that the client never sends an
+  `activity` message back, so object content reaches a server only from other
+  producers.
+
 ## [Unreleased]
 
 ### Changed

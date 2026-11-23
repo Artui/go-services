@@ -73,14 +73,14 @@ func TestEventFrames(t *testing.T) {
 			"tool call result, failed", aguix.ToolCallResult("m2", "c1",
 				"Error: not found: no book 99", aguix.OutcomeFailed),
 			`{"type":"TOOL_CALL_RESULT","messageId":"m2","role":"tool","toolCallId":"c1",` +
-				`"content":"Error: not found: no book 99","outcome":"failed"}`,
+				`"content":"Error: not found: no book 99","outcome":"failed","metadata":{"outcome":"failed"}}`,
 		},
 		{
 			"tool call result, denied", aguix.ToolCallResult("m2", "c1",
 				"Error: permission denied: this run is not signed in", aguix.OutcomeDenied),
 			`{"type":"TOOL_CALL_RESULT","messageId":"m2","role":"tool","toolCallId":"c1",` +
 				`"content":"Error: permission denied: this run is not signed in",` +
-				`"outcome":"denied"}`,
+				`"outcome":"denied","metadata":{"outcome":"denied"}}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -180,7 +180,7 @@ func TestAToolResultFrameSaysHowTheCallEnded(t *testing.T) {
 			name: "a permission refusal is denied",
 			args: `{"book_id":13}`,
 			want: head + `"Error: permission denied: book 13 is reference only",` +
-				`"outcome":"denied"}`,
+				`"outcome":"denied","metadata":{"outcome":"denied"}}`,
 		},
 		{
 			// The principal refuses before the registry is reached at all, and
@@ -189,30 +189,30 @@ func TestAToolResultFrameSaysHowTheCallEnded(t *testing.T) {
 			principal: aguix.Anonymous,
 			args:      `{"book_id":4}`,
 			want: head + `"Error: permission denied: this run is not signed in",` +
-				`"outcome":"denied"}`,
+				`"outcome":"denied","metadata":{"outcome":"denied"}}`,
 		},
 		{
 			name: "a conflict failed",
 			args: `{"book_id":5}`,
 			want: head + `"Error: conflict: no copy of book 5 is on the shelf",` +
-				`"outcome":"failed"}`,
+				`"outcome":"failed","metadata":{"outcome":"failed"}}`,
 		},
 		{
 			name: "a missing row failed",
 			args: `{"book_id":99}`,
-			want: head + `"Error: not found: no book 99","outcome":"failed"}`,
+			want: head + `"Error: not found: no book 99","outcome":"failed","metadata":{"outcome":"failed"}}`,
 		},
 		{
 			name: "rejected arguments failed",
 			args: `{"book_id":0}`,
 			want: head + `"Error: The arguments were rejected. Correct these and try again:` +
-				`\n- book_id: must be a positive identifier","outcome":"failed"}`,
+				`\n- book_id: must be a positive identifier","outcome":"failed","metadata":{"outcome":"failed"}}`,
 		},
 		{
 			name: "an error outside the taxonomy failed",
 			args: `{"book_id":7}`,
 			want: head + `"Error: The operation failed. The reason was recorded on the ` +
-				`server.","outcome":"failed"}`,
+				`server.","outcome":"failed","metadata":{"outcome":"failed"}}`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -240,7 +240,9 @@ func TestASuccessfulResultHasNoOutcomeKey(t *testing.T) {
 	if err := json.Unmarshal([]byte(frame), &fields); err != nil {
 		t.Fatalf("frame is not JSON: %v", err)
 	}
-	if value, ok := fields["outcome"]; ok {
-		t.Errorf("a successful result carries outcome=%v, want no such key", value)
+	for _, key := range []string{"outcome", "metadata"} {
+		if value, ok := fields[key]; ok {
+			t.Errorf("a successful result carries %s=%v, want no such key", key, value)
+		}
 	}
 }
