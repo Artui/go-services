@@ -58,6 +58,9 @@ jobs:
       # whoever remembers the mutating target.
       - run: make tidy-check
       - run: make check-floors
+      # The release scripts tag what cannot be untagged, so every refusal has a
+      # fixture that fails without it, run against throwaway repositories.
+      - run: make release-test
 
   lint:
     runs-on: ubuntu-latest

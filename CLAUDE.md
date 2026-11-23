@@ -85,8 +85,18 @@ hook ever has to be relaxed, the design has changed and the plan should say so.
 | --- | --- |
 | 100% line **and** branch coverage | **Statements only.** See below -- this is weaker, and saying so is part of the deal |
 | mkdocs to gh-pages | pkg.go.dev, which needs no build |
-| bump-my-version, OIDC to PyPI | git tags. There is no registry and no publish step |
+| bump-my-version, OIDC to PyPI | git tags, cut by `make release` or by the `release` workflow on merge. There is no registry |
 | one symbol per file | cohesive file per concept, per Go idiom |
+
+### Releasing
+
+A tag is the publish, and it is permanent the moment it is pushed. **A merge that
+adds a `<dir>/vX.Y.Z` token to the CHANGELOG's `## Adapters` section, or a
+`## [X.Y.Z]` heading, is tagged by the `release` workflow at that merge commit.**
+So name a version only in the PR whose merge is the release; until then the
+entry stays under `[Unreleased]`. From a laptop, `make release MODULE=<dir|kernel>
+VERSION=vX.Y.Z` runs the same checks and tags locally (`PUSH=1` pushes), and
+`make release-verify` exits 0 once the proxy and sum.golang.org serve the tag.
 
 ### The coverage gate is weaker than it looks
 
