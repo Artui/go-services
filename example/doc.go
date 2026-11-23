@@ -23,8 +23,8 @@
 // rather than calling one spec, so there is no single call whose database state
 // could be compared with the others'. It has its own harness instead --
 // agent_test.go drives a run the way a browser does and then reads the rows --
-// and agentdemo serves the same script to the real web component, so the thing
-// a person clicks and the thing CI asserts are one agent.
+// and agentdemo serves the registry to the real web component through aguiadk
+// and Claude, with a scripted model standing in for it in CI.
 //
 // It is deliberately written the way a stranger would write it: only the public
 // API, no reaching into the kernel, and every piece of friction met along the
