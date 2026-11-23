@@ -70,6 +70,17 @@ func TestDuplicateClientToolsDeclareTheFirst(t *testing.T) {
 	}
 }
 
+func TestClientToolWithNoParametersDeclaresNoSchema(t *testing.T) {
+	for name, params := range map[string]json.RawMessage{"nil": nil, "empty": {}, "blank": json.RawMessage(" \n")} {
+		t.Run(name, func(t *testing.T) {
+			tools, err := clientTools([]aguix.ToolDefinition{{Name: "ping", Parameters: params}})
+			if err != nil || len(tools) != 1 || tools[0].Declaration().ParametersJsonSchema != nil {
+				t.Errorf("tools %v, err %v", tools, err)
+			}
+		})
+	}
+}
+
 func TestClientToolsetIsEmptyOutsideABridgeRun(t *testing.T) {
 	llm := &scriptLLM{}
 	a := librarian(t, llm, ClientToolset())

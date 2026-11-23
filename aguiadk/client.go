@@ -53,7 +53,7 @@ func clientTools(defs []aguix.ToolDefinition) ([]*clientTool, error) {
 		decl := &genai.FunctionDeclaration{Name: def.Name, Description: def.Description}
 		if raw := bytes.TrimSpace(def.Parameters); len(raw) > 0 && !bytes.Equal(raw, []byte("null")) {
 			var schema map[string]any
-			if err := json.Unmarshal(raw, &schema); err != nil || schema == nil {
+			if err := json.Unmarshal(raw, &schema); err != nil {
 				return nil, fmt.Errorf("aguiadk: the parameters of client tool %q are not a JSON object", def.Name)
 			}
 			decl.ParametersJsonSchema = schema

@@ -249,6 +249,18 @@ func TestRebuildRejectsNonObjectArguments(t *testing.T) {
 	}
 }
 
+func TestRebuildKeepsANullToolResultAsText(t *testing.T) {
+	_, tail, err := rebuild([]aguix.Message{
+		user("go"), assistant("", call("toolu_1", "a", `{}`)), result("toolu_1", "null"),
+	}, agentName)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := render(tail), `user:resp(toolu_1,a,{"result":"null"})`; got != want {
+		t.Errorf("tail = %s, want %s", got, want)
+	}
+}
+
 func TestRebuildRejectsUnknownToolCall(t *testing.T) {
 	_, _, err := rebuild([]aguix.Message{user("go"), result("toolu_9", "x")}, agentName)
 	if err == nil || !strings.Contains(err.Error(), `unknown tool call "toolu_9"`) {

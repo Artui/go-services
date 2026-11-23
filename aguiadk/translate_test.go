@@ -281,6 +281,14 @@ func TestTranslateTracksLongRunningCalls(t *testing.T) {
 	}
 }
 
+func TestTranslateAnErrorCodeAloneFailsTheRun(t *testing.T) {
+	tr := newTranslator(trIDs())
+	frames, err := tr.translate(&session.Event{LLMResponse: model.LLMResponse{ErrorCode: "SAFETY"}})
+	if !errors.Is(err, errModelReported) || frames != nil {
+		t.Errorf("err = %v, frames = %v, want errModelReported", err, frames)
+	}
+}
+
 func TestTranslateModelErrorKeepsTheProviderWordsOffTheError(t *testing.T) {
 	tr := newTranslator(trIDs())
 	if _, err := tr.translate(trEvent(true, genai.NewPartFromText("Half"))); err != nil {
