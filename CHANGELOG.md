@@ -109,7 +109,7 @@ called `Run` directly and none went through the flow, so nothing noticed. The
 method is added, `RunnableTool` now lists it, and a test drives a scripted model
 through `llmagent` and `runner` to assert success, a verbatim refusal and a
 redacted internal error. The package example also named an `llmagent.New` shape
-that does not exist in ADK v2 and now compiles.
+that does not exist in ADK v2 and now matches the one the flow test builds.
 
 ADK's breaking changes between the two are in code `adkx` does not touch:
 v2.7.0's telemetry schema, its cap of 500 model calls per invocation, its
