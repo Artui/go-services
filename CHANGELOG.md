@@ -192,6 +192,36 @@ how its run ends. The sub-agent frames (`SUBAGENT_STARTED`, `SUBAGENT_FINISHED`,
   and the sum database all serve the version. A `release` workflow tags on
   merge when the merge adds a kernel heading or a new module token to the
   Adapters section, through the same script.
+- **A new module, `aguiadk`, serves an ADK agent over AG-UI.** `aguiadk.New`
+  takes the root agent and returns the `aguix.Agent` that `aguix.Handler`
+  serves, so `@artooi/agents-web-components` can talk to an agent built on
+  `adkx` and `model/anthropicmodel`. It floors on Go 1.26.10, `adkx`'s, and on
+  kernel v0.7.1, `aguix` v0.5.0 and `adkx` v0.2.0. Not tagged yet.
+  - **The client's history is the only state.** Each run replays
+    `RunInput.messages` into a fresh in-memory session: assistant tool calls
+    become function calls with the client's ids, the tool messages that answer
+    them become one function-response turn, and reasoning, activity, system and
+    developer messages are left out. The trailing user message, or the trailing
+    run of tool results, is what the agent answers; a conversation that ends on
+    an assistant message finishes without calling the model.
+  - **Text and tool calls stream as AG-UI frames.** Under ADK's SSE mode the
+    model's text arrives as partial events and is repeated in the final one;
+    it reaches the client once. Server tools, `adkx`'s among them, report
+    `TOOL_CALL_RESULT` with `outcome` `failed` when the result is ADK's lone
+    `{"error": ...}`. A model or runner error ends the run in `RUN_ERROR`
+    through `aguix`'s redaction, after any open message is closed.
+  - **Browser tools end the run pending.** `ClientToolset()` turns the run's
+    `RunInput.tools` into long-running tools; a run that calls one finishes
+    with `pendingToolCallIds`, and the next run carries its result. A response
+    that calls a server and a browser tool together runs the server tool,
+    streams its result and stops, where ADK alone would call the model again
+    with the browser call unanswered. A server tool of the same name wins.
+  - `WithUserID` sets the ADK user id from the request context; `New` refuses
+    to start without it, and `aguiadk.Anonymous` is the explicit choice for an
+    unauthenticated mount.
+  - Its tests record whole runs under `aguiadk/testdata/agui/transcripts`,
+    and CI passes each through `@ag-ui/core`'s schemas and `@ag-ui/client`'s
+    event verifier, pinned under `scripts/agui-wire/`.
 
 ### Changed
 

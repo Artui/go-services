@@ -196,7 +196,7 @@ consumer.
 
 ## Modules and requirements
 
-Four modules, taken separately, because Go has no optional dependencies and
+Seven modules, taken separately, because Go has no optional dependencies and
 their floors genuinely differ.
 
 | Module | Go | Depends on |
@@ -205,12 +205,15 @@ their floors genuinely differ.
 | `.../go-services/httpx` | 1.24 | nothing beyond the kernel |
 | `.../go-services/ginx` | 1.26 | `gin-gonic/gin` |
 | `.../go-services/mcpx` | 1.25 | `modelcontextprotocol/go-sdk` |
+| `.../go-services/adkx` | 1.26.10 | `google.golang.org/adk/v2` |
+| `.../go-services/aguix` | 1.24 | nothing beyond the kernel |
+| `.../go-services/aguiadk` | 1.26.10 | `adkx`, `aguix`, `google.golang.org/adk/v2` |
 
 The kernel's 1.24 is `encoding/json`'s `omitzero`, which `Optional[T]` needs.
 `mcpx` follows the MCP SDK. `ginx` is highest because clearing Gin's transitive
 advisories pulls in `x/crypto` and `quic-go` releases that require 1.26 -- Gin
 requires `quic-go` directly for HTTP/3, which is how a router comes to carry a
-QUIC stack. None of that reaches the other three.
+QUIC stack. None of that reaches the other modules.
 
 ## License
 

@@ -26,7 +26,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [".", "httpx", "ginx", "mcpx", "adkx", "aguix", "conformance", "example"]
+        module: [".", "httpx", "ginx", "mcpx", "adkx", "aguix", "aguiadk", "conformance", "example"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -67,7 +67,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        module: [".", "httpx", "ginx", "mcpx", "adkx", "aguix", "conformance", "example"]
+        module: [".", "httpx", "ginx", "mcpx", "adkx", "aguix", "aguiadk", "conformance", "example"]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -113,6 +113,12 @@ jobs:
             git diff -- aguix/testdata
             exit 1
           fi
+      # aguiadk's tests record whole runs as Go wrote them and fail on drift;
+      # this hands those bytes to the client's own schemas and event verifier,
+      # so a frame out of order fails here rather than in a browser.
+      - name: Check aguiadk's recorded runs with the pinned client
+        working-directory: scripts/agui-wire
+        run: node verify-transcripts.mjs
 
   secrets:
     name: secret scan
