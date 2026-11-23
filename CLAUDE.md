@@ -35,7 +35,7 @@ hook ever has to be relaxed, the design has changed and the plan should say so.
   their Go floors already differ: 1.24 for the kernel and `httpx`, 1.25 for
   `mcpx` (the SDK's own floor), 1.26 for `ginx` (clearing Gin's transitive
   advisories pulls in `x/crypto` and `quic-go` releases that require it), and
-  **1.26.6 for `adkx`**, which is `adk-go`'s own floor and the highest here.
+  **1.26.10 for `adkx`**, which is ADK v2.8.0's own floor and the highest here.
   That last one is the layout paying out rather than a problem: a consumer who
   wants an HTTP route and not an agent framework is not dragged onto it.
 - **CI tests each module at its own floor**, taken from that module's `go.mod`

@@ -868,7 +868,7 @@ because `Cents`, `Instant` and who reads them are a consumer's business.**
 The kernel rather than a module of its own, and the reason is worth stating
 because the obvious rule points the other way. Adapters are separate modules
 because each drags a heavy dependency tree with its own Go floor -- Gin, the MCP
-SDK, adk-go at Go 1.26.6 -- so a consumer wanting an HTTP route is not pulled
+SDK, ADK at Go 1.26.10 -- so a consumer wanting an HTTP route is not pulled
 onto an agent framework. A renderer drags nothing: it needs `jsonschema-go`,
 which is the kernel's only dependency, and the standard library. The isolation
 would have bought nothing and cost a sixth module in every kernel-release sweep.

@@ -18,10 +18,10 @@ EXPECTED=(
   "httpx:1.24"  # the kernel's floor; net/http path values arrived in 1.22
   "ginx:1.26.0" # x/crypto and quic-go, pulled up to clear Gin's advisories
   "mcpx:1.25.0" # the MCP SDK's own go.mod
-  "adkx:1.26.6" # adk-go's own go.mod, the highest floor in the repo
+  "adkx:1.26.10" # ADK v2.8.0's own go.mod, the highest floor in the repo
   "aguix:1.24"  # the kernel's floor; it depends on nothing else
-  "conformance:1.26.6" # the highest of the modules it drives, which is adkx
-  "example:1.26.6"     # the same: it mounts all four adapters at once
+  "conformance:1.26.10" # the highest of the modules it drives, which is adkx
+  "example:1.26.10"     # the same: it mounts all four adapters at once
 )
 
 status=0

@@ -9,7 +9,9 @@
 // by different code that would eventually disagree.
 //
 //	toolset, err := adkx.Toolset(registry, adkx.UserID)
-//	agent := llmagent.New("librarian", llmagent.WithToolsets(toolset))
+//	agent, err := llmagent.New(llmagent.Config{
+//	    Name: "librarian", Model: llm, Toolsets: []tool.Toolset{toolset},
+//	})
 //
 // # Two things about this wire are worth knowing before you use it
 //

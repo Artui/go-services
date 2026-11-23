@@ -5,6 +5,8 @@ import (
 
 	services "github.com/Artui/go-services"
 	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/tool/toolutils"
 	"google.golang.org/genai"
 )
 
@@ -126,4 +128,10 @@ func (t *specTool[D]) fail(ctx agent.Context, err error) (map[string]any, error)
 		t.owner.observe(ctx, t.entry.Name, err)
 	}
 	return nil, answer
+}
+
+// ProcessRequest adds the tool's declaration to the model request. ADK's flow
+// refuses any tool without it, so an agent could not call a tool without it.
+func (t *specTool[D]) ProcessRequest(_ agent.Context, req *model.LLMRequest) error {
+	return toolutils.PackTool(req, t)
 }
