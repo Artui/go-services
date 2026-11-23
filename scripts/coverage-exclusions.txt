@@ -67,7 +67,9 @@ github.com/Artui/go-services/render.go:RenderValue
 #   half-rendered payload.
 
 github.com/Artui/go-services/aguiadk/client.go:ProcessRequest
-#   The PackTool error branch. PackTool fails only on a name already in
-#   req.Tools, and the line above skips exactly those names, so the error
-#   cannot occur. The check stays because discarding an error to satisfy a
+#   The PackTool error branch in clientToolset.ProcessRequest. PackTool's one
+#   failure is a name already in req.Tools (adk tool/toolutils/toolutils.go:47-48
+#   at v2.8.0), and the line above skips exactly those names, so the error cannot
+#   occur. The key also matches clientTool.ProcessRequest, a one-line no-op that
+#   is fully covered. The check stays because discarding an error to satisfy a
 #   coverage number is the worse trade.

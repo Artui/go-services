@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"runtime"
@@ -317,7 +318,7 @@ func TestNewRefusesNoAgentAndAMalformedTree(t *testing.T) {
 		Name: "root", Model: &scriptLLM{}, SubAgents: []agent.Agent{child(), child()},
 	})
 	if err != nil {
-		t.Skipf("llmagent refuses the tree itself: %v", err)
+		t.Fatalf("llmagent refuses the tree itself, so this no longer tests New: %v", err)
 	}
 	if _, err := New(root); err == nil || !strings.Contains(err.Error(), "aguiadk:") {
 		t.Errorf("New over a tree with two agents named alike: %v", err)
@@ -332,5 +333,18 @@ func TestClientToolsDescribeThemselves(t *testing.T) {
 	if ClientToolset().Name() != "client" || tools[0].Description() != fillField.Description ||
 		!tools[0].IsLongRunning() {
 		t.Errorf("toolset %q, tool %q", ClientToolset().Name(), tools[0].Description())
+	}
+}
+
+func TestConcurrentRunsOfOneThreadShareNothing(t *testing.T) {
+	bridge := mustNew(t, librarian(t, &scriptLLM{}, ClientToolset()))
+	for i := range 8 {
+		t.Run(fmt.Sprint(i), func(t *testing.T) {
+			t.Parallel()
+			s := serve(t, bridge, input(fmt.Sprintf("run-%d", i), text("user", "Hi.")))
+			if s.last()["type"] != "RUN_FINISHED" {
+				t.Errorf("last frame %v", s.last())
+			}
+		})
 	}
 }
