@@ -1,0 +1,1 @@
+{"type":"STATE_DELTA","delta":[{"op":"replace","path":"/count","value":2},{"op":"add","path":"/items/-","value":"c"},{"op":"remove","path":"/items/0"},{"op":"move","from":"/items/1","path":"/last"}]}

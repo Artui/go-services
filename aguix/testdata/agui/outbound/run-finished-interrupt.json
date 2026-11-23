@@ -1,0 +1,1 @@
+{"type":"RUN_FINISHED","threadId":"t1","runId":"r1","outcome":{"type":"interrupt","interrupts":[{"id":"int-1","reason":"tool_approval","message":"Delete the draft?","toolCallId":"c1","responseSchema":{"type":"object","properties":{"approved":{"type":"boolean"}}},"expiresAt":"2026-12-01T00:00:00Z","metadata":{"risk":"high"}}]}}

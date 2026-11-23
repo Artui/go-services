@@ -1,0 +1,1 @@
+{"type":"ACTIVITY_DELTA","messageId":"act1","activityType":"chart","patch":[{"op":"replace","path":"/kind","value":"line"}]}

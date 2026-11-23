@@ -2,9 +2,11 @@ package aguix
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"sync"
 )
 
 // Stream writes AG-UI events as Server-Sent Events.
@@ -16,6 +18,9 @@ import (
 type Stream struct {
 	writer  io.Writer
 	flusher http.Flusher
+
+	mu      sync.Mutex
+	outcome *RunOutcome
 }
 
 // NewStream prepares w for streaming and writes the response headers.
@@ -62,4 +67,49 @@ func (s *Stream) Emit(event Event) error {
 	}
 	s.flusher.Flush()
 	return nil
+}
+
+// Finish sets how the run ends, for the handler to write as RUN_FINISHED's
+// outcome. Without it the run finishes bare, as it always did.
+//
+// The handler still ends the run in RUN_ERROR if the agent then returns an
+// error, and a later Finish replaces an earlier one. An outcome the schema
+// would refuse is an error here, not a frame the client drops: an interrupt
+// needs at least one entry with an id and a reason, and a pending tool call id
+// cannot be empty.
+func (s *Stream) Finish(outcome RunOutcome) error {
+	switch outcome.Type {
+	case "success":
+		for _, id := range outcome.PendingToolCallIDs {
+			if id == "" {
+				return errors.New("aguix: a pending tool call id is empty")
+			}
+		}
+		outcome.Interrupts = nil
+	case "interrupt":
+		if len(outcome.Interrupts) == 0 {
+			return errors.New("aguix: an interrupt outcome needs at least one interrupt")
+		}
+		for _, interrupt := range outcome.Interrupts {
+			if interrupt.ID == "" || interrupt.Reason == "" {
+				return errors.New("aguix: an interrupt needs an id and a reason")
+			}
+		}
+		outcome.PendingToolCallIDs = nil
+	default:
+		return fmt.Errorf("aguix: unknown outcome type %q", outcome.Type)
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.outcome = &outcome
+	return nil
+}
+
+func (s *Stream) finishedWith() (RunOutcome, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.outcome == nil {
+		return RunOutcome{}, false
+	}
+	return *s.outcome, true
 }

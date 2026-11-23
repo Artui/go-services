@@ -106,6 +106,10 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_ = stream.Emit(RunError(h.explain(err)))
 		return
 	}
+	if outcome, ok := stream.finishedWith(); ok {
+		_ = stream.Emit(RunFinishedWith(input.ThreadID, input.RunID, outcome))
+		return
+	}
 	_ = stream.Emit(RunFinished(input.ThreadID, input.RunID))
 }
 

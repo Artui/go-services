@@ -1,0 +1,1 @@
+{"type":"MESSAGES_SNAPSHOT","messages":[{"id":"u1","role":"user","content":"Borrow book 4."},{"id":"a1","role":"assistant","toolCalls":[{"id":"c1","type":"function","function":{"name":"borrow_book","arguments":"{\"book_id\":4}"}}]},{"id":"t1","role":"tool","content":"{\"loan_id\":1}","toolCallId":"c1"},{"id":"a2","role":"assistant","content":"Done."}]}
