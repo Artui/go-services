@@ -61,8 +61,12 @@ func (m *scriptLLM) request(i int) *model.LLMRequest {
 }
 
 func (m *scriptLLM) GenerateContent(
-	_ context.Context, req *model.LLMRequest, stream bool,
+	ctx context.Context, req *model.LLMRequest, stream bool,
 ) iter.Seq2[*model.LLMResponse, error] {
+	// As a provider does, a cancelled context sends no request.
+	if err := ctx.Err(); err != nil {
+		return func(yield func(*model.LLMResponse, error) bool) { yield(nil, err) }
+	}
 	m.mu.Lock()
 	s := step{text: "Done."}
 	if n := len(m.requests); n < len(m.steps) {

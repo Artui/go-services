@@ -134,11 +134,11 @@ jobs:
           node generate.mjs
       - name: Fail if they differ from the committed ones
         run: |
-          changes="$(git status --porcelain -- aguix/testdata)"
+          changes="$(git status --porcelain -- aguix/testdata aguiadk/testdata/agui/inbound)"
           if [ -n "$changes" ]; then
             echo "::error::the committed wire fixtures differ from what @ag-ui/client writes"
             echo "$changes"
-            git diff -- aguix/testdata
+            git diff -- aguix/testdata aguiadk/testdata/agui/inbound
             exit 1
           fi
       # aguiadk's tests record whole runs as Go wrote them and fail on drift;

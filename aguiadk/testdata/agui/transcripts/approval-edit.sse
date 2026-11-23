@@ -1,0 +1,11 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-edit"}
+
+data: {"type":"TOOL_CALL_RESULT","messageId":"run-edit-1","role":"tool","toolCallId":"c1","content":"{\"discarded\":9}"}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"run-edit-2","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-edit-2","delta":"Discarded."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"run-edit-2"}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-edit"}

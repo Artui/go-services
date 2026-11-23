@@ -211,6 +211,41 @@ agent built on `adkx` and `model/anthropicmodel`. It floors on Go 1.26.10,
   and CI passes each through `@ag-ui/core`'s schemas and `@ag-ui/client`'s
   event verifier, pinned under `scripts/agui-wire/`.
 
+`aguiadk/v0.2.0` adds server-side tool approval, so the web component's
+approval card works against a Go server. Its floors are unchanged.
+
+- **`aguiadk.NewApproval(reg.Entries(), ...)`** gates every spec whose
+  `Destructive` is true; `Require(names...)` gates more, `Exempt(names...)`
+  un-gates, and exempt wins. `Gate(toolset)` wraps the toolset with ADK's
+  `tool.WithConfirmation`, which ADK marks experimental; `WithApproval` hands
+  the same value to `New`. A gated tool must be on the root agent.
+- **A gated call ends the run on an interrupt.** `RUN_FINISHED` carries
+  outcome `interrupt` with `id` `int-<callId>`, `reason` `tool_call`,
+  `toolCallId`, the message `Approve name(args)?`, a `responseSchema` for
+  `{approved, editedArgs?}`, and the spec's `Metadata["x-confirm"]` under
+  `metadata`. ADK's placeholder result and its `adk_request_confirmation`
+  call are not streamed. A step that also called a browser tool finishes on
+  the interrupt, and the client answers the browser call as not finished.
+- **The next run's `resume` runs or denies it.** The bridge rebuilds the
+  confirmation ADK resumes from, so the approved call runs inside ADK's flow
+  and its `TOOL_CALL_RESULT` streams on the original call id. `editedArgs`
+  replace the proposed arguments and go through the kernel's validation. A
+  denial, a `cancelled` status, or any payload whose `approved` is not `true`
+  reports the call with outcome `denied`, and it never runs. A resume that
+  names no call left waiting, a call already answered or followed by a user
+  message, a call the approval does not gate, or one call twice fails the run
+  instead, as does a history that carries an `adk_request_confirmation` call.
+  The bridge keeps no state, so the same resume sent twice runs the call twice.
+- **`aguiadk.ToolCatalog(reg.Entries())`** serves the `data-tools-url`
+  catalog, `[{name, summary, description}]`, with the summary from
+  `Metadata["x-summary"]` or the readable name. Mount it behind the agent's
+  own authentication.
+- A tool wrapped with `tool.WithConfirmation` directly also ends the run on an
+  interrupt, where v0.1.0 sent ADK's confirmation request to the browser as a
+  pending tool call.
+- The resume bodies its tests read are written by `@ag-ui/client` under
+  `aguiadk/testdata/agui/inbound`.
+
 ## [Unreleased]
 
 ### Added

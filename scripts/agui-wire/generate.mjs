@@ -25,7 +25,7 @@
 // Run it with `npm ci && node generate.mjs` in this directory; CI does the same
 // and fails when the committed fixtures differ from what it wrote.
 
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -213,6 +213,54 @@ rmSync(inbound, { recursive: true, force: true });
 mkdirSync(inbound, { recursive: true });
 for (const [name, body] of Object.entries(written)) {
   writeFileSync(join(inbound, `${name}.json`), `${body}\n`);
+}
+
+// The resume runs aguiadk's approval tests post. Each is the second run of one
+// agent: the first answers with the paused run aguiadk's tests recorded
+// (transcripts/approval-pause.sse, the Go server's own bytes), so the history the
+// resume carries is what the client built from those frames, not a hand-written
+// copy of it; the second records the request that answers the interrupt.
+const approvalDir = join(here, "..", "..", "aguiadk", "testdata", "agui");
+const approvalInbound = join(approvalDir, "inbound");
+const pausedRun = `${readFileSync(join(approvalDir, "transcripts", "approval-pause.sse"), "utf8")}\n`;
+const approvals = {
+  approve: { status: "resolved", payload: { approved: true } },
+  edit: { status: "resolved", payload: { approved: true, editedArgs: { book_id: 9 } } },
+  deny: { status: "cancelled" },
+};
+
+async function resumed(name, answer) {
+  const bodies = [];
+  const fetch = async (_url, init) => {
+    bodies.push(init.body);
+    if (bodies.length === 1) {
+      return new Response(pausedRun, { headers: { "Content-Type": "text/event-stream" } });
+    }
+    const frames = [
+      { type: "RUN_STARTED", threadId: "thread-1", runId: `run-${name}` },
+      { type: "RUN_FINISHED", threadId: "thread-1", runId: `run-${name}` },
+    ];
+    const sse = frames.map((f) => `data: ${JSON.stringify(f)}\n\n`).join("");
+    return new Response(sse, { headers: { "Content-Type": "text/event-stream" } });
+  };
+  const agent = new HttpAgent({
+    url: "http://example.invalid/agui",
+    threadId: "thread-1",
+    initialMessages: [{ id: "u1", role: "user", content: "Discard book 7." }],
+    fetch,
+  });
+  await agent.runAgent({ runId: "run-pause" });
+  await agent.runAgent({ runId: `run-${name}`, resume: [{ interruptId: "int-c1", ...answer }] });
+  if (bodies.length !== 2) {
+    throw new Error(`${name}: the client sent ${bodies.length} requests, want 2`);
+  }
+  return bodies[1];
+}
+
+rmSync(approvalInbound, { recursive: true, force: true });
+mkdirSync(approvalInbound, { recursive: true });
+for (const [name, answer] of Object.entries(approvals)) {
+  writeFileSync(join(approvalInbound, `${name}.json`), `${await resumed(name, answer)}\n`);
 }
 
 const call = { id: "c1", type: "function", function: { name: "borrow_book", arguments: '{"book_id":4}' } };

@@ -17,6 +17,7 @@ import (
 	"github.com/Artui/go-services/aguix"
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/llmagent"
+	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
 	"google.golang.org/adk/v2/tool"
@@ -283,6 +284,24 @@ func TestAClientThatHangsUpEndsTheRun(t *testing.T) {
 	err := runDirect(t, mustNew(t, librarian(t, llm)), 1, input("run-1", text("user", "Hi.")))
 	if !errors.Is(err, errHungUp) {
 		t.Errorf("err = %v", err)
+	}
+}
+
+// ADK's scheduler can resume a step after the bridge stops reading, on the
+// cancelled context; a provider sends nothing then, so the double counts nothing.
+func TestScriptLLMSendsNothingOnACancelledContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	llm := &scriptLLM{steps: []step{{text: "Unused."}}}
+	yielded := 0
+	for _, err := range llm.GenerateContent(ctx, &model.LLMRequest{}, false) {
+		yielded++
+		if !errors.Is(err, context.Canceled) {
+			t.Errorf("err = %v, want context.Canceled", err)
+		}
+	}
+	if yielded != 1 || llm.calls() != 0 {
+		t.Errorf("yielded %d, counted %d calls; want one error and no call", yielded, llm.calls())
 	}
 }
 
