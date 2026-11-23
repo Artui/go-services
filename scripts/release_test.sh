@@ -237,6 +237,7 @@ expect "refuse: a version without the v" 1 'VERSION must be' "$release" tag agui
 # release-verify.
 fixture
 sha=$(git rev-parse HEAD)
+expect "verify: a remote that cannot be read" 1 'could not list the tags' env REMOTE="$case_dir/missing.git" "$release" verify aguix v0.5.0
 expect "verify: not on the remote" 1 'not yet: aguix/v0.5.0 is not on origin' "$release" verify aguix v0.5.0
 PUSH=1 "$release" tag aguix v0.5.0 >/dev/null 2>&1
 expect "verify: pushed, not yet served" 1 'not yet: the module proxy' "$release" verify aguix v0.5.0
