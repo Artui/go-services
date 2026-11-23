@@ -38,6 +38,7 @@ updates:
       - "/mcpx"
       - "/adkx"
       - "/aguix"
+      - "/aguiadk"
       - "/conformance"
       - "/example"
     schedule: { interval: "weekly" }

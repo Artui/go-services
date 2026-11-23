@@ -20,6 +20,7 @@ EXPECTED=(
   "mcpx:1.25.0" # the MCP SDK's own go.mod
   "adkx:1.26.10" # ADK v2.8.0's own go.mod, the highest floor in the repo
   "aguix:1.24"  # the kernel's floor; it depends on nothing else
+  "aguiadk:1.26.10" # adkx's floor, which it builds on
   "conformance:1.26.10" # the highest of the modules it drives, which is adkx
   "example:1.26.10"     # the same: it mounts all four adapters at once
 )
