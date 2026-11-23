@@ -6,6 +6,11 @@ name: release
 # laptop -- and pushes the tag. A tag is permanent the moment it is pushed, so
 # detection reads only those two places (never [Unreleased]) and drops any
 # release whose tag already exists, which is what a laptop release looks like.
+#
+# Each run reads only its own push. Concurrency keeps one run pending, so a run
+# queued behind it is cancelled when a third merge arrives; a release that
+# merge named is then never tagged here. It fails closed: tag it from a laptop
+# with `make release ... SHA=<that merge commit> PUSH=1`.
 on:
   push:
     branches: [main]

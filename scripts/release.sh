@@ -86,7 +86,9 @@ status_of() {
 }
 
 remote_commit() {
-  git ls-remote "$REMOTE" "refs/tags/$1^{}" "refs/tags/$1" |
+  local refs
+  refs=$(git ls-remote "$REMOTE" "refs/tags/$1^{}" "refs/tags/$1") || return 1
+  printf '%s\n' "$refs" |
     awk -v peeled="refs/tags/$1^{}" -v plain="refs/tags/$1" '
       $2 == peeled { p = $1 } $2 == plain { l = $1 }
       END { if (p != "") print p; else if (l != "") print l }'
@@ -119,7 +121,9 @@ $(git status --short)"
 
   # A tag that exists anywhere is final. The remote is asked directly rather
   # than through a fetched copy, so a stale clone cannot hide one.
-  [ -z "$(remote_commit "$tag")" ] || die "$tag already exists on $REMOTE"
+  local existing
+  existing=$(remote_commit "$tag") || die "could not list the tags on $REMOTE"
+  [ -z "$existing" ] || die "$tag already exists on $REMOTE"
   ! git rev-parse --quiet --verify "refs/tags/$tag" >/dev/null ||
     die "$tag already exists locally; delete it (git tag -d $tag) if it was never pushed"
   # A tag once pushed and deleted is still in the sum database, so the same
@@ -178,7 +182,7 @@ $(git status --short)"
 
 cmd_verify() {
   local remote expected status=0
-  remote=$(remote_commit "$tag")
+  remote=$(remote_commit "$tag") || die "could not list the tags on $REMOTE"
   if [ -z "$remote" ]; then
     echo "not yet: $tag is not on $REMOTE"
     exit 1

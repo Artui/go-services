@@ -213,6 +213,24 @@ git push -q origin :refs/tags/v0.1.0 :refs/tags/v0.2.0
 expect "refuse: no kernel tag on the remote" 1 'found no kernel tag' "$release" tag aguix v0.5.0
 
 fixture
+printf 'module github.com/Artui/go-services/aguix\n\ngo 1.24\n\nrequire (\n\tgithub.com/Artui/go-services v0.1.0\n\tgithub.com/other/thing v0.2.0 // indirect\n)\n' >aguix/go.mod
+git commit -q -am block && git push -q origin main
+expect "refuse: a stale floor in a require block" 1 'floors the kernel at v0.1.0 but the newest kernel tag is v0.2.0' \
+  "$release" tag aguix v0.5.0
+
+fixture
+for v in v0.9.0 v0.10.0; do git tag -a "$v" -m "$v" && git push -q origin "$v" && git tag -d "$v" >/dev/null; done
+sed -i.bak 's/v0.2.0$/v0.9.0/' aguix/go.mod && rm aguix/go.mod.bak
+git commit -q -am nine && git push -q origin main
+expect "refuse: v0.9.0 is not the newest when v0.10.0 exists" 1 'floors the kernel at v0.9.0 but the newest kernel tag is v0.10.0' \
+  "$release" tag aguix v0.5.0
+
+fixture
+expect "refuse: a remote that cannot be read" 1 'could not fetch main' env REMOTE="$case_dir/missing.git" "$release" tag aguix v0.5.0
+expect "refuse: MODULE with a trailing slash" 1 'MODULE is' "$release" tag aguix/ v0.5.0
+expect "refuse: MODULE with a leading ./" 1 'MODULE is' "$release" tag ./aguix v0.5.0
+
+fixture
 expect "refuse: a v2 version" 1 'VERSION must be' "$release" tag aguix v2.0.0
 expect "refuse: a version without the v" 1 'VERSION must be' "$release" tag aguix 0.5.0
 
@@ -226,6 +244,9 @@ serve 'proxy/github.com/!artui/go-services/aguix/@v/v0.5.0.info' "{\"Version\":\
 expect "verify: served by the proxy, not in the sum database" 1 'not yet: the sum database' "$release" verify aguix v0.5.0
 serve 'sumdb/lookup/github.com/!artui/go-services/aguix@v0.5.0'
 expect "verify: served by both" 0 'ok: the sum database records' "$release" verify aguix v0.5.0
+mv "$www/proxy" "$www/proxy.off"
+expect "verify: in the sum database, not served by the proxy" 1 'not yet: the module proxy' "$release" verify aguix v0.5.0
+mv "$www/proxy.off" "$www/proxy"
 git tag -d aguix/v0.5.0 >/dev/null
 expect "verify: with no local tag, from the remote" 0 'ok: aguix/v0.5.0 on origin points at' "$release" verify aguix v0.5.0
 serve 'proxy/github.com/!artui/go-services/aguix/@v/v0.5.0.info' '{"Version":"v0.5.0","Origin":{"Hash":"0000000000000000000000000000000000000000"}}'
@@ -251,8 +272,9 @@ sed -i.bak 's/^## \[Unreleased\]/## [Unreleased]\n\n- `httpx\/v9.9.9` in passing
 sed -i.bak 's/^## \[0.3.0\]/## [0.4.0] - 2026-01-03\n\n## [0.3.0]/' CHANGELOG.md
 rm CHANGELOG.md.bak
 git commit -q -am promote
-expect "detect: a new heading and a new Adapters token" 0 '^kernel v0\.4\.0
-aguix v0\.5\.1$' "$detect" "$before" HEAD
+# Exact output: grep would read a two-line pattern as two alternatives.
+check "detect: a new heading and a new Adapters token, kernel first" \
+  [ "$("$detect" "$before" HEAD)" = "$(printf 'kernel v0.4.0\naguix v0.5.1')" ]
 expect "detect: nothing from [Unreleased]" 0 '' bash -c "! \"$detect\" $before HEAD | grep -q httpx"
 expect "detect: a token already present is not new" 0 '' bash -c "! \"$detect\" $before HEAD | grep -q 'aguix v0.4.0'"
 
