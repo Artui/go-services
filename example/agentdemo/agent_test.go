@@ -119,6 +119,7 @@ func TestARunWithoutAMemberIsRefused(t *testing.T) {
 // The page loads the successor component, not the retired one.
 func TestThePageLoadsTheSuccessor(t *testing.T) {
 	if !strings.Contains(html, "@artooi/agents-web-components@") ||
+		!strings.Contains(html, "/dist/agents-web-components.bundle.js") ||
 		!strings.Contains(html, "defineChat()") {
 		t.Error("the page does not load agents-web-components and define the chat")
 	}
