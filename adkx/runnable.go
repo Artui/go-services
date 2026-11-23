@@ -2,6 +2,7 @@ package adkx
 
 import (
 	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/model"
 	adktool "google.golang.org/adk/v2/tool"
 	"google.golang.org/genai"
 )
@@ -41,6 +42,10 @@ type RunnableTool interface {
 	// Run executes the tool. ADK passes arguments as a map[string]any -- see
 	// this package's own documentation for what that costs.
 	Run(ctx agent.Context, args any) (map[string]any, error)
+
+	// ProcessRequest packs the declaration into the model request, which ADK's
+	// flow requires of every tool before it calls the model.
+	ProcessRequest(ctx agent.Context, req *model.LLMRequest) error
 }
 
 // Every tool this package publishes is runnable, checked at compile time.
