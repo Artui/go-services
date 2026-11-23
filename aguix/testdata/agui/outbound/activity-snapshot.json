@@ -1,0 +1,1 @@
+{"type":"ACTIVITY_SNAPSHOT","messageId":"act1","activityType":"chart","content":{"kind":"bar","series":[{"name":"loans","points":[1,2,3]}]},"replace":true}

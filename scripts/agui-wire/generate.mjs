@@ -12,6 +12,12 @@
 // through enforceOutgoingInput, the client's last stage before the wire, which
 // is what a producer that does keep activity messages would send.
 //
+// The outbound fixtures are the frames a server sends, one file each, in
+// aguix/testdata/agui/outbound. Each is written by @ag-ui/core's own EventSchemas
+// (the client's parser) and must come back unchanged: a key the schema would
+// strip, or a required one missing, stops the script rather than becoming a
+// fixture, so the Go tests compare against what a 1.0 client keeps.
+//
 // The bytes are written exactly as sent, unindented, so a test reads what a
 // server receives. The one addition is a final newline, which the repository's
 // end-of-file hook requires and a JSON decoder skips.
@@ -23,10 +29,14 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
+import assert from "node:assert/strict";
+
 import { HttpAgent, enforceOutgoingInput } from "@ag-ui/client";
+import { EventSchemas } from "@ag-ui/core/schemas";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const inbound = join(here, "..", "..", "aguix", "testdata", "agui", "inbound");
+const outbound = join(here, "..", "..", "aguix", "testdata", "agui", "outbound");
 
 const tools = [
   {
@@ -203,4 +213,77 @@ rmSync(inbound, { recursive: true, force: true });
 mkdirSync(inbound, { recursive: true });
 for (const [name, body] of Object.entries(written)) {
   writeFileSync(join(inbound, `${name}.json`), `${body}\n`);
+}
+
+const call = { id: "c1", type: "function", function: { name: "borrow_book", arguments: '{"book_id":4}' } };
+
+const frames = {
+  "state-snapshot": { type: "STATE_SNAPSHOT", snapshot: { count: 1, items: ["a", "b"] } },
+  "state-delta": {
+    type: "STATE_DELTA",
+    delta: [
+      { op: "replace", path: "/count", value: 2 },
+      { op: "add", path: "/items/-", value: "c" },
+      { op: "remove", path: "/items/0" },
+      { op: "move", from: "/items/1", path: "/last" },
+    ],
+  },
+  "messages-snapshot": {
+    type: "MESSAGES_SNAPSHOT",
+    messages: [
+      { id: "u1", role: "user", content: "Borrow book 4." },
+      { id: "a1", role: "assistant", toolCalls: [call] },
+      { id: "t1", role: "tool", content: "{\"loan_id\":1}", toolCallId: "c1" },
+      { id: "a2", role: "assistant", content: "Done." },
+    ],
+  },
+  "reasoning-start": { type: "REASONING_START", messageId: "r1" },
+  "reasoning-message-start": { type: "REASONING_MESSAGE_START", messageId: "r1", role: "reasoning" },
+  "reasoning-message-content": { type: "REASONING_MESSAGE_CONTENT", messageId: "r1", delta: "Checking stock." },
+  "reasoning-message-end": { type: "REASONING_MESSAGE_END", messageId: "r1" },
+  "reasoning-end": { type: "REASONING_END", messageId: "r1" },
+  "reasoning-encrypted-value": {
+    type: "REASONING_ENCRYPTED_VALUE", subtype: "message", entityId: "r1", encryptedValue: "sig-abc==",
+  },
+  "activity-snapshot": {
+    type: "ACTIVITY_SNAPSHOT", messageId: "act1", activityType: "chart",
+    content: { kind: "bar", series: [{ name: "loans", points: [1, 2, 3] }] }, replace: true,
+  },
+  "activity-snapshot-default": {
+    type: "ACTIVITY_SNAPSHOT", messageId: "act1", activityType: "chart", content: { kind: "bar" },
+  },
+  "activity-delta": {
+    type: "ACTIVITY_DELTA", messageId: "act1", activityType: "chart",
+    patch: [{ op: "replace", path: "/kind", value: "line" }],
+  },
+  "custom-object": { type: "CUSTOM", name: "capability.load", value: { id: "books", n: 2 } },
+  "custom-scalar": { type: "CUSTOM", name: "ping", value: "pong" },
+  "custom-null": { type: "CUSTOM", name: "cleared", value: null },
+  "run-finished-success": {
+    type: "RUN_FINISHED", threadId: "t1", runId: "r1",
+    outcome: { type: "success", pendingToolCallIds: ["c1", "c2"] },
+  },
+  "run-finished-interrupt": {
+    type: "RUN_FINISHED", threadId: "t1", runId: "r1",
+    outcome: {
+      type: "interrupt",
+      interrupts: [{
+        id: "int-1", reason: "tool_approval", message: "Delete the draft?", toolCallId: "c1",
+        responseSchema: { type: "object", properties: { approved: { type: "boolean" } } },
+        expiresAt: "2026-12-01T00:00:00Z", metadata: { risk: "high" },
+      }],
+    },
+  },
+  "run-finished-interrupt-minimal": {
+    type: "RUN_FINISHED", threadId: "t1", runId: "r1",
+    outcome: { type: "interrupt", interrupts: [{ id: "int-1", reason: "input_required" }] },
+  },
+};
+
+rmSync(outbound, { recursive: true, force: true });
+mkdirSync(outbound, { recursive: true });
+for (const [name, input] of Object.entries(frames)) {
+  const parsed = EventSchemas.parse(input);
+  assert.deepStrictEqual(parsed, input, `${name}: the schema changed the frame`);
+  writeFileSync(join(outbound, `${name}.json`), `${JSON.stringify(parsed)}\n`);
 }

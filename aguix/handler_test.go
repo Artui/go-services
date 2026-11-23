@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 
 	services "github.com/Artui/go-services"
@@ -198,4 +200,139 @@ func TestAWriterThatCannotFlushIsAServerError(t *testing.T) {
 	if rec.Code != http.StatusInternalServerError {
 		t.Errorf("status = %d, want 500", rec.Code)
 	}
+}
+
+func lastFrame(t *testing.T, rec *httptest.ResponseRecorder) map[string]any {
+	t.Helper()
+	all := frames(t, rec.Body.String())
+	return all[len(all)-1]
+}
+
+// An agent ends its own run: with tool calls the client has to answer, or with
+// an interrupt that asks for a decision. The handler writes what the agent set.
+func TestAnAgentCanEndARunWithPendingToolCalls(t *testing.T) {
+	agent := aguix.AgentFunc(func(_ context.Context, _ aguix.RunInput, out *aguix.Stream) error {
+		return out.Finish(aguix.Success("c1", "c2"))
+	})
+	got := lastFrame(t, run(t, agent, `{"threadId":"t","runId":"r","messages":[]}`))
+	want := map[string]any{
+		"type": "RUN_FINISHED", "threadId": "t", "runId": "r",
+		"outcome": map[string]any{"type": "success", "pendingToolCallIds": []any{"c1", "c2"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("last frame = %v, want %v", got, want)
+	}
+}
+
+func TestAnAgentCanEndARunWithAnInterrupt(t *testing.T) {
+	agent := aguix.AgentFunc(func(_ context.Context, _ aguix.RunInput, out *aguix.Stream) error {
+		return out.Finish(aguix.Interrupted(aguix.Interrupt{
+			ID: "i1", Reason: "tool_approval", ToolCallID: "c1",
+		}))
+	})
+	got := lastFrame(t, run(t, agent, `{"threadId":"t","runId":"r","messages":[]}`))
+	outcome, _ := got["outcome"].(map[string]any)
+	if got["type"] != "RUN_FINISHED" || outcome["type"] != "interrupt" {
+		t.Fatalf("last frame = %v", got)
+	}
+	interrupts, _ := outcome["interrupts"].([]any)
+	if len(interrupts) != 1 || interrupts[0].(map[string]any)["id"] != "i1" {
+		t.Errorf("interrupts = %v", outcome["interrupts"])
+	}
+}
+
+// Finish refuses what the schema refuses, so the mistake is the agent's error
+// at the call and not a frame the client drops.
+func TestFinishRefusesAnInvalidOutcome(t *testing.T) {
+	var errs []error
+	agent := aguix.AgentFunc(func(_ context.Context, _ aguix.RunInput, out *aguix.Stream) error {
+		errs = append(errs,
+			out.Finish(aguix.Interrupted()),
+			out.Finish(aguix.Interrupted(aguix.Interrupt{ID: "i1"})),
+			out.Finish(aguix.Interrupted(aguix.Interrupt{Reason: "r"})),
+			out.Finish(aguix.Success("")),
+			out.Finish(aguix.Interrupted(aguix.Interrupt{ID: "i", Reason: "r", ResponseSchema: "x"})),
+			out.Finish(aguix.Interrupted(aguix.Interrupt{ID: "i", Reason: "r", Metadata: []int{1}})),
+			out.Finish(aguix.Interrupted(aguix.Interrupt{ID: "i", Reason: "r", Metadata: map[string]any(nil)})),
+		)
+		return nil
+	})
+	got := lastFrame(t, run(t, agent, `{"threadId":"t","runId":"r","messages":[]}`))
+	for i, err := range errs {
+		if err == nil {
+			t.Errorf("case %d: Finish accepted an invalid outcome", i)
+		}
+	}
+	if _, has := got["outcome"]; has {
+		t.Errorf("a refused outcome was written: %v", got)
+	}
+}
+
+// An agent that sets an outcome and then fails has failed: the run ends in
+// RUN_ERROR, never in a RUN_FINISHED the agent contradicted.
+func TestAFailureAfterFinishStillEndsInRunError(t *testing.T) {
+	agent := aguix.AgentFunc(func(_ context.Context, _ aguix.RunInput, out *aguix.Stream) error {
+		_ = out.Finish(aguix.Success("c1"))
+		return errors.New("boom")
+	})
+	rec := run(t, agent, `{"threadId":"t","runId":"r","messages":[]}`)
+	got := types(frames(t, rec.Body.String()))
+	if !reflect.DeepEqual(got, []string{"RUN_STARTED", "RUN_ERROR"}) {
+		t.Errorf("types = %v", got)
+	}
+}
+
+// The last Finish wins, so an agent may revise its outcome before it returns.
+func TestTheLastFinishWins(t *testing.T) {
+	agent := aguix.AgentFunc(func(_ context.Context, _ aguix.RunInput, out *aguix.Stream) error {
+		_ = out.Finish(aguix.Success("c1"))
+		return out.Finish(aguix.Success("c2"))
+	})
+	got := lastFrame(t, run(t, agent, `{"threadId":"t","runId":"r","messages":[]}`))
+	outcome, _ := got["outcome"].(map[string]any)
+	if !reflect.DeepEqual(outcome["pendingToolCallIds"], []any{"c2"}) {
+		t.Errorf("outcome = %v", outcome)
+	}
+}
+
+// Only the half of an outcome its type names is written.
+func TestFinishDropsTheOtherTypesFields(t *testing.T) {
+	agent := aguix.AgentFunc(func(_ context.Context, _ aguix.RunInput, out *aguix.Stream) error {
+		return out.Finish(aguix.RunOutcome{
+			Type: "success", PendingToolCallIDs: []string{"c1"},
+			Interrupts: []aguix.Interrupt{{ID: "i", Reason: "r"}},
+		})
+	})
+	got := lastFrame(t, run(t, agent, `{"threadId":"t","runId":"r","messages":[]}`))
+	outcome, _ := got["outcome"].(map[string]any)
+	if _, has := outcome["interrupts"]; has {
+		t.Errorf("outcome = %v, want no interrupts", outcome)
+	}
+	agent = aguix.AgentFunc(func(_ context.Context, _ aguix.RunInput, out *aguix.Stream) error {
+		return out.Finish(aguix.RunOutcome{
+			Type: "interrupt", PendingToolCallIDs: []string{"c1"},
+			Interrupts: []aguix.Interrupt{{ID: "i", Reason: "r"}},
+		})
+	})
+	got = lastFrame(t, run(t, agent, `{"threadId":"t","runId":"r","messages":[]}`))
+	outcome, _ = got["outcome"].(map[string]any)
+	if _, has := outcome["pendingToolCallIds"]; has {
+		t.Errorf("outcome = %v, want no pendingToolCallIds", outcome)
+	}
+}
+
+func TestFinishIsSafeFromManyGoroutines(t *testing.T) {
+	stream, err := aguix.NewStream(httptest.NewRecorder())
+	if err != nil {
+		t.Fatalf("NewStream: %v", err)
+	}
+	var wg sync.WaitGroup
+	for range 4 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			_ = stream.Finish(aguix.Success("c"))
+		}()
+	}
+	wg.Wait()
 }

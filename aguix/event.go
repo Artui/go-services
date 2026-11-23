@@ -21,9 +21,9 @@ import "encoding/json"
 // than the structs.
 type EventType string
 
-// Only the events this package emits. The protocol has more -- state deltas,
-// reasoning, activity, sub-agent lifecycle -- and adding one here is a decision
-// to support it rather than a line in a list.
+// Only the events this package emits. The protocol has more -- sub-agent
+// lifecycle, steps, raw -- and adding one here is a decision to support it
+// rather than a line in a list.
 const (
 	EventRunStarted  EventType = "RUN_STARTED"
 	EventRunFinished EventType = "RUN_FINISHED"
@@ -37,6 +37,22 @@ const (
 	EventToolCallArgs   EventType = "TOOL_CALL_ARGS"
 	EventToolCallEnd    EventType = "TOOL_CALL_END"
 	EventToolCallResult EventType = "TOOL_CALL_RESULT"
+
+	EventStateSnapshot    EventType = "STATE_SNAPSHOT"
+	EventStateDelta       EventType = "STATE_DELTA"
+	EventMessagesSnapshot EventType = "MESSAGES_SNAPSHOT"
+
+	EventReasoningStart          EventType = "REASONING_START"
+	EventReasoningMessageStart   EventType = "REASONING_MESSAGE_START"
+	EventReasoningMessageContent EventType = "REASONING_MESSAGE_CONTENT"
+	EventReasoningMessageEnd     EventType = "REASONING_MESSAGE_END"
+	EventReasoningEnd            EventType = "REASONING_END"
+	EventReasoningEncryptedValue EventType = "REASONING_ENCRYPTED_VALUE"
+
+	EventActivitySnapshot EventType = "ACTIVITY_SNAPSHOT"
+	EventActivityDelta    EventType = "ACTIVITY_DELTA"
+
+	EventCustom EventType = "CUSTOM"
 )
 
 // ToolOutcome says how a tool call ended.
@@ -139,6 +155,59 @@ type Event struct {
 	// Outcome for the same reason, and a constructor sets it only when it has
 	// something to say, so a frame without it is the frame it always was.
 	Metadata map[string]any `json:"metadata,omitempty"`
+
+	// CUSTOM's name.
+	Name string `json:"name,omitempty"`
+
+	// ACTIVITY_SNAPSHOT and ACTIVITY_DELTA. Replace is a pointer because absent
+	// and false differ: the client defaults an absent one to true.
+	ActivityType string `json:"activityType,omitempty"`
+	Replace      *bool  `json:"replace,omitempty"`
+
+	// REASONING_ENCRYPTED_VALUE: whether the handle belongs to a "message" or a
+	// "tool-call", which entity, and the provider's opaque value.
+	Subtype        string `json:"subtype,omitempty"`
+	EntityID       string `json:"entityId,omitempty"`
+	EncryptedValue string `json:"encryptedValue,omitempty"`
+
+	// The one object-valued slot an event has, written under the key its type
+	// names (see payloadKeys). It is not a field because the keys collide with
+	// the string ones above: STATE_DELTA's "delta" is an array and
+	// ACTIVITY_SNAPSHOT's "content" an object, where TEXT_MESSAGE_CONTENT's
+	// and TOOL_CALL_RESULT's are strings.
+	payload    any
+	hasPayload bool
+}
+
+// payloadKeys names where each payload-carrying event writes its payload.
+var payloadKeys = map[EventType]string{
+	EventStateSnapshot:    "snapshot",
+	EventStateDelta:       "delta",
+	EventMessagesSnapshot: "messages",
+	EventActivitySnapshot: "content",
+	EventActivityDelta:    "patch",
+	EventCustom:           "value",
+	EventRunFinished:      "outcome",
+}
+
+type plainEvent Event
+
+// MarshalJSON writes the flat fields, then the payload under its key.
+//
+// A payload that cannot be encoded fails here, so Emit returns the error
+// instead of writing a STATE_SNAPSHOT without its snapshot, which the client's
+// parser refuses and which would end the run on the client's side alone.
+func (e Event) MarshalJSON() ([]byte, error) {
+	flat, err := json.Marshal(plainEvent(e))
+	if err != nil || !e.hasPayload {
+		return flat, err
+	}
+	payload, err := json.Marshal(e.payload)
+	if err != nil {
+		return nil, err
+	}
+	out := append(flat[:len(flat)-1], `,"`+payloadKeys[e.Type]+`":`...)
+	return append(append(out, payload...), '}'), nil
 }
 
 // RunStarted opens a run. Every stream begins with one, and a client that
@@ -222,4 +291,147 @@ func ToolCallResult(messageID, toolCallID, content string, outcome ToolOutcome) 
 		event.Metadata = map[string]any{"outcome": string(outcome)}
 	}
 	return event
+}
+
+// PatchOperation is one RFC 6902 operation, as STATE_DELTA and ACTIVITY_DELTA
+// carry them.
+//
+// Value is omitted when nil, which is right for remove, move and copy and wrong
+// for add, replace and test: to write a null there, pass json.RawMessage("null").
+type PatchOperation struct {
+	Op    string `json:"op"`
+	Path  string `json:"path"`
+	From  string `json:"from,omitempty"`
+	Value any    `json:"value,omitempty"`
+}
+
+// Interrupt asks the client for a decision before the run can go on. ID and
+// Reason are required; ToolCallID ties it to the call it concerns.
+type Interrupt struct {
+	ID             string `json:"id"`
+	Reason         string `json:"reason"`
+	Message        string `json:"message,omitempty"`
+	ToolCallID     string `json:"toolCallId,omitempty"`
+	ResponseSchema any    `json:"responseSchema,omitempty"`
+	ExpiresAt      string `json:"expiresAt,omitempty"`
+	Metadata       any    `json:"metadata,omitempty"`
+}
+
+// RunOutcome is how a run ended: "success", possibly with tool calls the client
+// still has to answer, or "interrupt". Build one with Success or Interrupted and
+// hand it to Stream.Finish.
+type RunOutcome struct {
+	Type               string      `json:"type"`
+	PendingToolCallIDs []string    `json:"pendingToolCallIds,omitempty"`
+	Interrupts         []Interrupt `json:"interrupts,omitempty"`
+}
+
+// Success is a run that completed. The ids name tool calls the agent made that
+// the client, not the server, has to run: the run ends so the client can answer,
+// and the next run carries the results.
+func Success(pendingToolCallIDs ...string) RunOutcome {
+	return RunOutcome{Type: "success", PendingToolCallIDs: pendingToolCallIDs}
+}
+
+// Interrupted is a run that stopped to ask for a decision. At least one
+// interrupt is required, and each needs an id and a reason.
+func Interrupted(interrupts ...Interrupt) RunOutcome {
+	return RunOutcome{Type: "interrupt", Interrupts: interrupts}
+}
+
+// RunFinishedWith closes a run with an outcome. A handler writes it for the
+// outcome an agent set with Stream.Finish.
+func RunFinishedWith(threadID, runID string, outcome RunOutcome) Event {
+	return Event{
+		Type: EventRunFinished, ThreadID: threadID, RunID: runID,
+		payload: outcome, hasPayload: true,
+	}
+}
+
+// StateSnapshot replaces the client's shared state with snapshot.
+func StateSnapshot(snapshot any) Event {
+	return Event{Type: EventStateSnapshot, payload: snapshot, hasPayload: true}
+}
+
+// StateDelta patches the client's shared state.
+func StateDelta(ops ...PatchOperation) Event {
+	return Event{Type: EventStateDelta, payload: nonNil(ops), hasPayload: true}
+}
+
+// MessagesSnapshot replaces the client's thread with messages.
+func MessagesSnapshot(messages []Message) Event {
+	return Event{Type: EventMessagesSnapshot, payload: nonNil(messages), hasPayload: true}
+}
+
+// ReasoningStart opens a reasoning span.
+func ReasoningStart(messageID string) Event {
+	return Event{Type: EventReasoningStart, MessageID: messageID}
+}
+
+// ReasoningMessageStart opens the reasoning message inside a span.
+func ReasoningMessageStart(messageID string) Event {
+	return Event{Type: EventReasoningMessageStart, MessageID: messageID, Role: "reasoning"}
+}
+
+// ReasoningMessageContent appends to the open reasoning message.
+func ReasoningMessageContent(messageID, delta string) Event {
+	return Event{Type: EventReasoningMessageContent, MessageID: messageID, Delta: delta}
+}
+
+// ReasoningMessageEnd closes the reasoning message.
+func ReasoningMessageEnd(messageID string) Event {
+	return Event{Type: EventReasoningMessageEnd, MessageID: messageID}
+}
+
+// ReasoningEnd closes the reasoning span.
+func ReasoningEnd(messageID string) Event {
+	return Event{Type: EventReasoningEnd, MessageID: messageID}
+}
+
+// ReasoningEncryptedValue carries a provider's opaque handle for a "message" or
+// a "tool-call", which the client sends back so the provider can verify it.
+func ReasoningEncryptedValue(subtype, entityID, encryptedValue string) Event {
+	return Event{
+		Type: EventReasoningEncryptedValue, Subtype: subtype,
+		EntityID: entityID, EncryptedValue: encryptedValue,
+	}
+}
+
+// ActivitySnapshot sets an activity message's object content, which the client
+// renders by activityType. Without WithReplace the client replaces.
+func ActivitySnapshot(messageID, activityType string, content any) Event {
+	return Event{
+		Type: EventActivitySnapshot, MessageID: messageID, ActivityType: activityType,
+		payload: content, hasPayload: true,
+	}
+}
+
+// ActivityDelta patches an activity message's content.
+func ActivityDelta(messageID, activityType string, patch ...PatchOperation) Event {
+	return Event{
+		Type: EventActivityDelta, MessageID: messageID, ActivityType: activityType,
+		payload: nonNil(patch), hasPayload: true,
+	}
+}
+
+// WithReplace says whether an ACTIVITY_SNAPSHOT replaces the message's content
+// or merges into it, where the protocol's default is to replace.
+func (e Event) WithReplace(replace bool) Event {
+	e.Replace = &replace
+	return e
+}
+
+// Custom is an application event: a name and any value, which the client hands
+// to whatever listens for that name.
+func Custom(name string, value any) Event {
+	return Event{Type: EventCustom, Name: name, payload: value, hasPayload: true}
+}
+
+// nonNil keeps an empty list an array on the wire, where a nil slice would be
+// null and the schema requires an array.
+func nonNil[T any](items []T) []T {
+	if items == nil {
+		return []T{}
+	}
+	return items
 }

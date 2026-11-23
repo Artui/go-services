@@ -147,6 +147,37 @@ kernel floor stays v0.7.1, still the newest kernel tag.
   `activity` message back, so object content reaches a server only from other
   producers.
 
+`aguix/v0.5.0` writes the state, messages-snapshot, reasoning, activity and
+custom frames `@artooi/agents-web-components` reads, and lets an agent decide
+how its run ends. The sub-agent frames (`SUBAGENT_STARTED`, `SUBAGENT_FINISHED`,
+`SUBAGENT_ERROR`) are not written yet. The kernel floor stays v0.7.1.
+
+- **New constructors for the frames the flat `Event` could not carry:**
+  `StateSnapshot`, `StateDelta`, `MessagesSnapshot`, `ReasoningStart` through
+  `ReasoningEnd` with `ReasoningEncryptedValue`, `ActivitySnapshot` and
+  `ActivityDelta` (with `Event.WithReplace`), and `Custom`. Each carries object
+  content, a snapshot or a CUSTOM value, which the string fields of `Event`
+  cannot: the payload is written under the key its type names, with the bytes
+  the caller gave (`json.RawMessage` keeps a number past 2^53 whole). A payload
+  that cannot be encoded fails `Emit` instead of writing a frame without it.
+  `Event`'s string fields and every existing frame are unchanged byte for byte.
+- **An agent can end its own run.** `Stream.Finish(aguix.Success(ids...))` ends
+  it with the tool calls the client still has to answer, as
+  `pendingToolCallIds`; `Stream.Finish(aguix.Interrupted(aguix.Interrupt{...}))`
+  ends it asking for a decision, which the next run answers in
+  `RunInput.Resume`. The handler writes it as `RUN_FINISHED`'s `outcome`, where
+  it used to write the event itself with none. `Finish` returns an error for an outcome
+  the client's parser would reject (no interrupts, a `responseSchema` or
+  `metadata` that is not a JSON object) and for this package's own rule that an
+  interrupt id and reason, and a pending id, are not empty. An agent that returns an error after `Finish` still
+  ends the run in `RUN_ERROR`. `Agent` is unchanged.
+- **Each new frame is asserted against bytes `@ag-ui/core` 1.0.4 wrote.**
+  `scripts/agui-wire/generate.mjs` writes `aguix/testdata/agui/outbound`
+  through the package's own `EventSchemas` and refuses a frame the schema would
+  change; CI regenerates the directory with the inbound one and fails on a
+  difference. The Go test compares each constructor's frame to its fixture by
+  value, so a stripped key or a missing required one fails.
+
 ## [Unreleased]
 
 ### Changed
