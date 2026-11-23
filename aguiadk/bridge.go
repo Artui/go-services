@@ -13,9 +13,11 @@ import (
 	"google.golang.org/genai"
 )
 
-// AnonymousUser is the ADK user id of every run when New is given no
-// WithUserID.
-const AnonymousUser = "anonymous"
+// Anonymous is the explicit choice for an unauthenticated mount: every run
+// belongs to the one user "anonymous", so a toolset that names its principal by
+// user id sees every caller as the same one. Pass it to WithUserID only where
+// the endpoint is open by design.
+func Anonymous(context.Context) (string, error) { return "anonymous", nil }
 
 // appName names the per-run session's application. The session lives for one
 // run in a store of its own, so the name only has to be non-empty.
@@ -27,15 +29,21 @@ type Option func(*bridge)
 // WithUserID sets the ADK user id of a run from the request's context, which
 // carries whatever the server's authentication put there.
 //
-// It matters to tools that read the invocation's user, adkx.UserID among them.
-// Without it every run belongs to AnonymousUser, so a toolset that names its
-// principal by user id must be given this option. An error, or an empty id,
-// fails the run before the agent starts.
+// New requires it, and refuses a nil function: a mount that forgot it would
+// merge every caller into one identity for tools that read the invocation's
+// user, adkx.UserID among them. An open endpoint says so with Anonymous. An
+// error, or an empty id, fails the run before the agent starts.
 func WithUserID(fn func(ctx context.Context) (string, error)) Option {
 	return func(b *bridge) { b.userID = fn }
 }
 
-// New serves root over AG-UI. The result is what aguix.Handler takes.
+// New serves root over AG-UI. The result is what aguix.Handler takes. It needs
+// WithUserID.
+//
+// Root should be an LLM agent. The model turns of the client's history are
+// replayed as authored by root, so a sub-agent that made a browser call resumes
+// at the root on the next run, and the children of a workflow root see those
+// turns as another agent's context.
 //
 // Every run starts from the conversation the client sends: it is replayed into
 // a fresh in-memory session, and the trailing user or tool message is what the
@@ -53,7 +61,6 @@ func New(root agent.Agent, opts ...Option) (aguix.Agent, error) {
 	}
 	b := &bridge{
 		root:       root,
-		userID:     func(context.Context) (string, error) { return AnonymousUser, nil },
 		newService: session.InMemoryService,
 	}
 	b.newRunner = func(svc session.Service) (*runner.Runner, error) {
@@ -61,6 +68,10 @@ func New(root agent.Agent, opts ...Option) (aguix.Agent, error) {
 	}
 	for _, opt := range opts {
 		opt(b)
+	}
+	if b.userID == nil {
+		return nil, errors.New(
+			"aguiadk: New needs WithUserID; pass aguiadk.Anonymous for an unauthenticated mount")
 	}
 	// The agent tree is checked once here, so a malformed one fails at start-up
 	// rather than on every run.

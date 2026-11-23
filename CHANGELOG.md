@@ -216,8 +216,9 @@ how its run ends. The sub-agent frames (`SUBAGENT_STARTED`, `SUBAGENT_FINISHED`,
     that calls a server and a browser tool together runs the server tool,
     streams its result and stops, where ADK alone would call the model again
     with the browser call unanswered. A server tool of the same name wins.
-  - `WithUserID` sets the ADK user id from the request context; without it
-    every run is `AnonymousUser`.
+  - `WithUserID` sets the ADK user id from the request context; `New` refuses
+    to start without it, and `aguiadk.Anonymous` is the explicit choice for an
+    unauthenticated mount.
   - Its tests record whole runs under `aguiadk/testdata/agui/transcripts`,
     and CI passes each through `@ag-ui/core`'s schemas and `@ag-ui/client`'s
     event verifier, pinned under `scripts/agui-wire/`.

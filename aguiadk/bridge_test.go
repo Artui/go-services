@@ -156,7 +156,7 @@ func librarian(t *testing.T, llm model.LLM, toolsets ...tool.Toolset) agent.Agen
 
 func mustNew(t *testing.T, root agent.Agent, opts ...Option) aguix.Agent {
 	t.Helper()
-	b, err := New(root, opts...)
+	b, err := New(root, append([]Option{WithUserID(Anonymous)}, opts...)...)
 	if err != nil {
 		t.Fatal(err)
 	}

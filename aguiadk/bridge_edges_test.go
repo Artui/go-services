@@ -304,7 +304,7 @@ func TestStoppingEarlyLeavesNoGoroutineBehind(t *testing.T) {
 }
 
 func TestNewRefusesNoAgentAndAMalformedTree(t *testing.T) {
-	if _, err := New(nil); err == nil {
+	if _, err := New(nil, WithUserID(Anonymous)); err == nil {
 		t.Error("New(nil) succeeded")
 	}
 	child := func() agent.Agent {
@@ -320,7 +320,7 @@ func TestNewRefusesNoAgentAndAMalformedTree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("llmagent refuses the tree itself, so this no longer tests New: %v", err)
 	}
-	if _, err := New(root); err == nil || !strings.Contains(err.Error(), "aguiadk:") {
+	if _, err := New(root, WithUserID(Anonymous)); err == nil || !strings.Contains(err.Error(), "aguiadk:") {
 		t.Errorf("New over a tree with two agents named alike: %v", err)
 	}
 }
@@ -346,5 +346,27 @@ func TestConcurrentRunsOfOneThreadShareNothing(t *testing.T) {
 				t.Errorf("last frame %v", s.last())
 			}
 		})
+	}
+}
+
+func TestNewFailsClosedWithoutAUserID(t *testing.T) {
+	root := librarian(t, &scriptLLM{})
+	for name, opts := range map[string][]Option{
+		"no option":  nil,
+		"nil option": {WithUserID(nil)},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := New(root, opts...)
+			if err == nil || !strings.Contains(err.Error(), "WithUserID") ||
+				!strings.Contains(err.Error(), "Anonymous") {
+				t.Errorf("New without a user id function: %v", err)
+			}
+		})
+	}
+}
+
+func TestAnonymousNamesOneFixedUser(t *testing.T) {
+	if id, err := Anonymous(context.Background()); id != "anonymous" || err != nil {
+		t.Errorf("Anonymous = %q, %v", id, err)
 	}
 }
