@@ -16,9 +16,6 @@ import (
 // handler redacts it anyway, and an operator's log is the place for the words.
 var errModelReported = errors.New("aguiadk: the model reported an error")
 
-// userAuthor is the author ADK reserves for the end user's own input.
-const userAuthor = "user"
-
 // translator turns one run's ADK events into AG-UI frames.
 //
 // It is stateful because the two protocols cut a turn differently. Under SSE,
