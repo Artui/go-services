@@ -221,6 +221,20 @@ func TestTranslateCallWithNoTextHasNoParent(t *testing.T) {
 	trWant(t, got, "CALL_START c1 ping parent=", "CALL_ARGS c1 {}", "CALL_END c1")
 }
 
+// A step after a tool result that says nothing first is not part of the earlier message.
+func TestTranslateACallAfterAResultHasNoParent(t *testing.T) {
+	got := trFeed(t, newTranslator(trIDs()),
+		trEvent(false, genai.NewPartFromText("Looking"), trCall("c1", "a", nil)),
+		trResponse("c1", "a", map[string]any{"ok": true}),
+		trEvent(false, trCall("c2", "b", nil)),
+	)
+	trWant(t, got,
+		"TEXT_START m1", "TEXT m1 Looking", "TEXT_END m1",
+		"CALL_START c1 a parent=m1", "CALL_ARGS c1 {}", "CALL_END c1",
+		`RESULT m2 c1 outcome="" {"ok":true}`,
+		"CALL_START c2 b parent=", "CALL_ARGS c2 {}", "CALL_END c2")
+}
+
 // gemini's aggregator marks every raw chunk partial, calls included, then
 // repeats them in the complete event; only that one is executed.
 func TestTranslateIgnoresCallsOnPartials(t *testing.T) {

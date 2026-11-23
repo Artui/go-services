@@ -28,8 +28,9 @@ var errModelReported = errors.New("aguiadk: the model reported an error")
 type translator struct {
 	newID func() string
 
-	// open is the text message being streamed, and last is the most recent
-	// assistant message: the parent a tool call is announced under.
+	// open is the text message being streamed, and last is the assistant message
+	// of the current step: the parent a tool call is announced under. A tool
+	// result ends the step, so it is cleared there.
 	open, last string
 
 	// streamed records text deltas from partials since the last complete
@@ -150,6 +151,7 @@ func (t *translator) result(
 	out = t.endText(out)
 	out = append(out, aguix.ToolCallResult(t.newID(), fr.ID, string(content), outcome))
 	t.waiting = slices.DeleteFunc(t.waiting, func(id string) bool { return id == fr.ID })
+	t.last = ""
 	return out
 }
 
