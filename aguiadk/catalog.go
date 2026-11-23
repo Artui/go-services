@@ -36,7 +36,7 @@ func ToolCatalog(entries []services.Entry) http.Handler {
 	body, _ := json.Marshal(rows)
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
-			w.Header().Set("Allow", http.MethodGet)
+			w.Header().Set("Allow", "GET, HEAD")
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 			return
 		}

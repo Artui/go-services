@@ -9,6 +9,7 @@ import (
 	"github.com/Artui/go-services/aguix"
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/session"
+	"google.golang.org/adk/v2/tool/toolconfirmation"
 	"google.golang.org/genai"
 )
 
@@ -114,6 +115,11 @@ func assistantParts(m aguix.Message, at int, lastCall map[string]int, calls map[
 		parts = append(parts, genai.NewPartFromText(text))
 	}
 	for _, call := range m.ToolCalls {
+		// Only ADK asks for a confirmation, and this bridge never streams one, so
+		// a client's call of that name would be a confirmation it wrote itself.
+		if call.Function.Name == toolconfirmation.FunctionCallName {
+			return nil, fmt.Errorf("aguiadk: tool call %q names a reserved tool", call.ID)
+		}
 		args := map[string]any{}
 		if call.Function.Arguments != "" {
 			decoded, err := decodeObject(call.Function.Arguments)

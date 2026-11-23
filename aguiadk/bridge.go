@@ -100,7 +100,7 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 	}
 	var denied map[string]bool
 	if len(in.Resume) > 0 {
-		history, tail, denied, err = resumed(in.Messages, in.Resume, history, tail, b.root.Name())
+		history, tail, denied, err = resumed(in.Messages, in.Resume, history, tail, b.root.Name(), b.approval)
 		if err != nil {
 			return err
 		}

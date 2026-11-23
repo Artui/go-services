@@ -23,12 +23,14 @@ type openCall struct {
 // moves into the history as its own turn.
 //
 // Every entry must name, through its interrupt id, a call of the conversation
-// that is still unanswered and that no user message follows; anything else is
-// refused, so a resume sent twice cannot run a call twice. It returns the calls
-// the person denied, whose results are then reported as denied.
+// that is still unanswered, that no user message follows, and that gated names
+// when it is non-nil; anything else is refused. The bridge keeps no state, so a
+// conversation that already answers the call is refused, but an identical
+// request sent twice runs the call twice. It returns the calls the person
+// denied, whose results are then reported as denied.
 func resumed(
 	messages []aguix.Message, entries []aguix.ResumeEntry,
-	history []*session.Event, tail *genai.Content, author string,
+	history []*session.Event, tail *genai.Content, author string, gated *Approval,
 ) ([]*session.Event, *genai.Content, map[string]bool, error) {
 	open := map[string]openCall{}
 	lastUser := -1
@@ -58,7 +60,7 @@ func resumed(
 			return nil, nil, nil, err
 		}
 		c, ok := open[d.callID]
-		if !ok || c.at < lastUser || seen[d.callID] {
+		if !ok || c.at < lastUser || seen[d.callID] || (gated != nil && !gated.gated[c.name]) {
 			return nil, nil, nil, fmt.Errorf(
 				"aguiadk: interrupt %q answers no call the conversation left waiting", entry.InterruptID)
 		}
