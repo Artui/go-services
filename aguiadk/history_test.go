@@ -162,8 +162,8 @@ func TestRebuild(t *testing.T) {
 			},
 			history: []string{
 				"user|user:text(go)",
-				agentName + "|model:call(dup,first,{})",
-				`user|user:resp(dup,first,{"result":"1"})`,
+				agentName + "|model:call(dup-1,first,{})",
+				`user|user:resp(dup-1,first,{"result":"1"})`,
 				agentName + "|model:call(dup,second,{})",
 			},
 			tail: `user:resp(dup,second,{"result":"2"})`,
@@ -335,6 +335,15 @@ var splitRound = []aguix.Message{
 	result("toolu_01E", "sent"),
 }
 
+// A client that reuses a call id across turns, as a model's short ids can.
+var reusedID = []aguix.Message{
+	user("go"),
+	assistant("", call("dup", "first", "{}")),
+	result("dup", "1"),
+	assistant("", call("dup", "second", "{}")),
+	result("dup", "2"),
+}
+
 func TestRebuiltHistoryReachesTheModelAsItsOwnTurns(t *testing.T) {
 	cases := []struct {
 		name     string
@@ -361,6 +370,17 @@ func TestRebuiltHistoryReachesTheModelAsItsOwnTurns(t *testing.T) {
 				"user:text(submit it)",
 				"model:call(toolu_01D,validate,{}) call(toolu_01E,submit,{})",
 				`user:resp(toolu_01D,validate,{"result":"valid"}) resp(toolu_01E,submit,{"result":"sent"})`,
+			},
+		},
+		{
+			name:     "reused id",
+			messages: reusedID,
+			want: []string{
+				"user:text(go)",
+				"model:call(dup-1,first,{})",
+				`user:resp(dup-1,first,{"result":"1"})`,
+				"model:call(dup,second,{})",
+				`user:resp(dup,second,{"result":"2"})`,
 			},
 		},
 	}
@@ -489,6 +509,9 @@ func TestRebuiltHistoryPairsOnTheAnthropicWire(t *testing.T) {
 	})
 	t.Run("split assistant turn", func(t *testing.T) {
 		assertPaired(t, captureAnthropic(t, splitRound), 3)
+	})
+	t.Run("reused id", func(t *testing.T) {
+		assertPaired(t, captureAnthropic(t, reusedID), 2)
 	})
 	t.Run("ids carrying ADK's generated prefix", func(t *testing.T) {
 		req := captureAnthropic(t, []aguix.Message{

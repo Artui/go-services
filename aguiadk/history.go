@@ -29,6 +29,12 @@ type turn struct {
 	content *genai.Content
 }
 
+// callRef is what a tool message needs from the call it answers.
+type callRef struct {
+	name string
+	id   string
+}
+
 // rebuild turns an AG-UI conversation into the session events that precede the run
 // and the content the run answers.
 //
@@ -41,15 +47,23 @@ type turn struct {
 // else by "user": ADK presents a turn by any other author to the model as
 // another agent's context rather than as its own conversation.
 func rebuild(messages []aguix.Message, author string) (history []*session.Event, tail *genai.Content, err error) {
-	names := map[string]string{}
+	// ADK pairs every call of an id with that id's last result, so a call whose
+	// id a later message reuses is renamed in history, together with its result.
+	lastCall := map[string]int{}
+	for i, m := range messages {
+		for _, c := range m.ToolCalls {
+			lastCall[c.ID] = i
+		}
+	}
+	calls := map[string]callRef{}
 	var turns []turn
-	for _, m := range messages {
+	for i, m := range messages {
 		switch m.Role {
 		case "user":
 			// Text only: image and other non-text parts are not carried yet.
 			turns = append(turns, turn{userTurn, genai.NewContentFromText(m.Text(), genai.RoleUser)})
 		case "assistant":
-			parts, err := assistantParts(m, names)
+			parts, err := assistantParts(m, i, lastCall, calls)
 			if err != nil {
 				return nil, nil, err
 			}
@@ -64,11 +78,12 @@ func rebuild(messages []aguix.Message, author string) (history []*session.Event,
 			}
 			turns = append(turns, turn{modelTurn, &genai.Content{Role: genai.RoleModel, Parts: parts}})
 		case "tool":
-			part, err := toolPart(m, names)
+			part, err := toolPart(m, calls)
 			if err != nil {
 				return nil, nil, err
 			}
-			// A turn's results go back as one user message, as Anthropic requires.
+			// ADK and anthropicmodel would merge these too; merging here makes the
+			// trailing run the one content Runner.Run takes.
 			if n := len(turns); n > 0 && turns[n-1].kind == toolTurn {
 				turns[n-1].content.Parts = append(turns[n-1].content.Parts, part)
 				continue
@@ -93,7 +108,7 @@ func rebuild(messages []aguix.Message, author string) (history []*session.Event,
 	return history, tail, nil
 }
 
-func assistantParts(m aguix.Message, names map[string]string) ([]*genai.Part, error) {
+func assistantParts(m aguix.Message, at int, lastCall map[string]int, calls map[string]callRef) ([]*genai.Part, error) {
 	var parts []*genai.Part
 	if text := m.Text(); text != "" {
 		parts = append(parts, genai.NewPartFromText(text))
@@ -107,16 +122,20 @@ func assistantParts(m aguix.Message, names map[string]string) ([]*genai.Part, er
 			}
 			args = decoded
 		}
-		names[call.ID] = call.Function.Name
+		id := call.ID
+		if lastCall[id] != at {
+			id = fmt.Sprintf("%s-%d", id, at)
+		}
+		calls[call.ID] = callRef{name: call.Function.Name, id: id}
 		parts = append(parts, &genai.Part{FunctionCall: &genai.FunctionCall{
-			ID: call.ID, Name: call.Function.Name, Args: args,
+			ID: id, Name: call.Function.Name, Args: args,
 		}})
 	}
 	return parts, nil
 }
 
-func toolPart(m aguix.Message, names map[string]string) (*genai.Part, error) {
-	name, ok := names[m.ToolCallID]
+func toolPart(m aguix.Message, calls map[string]callRef) (*genai.Part, error) {
+	ref, ok := calls[m.ToolCallID]
 	if !ok {
 		return nil, fmt.Errorf("aguiadk: tool message answers unknown tool call %q", m.ToolCallID)
 	}
@@ -130,7 +149,7 @@ func toolPart(m aguix.Message, names map[string]string) (*genai.Part, error) {
 		}
 	}
 	return &genai.Part{FunctionResponse: &genai.FunctionResponse{
-		ID: m.ToolCallID, Name: name, Response: response,
+		ID: ref.id, Name: ref.name, Response: response,
 	}}, nil
 }
 
