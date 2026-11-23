@@ -1,0 +1,57 @@
+name: release
+
+# Tag on merge. When a push to main adds a "## [X.Y.Z]" heading or a new
+# `<dir>/vX.Y.Z` token to the Adapters section of CHANGELOG.md, this tags that
+# commit through scripts/release.sh -- the same checks `make release` runs from a
+# laptop -- and pushes the tag. A tag is permanent the moment it is pushed, so
+# detection reads only those two places (never [Unreleased]) and drops any
+# release whose tag already exists, which is what a laptop release looks like.
+on:
+  push:
+    branches: [main]
+    paths: [CHANGELOG.md]
+
+permissions:
+  contents: read
+
+# One tagging run at a time: two merges in quick succession must not race to
+# the same version.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the script compares against main and reads every tag
+      - name: Tag the releases this merge names
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # A push that created the branch has no before; compare with the parent.
+          if [ -z "$BEFORE" ] || [ "$BEFORE" = 0000000000000000000000000000000000000000 ]; then
+            BEFORE="$AFTER^"
+          fi
+          releases="$(scripts/release-detect.sh "$BEFORE" "$AFTER")"
+          if [ -z "$releases" ]; then
+            echo "this merge names no new release"
+            exit 0
+          fi
+          while read -r module version; do
+            if [ "$module" = kernel ]; then tag="$version"; else tag="$module/$version"; fi
+            if [ -n "$(git ls-remote origin "refs/tags/$tag")" ]; then
+              echo "$tag already exists; skipping"
+              continue
+            fi
+            # Kernel lines come first, so an adapter's floor check sees the
+            # kernel tag this same run just pushed.
+            SHA="$AFTER" PUSH=1 scripts/release.sh tag "$module" "$version"
+          done <<<"$releases"

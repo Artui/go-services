@@ -180,6 +180,19 @@ how its run ends. The sub-agent frames (`SUBAGENT_STARTED`, `SUBAGENT_FINISHED`,
 
 ## [Unreleased]
 
+### Added
+
+- **`make release` and `make release-verify` cut and check a module's tag.**
+  `make release MODULE=<dir or kernel> VERSION=<version>` refuses a dirty tree,
+  a checkout that is not `origin/main` (or `SHA`), a version already on the
+  remote, locally or in sum.golang.org, a version with no CHANGELOG paragraph on
+  that commit, and an adapter whose kernel floor is not the newest kernel tag;
+  it creates the annotated tag locally and pushes only with `PUSH=1`.
+  `make release-verify` exits non-zero until the remote tag, the module proxy
+  and the sum database all serve the version. A `release` workflow tags on
+  merge when the merge adds a kernel heading or a new module token to the
+  Adapters section, through the same script.
+
 ### Changed
 
 - **`adkx` moves to ADK v2.8.0 and Go 1.26.10, and its tools now run in an ADK

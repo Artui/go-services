@@ -12,7 +12,7 @@ MODULES := . httpx ginx mcpx adkx aguix conformance example
 # and nothing local complained.
 PUBLISHED := $(MODULES)
 
-.PHONY: help fmt fmt-check vet lint test test-race cover check tidy tidy-check verify-modules check-floors
+.PHONY: help fmt fmt-check vet lint test test-race cover check tidy tidy-check verify-modules check-floors release release-verify release-test
 
 help:
 	@grep -E '^[a-z-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
@@ -55,6 +55,20 @@ verify-modules: ## Prove each module resolves without the workspace
 
 check-floors: ## Fail if a module's Go floor moved without a decision
 	@./scripts/check-go-floors.sh
+
+# A pushed tag is permanent, so the checks run before it exists: a clean tree on
+# origin/main (or SHA), a version nowhere yet, its CHANGELOG paragraph on that
+# commit, and for an adapter a floor on the newest kernel tag. PUSH=1 pushes.
+release: ## Tag MODULE (kernel or a directory) at VERSION; PUSH=1 to push, SHA= for an older main commit
+	@test -n "$(MODULE)" -a -n "$(VERSION)" || { echo "usage: make release MODULE=aguix VERSION=v0.5.0 [SHA=...] [PUSH=1]"; exit 2; }
+	@SHA="$(SHA)" PUSH="$(PUSH)" ./scripts/release.sh tag "$(MODULE)" "$(VERSION)"
+
+release-verify: ## Exit 0 once the remote tag, the module proxy and sum.golang.org all serve MODULE at VERSION
+	@test -n "$(MODULE)" -a -n "$(VERSION)" || { echo "usage: make release-verify MODULE=aguix VERSION=v0.5.0"; exit 2; }
+	@SHA="$(SHA)" ./scripts/release.sh verify "$(MODULE)" "$(VERSION)"
+
+release-test: ## Run the release scripts' fixtures against throwaway repositories
+	@./scripts/release_test.sh
 
 tidy: ## Tidy every module
 	@for m in $(MODULES); do (cd $$m && $(GO) mod tidy); done
