@@ -96,10 +96,24 @@ the vulnerable version from the module proxy the entire time. There is no
 publish step to forget in this repository -- there is only the tag, which is
 easier to forget.
 
+`adkx/v0.2.0` on 2026-11-23 raises `google.golang.org/adk/v2` from v2.6.0 to
+v2.8.0, which brings the native Claude backend (`model/anthropicmodel`, added in
+v2.7.0) within reach of a consumer. The Go floor of `adkx` rises from 1.26.6 to
+1.26.10, ADK v2.8.0's own, so it is a minor: a consumer on an older toolchain
+must move. Nothing in `adkx` changed to follow, and its API is unchanged. ADK's
+only breaking change between the two (the `configurable` package refusing
+absolute and symlinked config paths) is in a package `adkx` does not import;
+the tool, toolset, runnable and redaction surfaces it uses compile and pass
+unchanged. `conformance` and `example` follow to 1.26.10 and ADK v2.8.0; they
+are never tagged.
+
 ## [Unreleased]
 
 ### Changed
 
+- **`adkx` moves to ADK v2.8.0 and Go 1.26.10.** See the `adkx/v0.2.0` paragraph
+  under Adapters; `conformance` and `example` follow, and `make check-floors`
+  names the new floors.
 - **Dependabot now watches every module in the repository, in one grouped
   entry.** Four were missing from the list -- `adkx`, `aguix`, `conformance`
   and `example` -- so nothing was ever proposed for them, which is precisely
