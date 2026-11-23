@@ -233,7 +233,9 @@ approval card works against a Go server. Its floors are unchanged.
   denial, a `cancelled` status, or any payload whose `approved` is not `true`
   reports the call with outcome `denied`, and it never runs. A resume that
   names no call left waiting, a call already answered or followed by a user
-  message, or one call twice fails the run instead.
+  message, a call the approval does not gate, or one call twice fails the run
+  instead, as does a history that carries an `adk_request_confirmation` call.
+  The bridge keeps no state, so the same resume sent twice runs the call twice.
 - **`aguiadk.ToolCatalog(reg.Entries())`** serves the `data-tools-url`
   catalog, `[{name, summary, description}]`, with the summary from
   `Metadata["x-summary"]` or the readable name. Mount it behind the agent's

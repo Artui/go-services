@@ -400,6 +400,20 @@ func TestOwnWithConfirmationBecomesAnInterrupt(t *testing.T) {
 	}
 }
 
+func TestOwnWithConfirmationResumesWithoutAnApproval(t *testing.T) {
+	a := newArchive(t)
+	llm := &scriptLLM{steps: []step{{text: "Discarded."}}}
+	gated := tool.WithConfirmation(a.ts, true, nil)
+	s := serve(t, mustNew(t, librarian(t, llm, gated)), inbound(t, "approve"))
+
+	if ran := a.ran(); !slices.Equal(ran, []string{"discard 7"}) {
+		t.Errorf("ran %v, want the approved call once", ran)
+	}
+	if result := s.first("TOOL_CALL_RESULT"); result["toolCallId"] != "c1" {
+		t.Errorf("result: %v", result)
+	}
+}
+
 func TestWithApprovalRefusesNil(t *testing.T) {
 	llm := &scriptLLM{}
 	if _, err := New(librarian(t, llm), WithUserID(Anonymous), WithApproval(nil)); err == nil {

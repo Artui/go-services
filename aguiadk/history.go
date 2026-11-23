@@ -115,8 +115,9 @@ func assistantParts(m aguix.Message, at int, lastCall map[string]int, calls map[
 		parts = append(parts, genai.NewPartFromText(text))
 	}
 	for _, call := range m.ToolCalls {
-		// Only ADK asks for a confirmation, and this bridge never streams one, so
-		// a client's call of that name would be a confirmation it wrote itself.
+		// Only ADK may ask for a confirmation. A call of that name in the history
+		// was written by the client, or is a model's call to a reserved tool name
+		// that the bridge streamed as an ordinary call. Either way it is refused.
 		if call.Function.Name == toolconfirmation.FunctionCallName {
 			return nil, fmt.Errorf("aguiadk: tool call %q names a reserved tool", call.ID)
 		}
