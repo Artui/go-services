@@ -1,0 +1,1 @@
+{"threadId":"thread-1","runId":"run-resume","protocolVersion":"1.0","state":{},"messages":[{"id":"u1","role":"user","content":"Delete the draft."}],"tools":[],"context":[],"forwardedProps":{},"resume":[{"interruptId":"int-call-1","status":"resolved","payload":{"approved":true,"editedArgs":{"id":4}}},{"interruptId":"int-call-2","status":"cancelled"}]}

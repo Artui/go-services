@@ -1,0 +1,1 @@
+{"threadId":"thread-1","runId":"run-parts","protocolVersion":"1.0","state":{},"messages":[{"id":"u1","role":"user","content":[{"type":"text","text":"What is in "},{"type":"image","source":{"type":"data","value":"aGVsbG8=","mimeType":"image/png"}},{"type":"text","text":"this picture?"}]}],"tools":[],"context":[],"forwardedProps":{}}

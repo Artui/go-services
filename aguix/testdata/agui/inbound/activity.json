@@ -1,0 +1,1 @@
+{"threadId":"thread-1","runId":"run-activity","state":{},"messages":[{"id":"u1","role":"user","content":"Summarise the thread."},{"id":"act-1","role":"activity","activityType":"compaction","content":{"removed":12,"before":30,"after":18}},{"id":"u2","role":"user","content":"Go on."}],"tools":[],"context":[],"forwardedProps":{}}

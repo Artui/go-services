@@ -100,7 +100,7 @@ func WhenUserSays(words ...string) func(RunInput) bool {
 		if !ok {
 			return false
 		}
-		content := strings.ToLower(message.Content)
+		content := strings.ToLower(message.Text())
 		for _, word := range words {
 			if !strings.Contains(content, strings.ToLower(word)) {
 				return false
@@ -128,7 +128,7 @@ func WhenUserSaysAny(words ...string) func(RunInput) bool {
 		if !ok {
 			return false
 		}
-		content := strings.ToLower(message.Content)
+		content := strings.ToLower(message.Text())
 		for _, word := range words {
 			if strings.Contains(content, strings.ToLower(word)) {
 				return true

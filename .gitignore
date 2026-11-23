@@ -5,3 +5,4 @@ cover.html
 go.work
 go.work.sum
 cover-*.out
+node_modules/

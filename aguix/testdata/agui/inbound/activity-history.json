@@ -1,0 +1,1 @@
+{"threadId":"thread-1","runId":"run-activity-history","protocolVersion":"1.0","state":{},"messages":[{"id":"u1","role":"user","content":"Summarise the thread."},{"id":"u2","role":"user","content":"Go on."}],"tools":[],"context":[],"forwardedProps":{}}
