@@ -1,32 +1,49 @@
-// Command agentdemo serves the library registry as an AG-UI agent, with a page
-// that drives it through the real <ag-ui-chat> web component.
+// Command agentdemo serves the library registry to the real <ag-ui-chat> web
+// component, answered by Claude.
 //
 // It exists because the rest of this repository can only prove that aguix emits
-// the frames the protocol describes. Whether a client actually renders them is
-// a different question, and the only honest way to answer it is to point a real
+// the frames the protocol describes. Whether a client renders them is a
+// different question, and the only honest way to answer it is to point a real
 // client at a real server. The component is loaded from a CDN at a pinned
-// version, so this demo has no build step and no dependency on a checkout
-// sitting next to it.
+// version, so the page has no build step.
 //
-// The agent is scripted. There is no model here and no API key: the rules below
-// decide what to call, and everything under them -- validation, permissions,
-// the transaction boundary -- is the same kernel the HTTP and MCP adapters run.
-// That is the point. A demo that needed a model would be testing the model.
+// The path is the one a consumer would take: the registry becomes ADK tools
+// through adkx.Toolset, the model is ADK's own anthropicmodel, and aguiadk turns
+// one AG-UI run into one ADK invocation. Everything under the tools -- validation,
+// permissions, the transaction boundary -- is the kernel the HTTP and MCP
+// adapters run, against a real SQLite database.
+//
+// It needs ANTHROPIC_API_KEY. The test beside it drives the same handler with a
+// scripted model, so CI proves the wiring without a key.
 package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"strings"
+	"strconv"
 
-	services "github.com/Artui/go-services"
+	"github.com/Artui/go-services/adkx"
+	"github.com/Artui/go-services/aguiadk"
 	"github.com/Artui/go-services/aguix"
 	"github.com/Artui/go-services/example"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/agent/llmagent"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/model/anthropicmodel"
+	"google.golang.org/adk/v2/tool"
 )
+
+const modelName = "claude-sonnet-5-5"
+
+const instruction = `You are the librarian of a small lending library. Use the tools to look up
+books and loans and to borrow a book for the member you are talking to. Report what the tool
+returned, in a sentence or two; when a tool refuses, say why and do not retry the same call.
+Fines are reported in cents.`
 
 // memberKey carries the signed-in member through the request context.
 //
@@ -42,15 +59,51 @@ func withMember(next http.Handler) http.Handler {
 	})
 }
 
-func member(ctx context.Context) (any, error) {
+// userID is what the bridge hands ADK as the invocation's user.
+func userID(ctx context.Context) (string, error) {
 	id, ok := ctx.Value(memberKey{}).(int64)
 	if !ok {
-		return nil, fmt.Errorf("%w: this run is not signed in", services.ErrPermission)
+		return "", errors.New("this run is not signed in")
 	}
-	return id, nil
+	return strconv.FormatInt(id, 10), nil
+}
+
+// principal turns the invocation's user back into what the registry's resolver
+// expects: the member's id.
+func principal(ctx agent.Context) (any, error) {
+	return strconv.ParseInt(ctx.UserID(), 10, 64)
+}
+
+// newHandler serves llm over AG-UI with the registry's specs as its tools.
+func newHandler(llm model.LLM, db *sql.DB) (http.Handler, error) {
+	specs, err := adkx.Toolset(example.Registry(db), principal)
+	if err != nil {
+		return nil, fmt.Errorf("toolset: %w", err)
+	}
+	root, err := llmagent.New(llmagent.Config{
+		Name: "librarian", Model: llm, Instruction: instruction,
+		Toolsets: []tool.Toolset{specs, aguiadk.ClientToolset()},
+	})
+	if err != nil {
+		return nil, fmt.Errorf("agent: %w", err)
+	}
+	bridge, err := aguiadk.New(root, aguiadk.WithUserID(userID))
+	if err != nil {
+		return nil, err
+	}
+	handler, err := aguix.Handler(bridge, aguix.WithOnError(
+		func(_ *http.Request, err error) { log.Printf("run failed: %v", err) }))
+	if err != nil {
+		return nil, fmt.Errorf("handler: %w", err)
+	}
+	return withMember(handler), nil
 }
 
 func main() {
+	key := os.Getenv("ANTHROPIC_API_KEY")
+	if key == "" {
+		log.Fatal("agentdemo needs ANTHROPIC_API_KEY: the model answers, the tools are the library's")
+	}
 	ctx := context.Background()
 
 	db, err := example.Open(ctx, "agentdemo")
@@ -62,23 +115,19 @@ func main() {
 		log.Fatalf("seed: %v", err)
 	}
 
-	toolbox, err := aguix.NewToolbox(example.Registry(db), member)
+	llm, err := anthropicmodel.NewModel(ctx, modelName, anthropicmodel.ClientConfig{
+		Backend: anthropicmodel.BackendAnthropic, APIKey: key,
+	})
 	if err != nil {
-		log.Fatalf("toolbox: %v", err)
+		log.Fatalf("model: %v", err)
 	}
-
-	// The same script the module's own test drives, so the browser and CI
-	// are not looking at different agents.
-	agent := example.Librarian(toolbox)
-
-	handler, err := aguix.Handler(agent, aguix.WithOnError(
-		func(_ *http.Request, err error) { log.Printf("run failed: %v", err) }))
+	handler, err := newHandler(llm, db)
 	if err != nil {
-		log.Fatalf("handler: %v", err)
+		log.Fatal(err)
 	}
 
 	mux := http.NewServeMux()
-	mux.Handle("POST /agent", withMember(handler))
+	mux.Handle("POST /agent", handler)
 	mux.HandleFunc("GET /", page)
 
 	address := "localhost:" + port()
@@ -98,5 +147,5 @@ func port() string {
 
 func page(w http.ResponseWriter, _ *http.Request) {
 	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = strings.NewReader(html).WriteTo(w)
+	_, _ = w.Write([]byte(html))
 }

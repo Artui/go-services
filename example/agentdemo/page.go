@@ -36,9 +36,9 @@ const html = `<!doctype html>
   <h1>go-services over AG-UI</h1>
   <p>
     The chat in the corner is the real <code>&lt;ag-ui-chat&gt;</code> component,
-    talking to a Go server. The agent is scripted -- no model, no API key -- but
-    everything under it is the same kernel the HTTP and MCP adapters run, against
-    a real SQLite database.
+    talking to a Go server. Claude answers and calls the library's specs as
+    tools, and everything under them is the same kernel the HTTP and MCP adapters
+    run, against a real SQLite database.
   </p>
   <ul>
     <li><code>show me the books</code> lists the catalogue.</li>
@@ -57,17 +57,13 @@ const html = `<!doctype html>
   placement="bottom-right"></ag-ui-chat>
 
 <script type="module">
-  // The component does NOT register itself. Importing the bundle defines
-  // nothing; defineAgUiChat() is what upgrades <ag-ui-chat> from an unknown
-  // element into the chat. Without this the page renders, the element sits in
-  // the DOM, and absolutely nothing happens -- which is what it looked like
-  // the first time this demo was written.
-  //
-  // The +esm build is jsDelivr's: the published dist/index.js carries bare
-  // imports for @ag-ui/client, which a browser cannot resolve on its own.
-  import { defineAgUiChat } from
-    "https://cdn.jsdelivr.net/npm/@artooi/ag-ui-web-component@0.35.1/+esm";
-  defineAgUiChat();
+  // The component does NOT register itself: importing the bundle defines
+  // nothing, and defineChat() is what upgrades <ag-ui-chat> from an unknown
+  // element into the chat. The /bundle entry inlines @ag-ui/client, which a
+  // browser could not resolve from bare imports on its own.
+  import { defineChat } from
+    "https://cdn.jsdelivr.net/npm/@artooi/agents-web-components@0.11.0/dist/agents-web-components.bundle.js";
+  defineChat();
 </script>
 </body>
 </html>

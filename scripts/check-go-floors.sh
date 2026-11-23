@@ -23,6 +23,7 @@ EXPECTED=(
   "aguiadk:1.26.10" # adkx's floor, which it builds on
   "conformance:1.26.10" # the highest of the modules it drives, which is adkx
   "example:1.26.10"     # the same: it mounts all four adapters at once
+  "published:1.26.10"   # the highest tag it builds, adkx
 )
 
 status=0

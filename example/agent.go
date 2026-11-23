@@ -32,15 +32,13 @@ func BorrowArgs(in aguix.RunInput) (json.RawMessage, error) {
 	return json.RawMessage(`{"book_id":` + strconv.FormatInt(id, 10) + `}`), nil
 }
 
-// Librarian is the scripted agent this module demonstrates and tests.
+// Librarian is the scripted agent this module's tests drive.
 //
-// It lives here rather than in the demo command so that the test and the
-// browser drive the same script. A demo whose behaviour is only asserted by
-// somebody opening it is a demo that quietly stops working.
-//
-// There is no model and no API key. What is scripted is which tool gets called;
+// It lives here so that every test in the module runs the same script. There is
+// no model and no API key: what is scripted is which tool gets called, and
 // everything under that is the kernel every other adapter runs, against the
-// same database.
+// same database. The browser demo, agentdemo, no longer uses it: it serves the
+// registry through aguiadk with a real model.
 func Librarian(toolbox aguix.Caller) aguix.Agent {
 	return aguix.Scripted(
 		aguix.Rule{
