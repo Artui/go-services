@@ -309,6 +309,39 @@ its last frame. Its floors are unchanged.
 - Its tests record timed-out runs under `aguix/testdata/agui/transcripts`, and
   `scripts/agui-wire/verify-transcripts.mjs` checks them beside aguiadk's.
 
+`aguiadk/v0.4.0` hands the end of an ADK run to the fields `aguix/v0.6.0`
+added, and marks its interrupts the way the web component reads them. Its aguix
+floor rises to `v0.6.0`, so a failed run's `RUN_ERROR` now carries a `code`.
+
+- **An interrupt's `metadata` carries `kind: "approval"` and `destructive`.**
+  The web component restores a waiting thread only for an approval, and its
+  inbox approves in place only when `destructive` is `false`. `destructive` is
+  `true` when the `Approval`'s own gate asks about the tool, by a `Destructive`
+  spec or by `Require`, as django-ag-ui decides it. A call some other
+  `tool.WithConfirmation` gates is `false` only for a spec the `Approval` knows
+  does not declare itself destructive; an exempted destructive spec, a tool that
+  is no spec, and any call without `WithApproval` stay `true`, since the inbox
+  approves a `false` one in a single click. `x-confirm` sits beside them as
+  before.
+- **`RUN_FINISHED` carries the run's token usage**, summed over every model
+  call the run made, one entry per model in the order they first answered. Input
+  is the prompt plus any tool-use prompt. Output is the total less the input,
+  since ADK's OpenAI models count reasoning inside the candidates while its
+  Gemini and Anthropic models do not; without a usable total it is the
+  candidates plus the thoughts. Reasoning and cache counts are parts of them, as
+  AG-UI counts them, and cache writes are read from the metadata ADK's
+  Anthropic model sets. Only complete events count, so a
+  provider that repeats its usage on SSE partials is not added twice. The sum is
+  set after each call, so a run that ends on the handler's timeout keeps it. A
+  run with no usage sends none, a negative count fails the run, and a
+  `RUN_ERROR` never carries usage.
+- **`WithMaxLLMCalls(n)`** sets ADK's `RunConfig.MaxLLMCalls`, with ADK's
+  meanings: zero is its default and a negative value is no limit. A run that
+  would pass it ends in a `RUN_ERROR` with code `error`.
+- Two transcripts are added under `aguiadk/testdata/agui/transcripts`, a
+  two-call run's usage and an interrupt that is not destructive, and the wire
+  script checks them.
+
 ## [Unreleased]
 
 ### Added

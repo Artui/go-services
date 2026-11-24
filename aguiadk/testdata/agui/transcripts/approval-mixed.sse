@@ -20,4 +20,4 @@ data: {"type":"TOOL_CALL_END","toolCallId":"c2"}
 
 data: {"type":"TOOL_CALL_RESULT","messageId":"run-mixed-1","role":"tool","toolCallId":"c2","content":"{\"discarded\":3}"}
 
-data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-mixed","outcome":{"type":"interrupt","interrupts":[{"id":"int-c1","reason":"tool_call","message":"Approve discard_book({\"book_id\":7})?","toolCallId":"c1","responseSchema":{"properties":{"approved":{"type":"boolean"},"editedArgs":{"type":"object"}},"required":["approved"],"type":"object"},"metadata":{"x-confirm":"Discard this book?"}}]}}
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-mixed","outcome":{"type":"interrupt","interrupts":[{"id":"int-c1","reason":"tool_call","message":"Approve discard_book({\"book_id\":7})?","toolCallId":"c1","responseSchema":{"properties":{"approved":{"type":"boolean"},"editedArgs":{"type":"object"}},"required":["approved"],"type":"object"},"metadata":{"destructive":true,"kind":"approval","x-confirm":"Discard this book?"}}]}}

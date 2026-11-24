@@ -96,6 +96,8 @@ type bridge struct {
 	newRunner  func(session.Service) (*runner.Runner, error)
 	approval   *Approval
 	optErr     error
+
+	maxLLMCalls int
 }
 
 func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) error {
@@ -214,11 +216,19 @@ func (b *bridge) drive(
 	ctx context.Context, r *runner.Runner, userID, sessionID string,
 	tail *genai.Content, tr *translator, out *aguix.Stream,
 ) error {
-	cfg := agent.RunConfig{StreamingMode: agent.StreamingModeSSE}
+	cfg := agent.RunConfig{StreamingMode: agent.StreamingModeSSE, MaxLLMCalls: b.maxLLMCalls}
 	awaitingClient := false
+	var used tally
 	for ev, err := range r.Run(ctx, userID, sessionID, tail, cfg) {
 		if err != nil {
 			return err
+		}
+		// The whole sum is set after each call, so a run the handler cancels on
+		// its timeout, or one that stops for the client, still reports it.
+		if used.add(ev) {
+			if err := out.SetUsage(used.entries...); err != nil {
+				return err
+			}
 		}
 		frames, err := tr.translate(ev)
 		if err != nil {
@@ -263,4 +273,13 @@ func messageIDs(runID string) func() string {
 		n++
 		return fmt.Sprintf("%s-%d", runID, n)
 	}
+}
+
+// WithMaxLLMCalls bounds how many times one run may call the model: it is ADK's
+// agent.RunConfig.MaxLLMCalls, with ADK's meanings. Zero is ADK's default, 500
+// or the ADK_MAX_LLM_CALLS environment variable, and a negative value is no
+// limit. A run that would pass it fails with an error wrapping
+// agent.ErrLLMCallsLimitExceeded, which the handler sends as a RUN_ERROR.
+func WithMaxLLMCalls(n int) Option {
+	return func(b *bridge) { b.maxLLMCalls = n }
 }

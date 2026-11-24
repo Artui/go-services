@@ -29,12 +29,17 @@ import (
 var update = flag.Bool("update", false, "rewrite the SSE transcripts under testdata")
 
 // step is one scripted model answer. A step with err fails mid-stream, after its
-// text partials; a step with code answers with that error code.
+// text partials; a step with code answers with that error code; a step that
+// blocks waits for its context to end. usage and model ride on every response.
 type step struct {
-	text  string
-	calls []*genai.FunctionCall
-	err   error
-	code  string
+	text   string
+	calls  []*genai.FunctionCall
+	err    error
+	code   string
+	block  bool
+	usage  *genai.GenerateContentResponseUsageMetadata
+	model  string
+	custom map[string]any
 }
 
 // scriptLLM answers as anthropicmodel does under SSE: the text as partials,
@@ -75,6 +80,11 @@ func (m *scriptLLM) GenerateContent(
 	m.requests = append(m.requests, req)
 	m.mu.Unlock()
 	return func(yield func(*model.LLMResponse, error) bool) {
+		if s.block {
+			<-ctx.Done()
+			yield(nil, ctx.Err())
+			return
+		}
 		if s.code != "" {
 			yield(&model.LLMResponse{ErrorCode: s.code, ErrorMessage: "provider detail"}, nil)
 			return
@@ -83,6 +93,7 @@ func (m *scriptLLM) GenerateContent(
 			for _, word := range strings.SplitAfter(s.text, " ") {
 				if !yield(&model.LLMResponse{
 					Content: genai.NewContentFromText(word, genai.RoleModel), Partial: true,
+					UsageMetadata: s.usage, ModelVersion: s.model,
 				}, nil) {
 					return
 				}
@@ -101,6 +112,7 @@ func (m *scriptLLM) GenerateContent(
 		}
 		yield(&model.LLMResponse{
 			Content: &genai.Content{Role: genai.RoleModel, Parts: parts}, TurnComplete: true,
+			UsageMetadata: s.usage, ModelVersion: s.model, CustomMetadata: s.custom,
 		}, nil)
 	}
 }
@@ -197,15 +209,23 @@ func (s served) last() map[string]any { return s.frames[len(s.frames)-1] }
 // server's middleware would be.
 func serve(t *testing.T, a aguix.Agent, in aguix.RunInput, wrap ...func(http.Handler) http.Handler) served {
 	t.Helper()
+	return serveWith(t, a, in, nil, wrap...)
+}
+
+// serveWith is serve with options for the handler.
+func serveWith(
+	t *testing.T, a aguix.Agent, in aguix.RunInput, opts []aguix.Option, wrap ...func(http.Handler) http.Handler,
+) served {
+	t.Helper()
 	var (
 		mu   sync.Mutex
 		errs []error
 	)
-	h, err := aguix.Handler(a, aguix.WithOnError(func(_ *http.Request, err error) {
+	h, err := aguix.Handler(a, append(opts, aguix.WithOnError(func(_ *http.Request, err error) {
 		mu.Lock()
 		defer mu.Unlock()
 		errs = append(errs, err)
-	}))
+	}))...)
 	if err != nil {
 		t.Fatal(err)
 	}

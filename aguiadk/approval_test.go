@@ -133,7 +133,7 @@ func TestDestructiveSpecPausesOnAnInterrupt(t *testing.T) {
 	}
 	got, _ := json.Marshal(outcome(t, s))
 	want := `{"interrupts":[{"id":"int-c1","message":"Approve discard_book({\"book_id\":7})?",` +
-		`"metadata":{"x-confirm":"Discard this book?"},"reason":"tool_call",` +
+		`"metadata":{"destructive":true,"kind":"approval","x-confirm":"Discard this book?"},"reason":"tool_call",` +
 		`"responseSchema":{"properties":{"approved":{"type":"boolean"},"editedArgs":{"type":"object"}},` +
 		`"required":["approved"],"type":"object"},"toolCallId":"c1"}],"type":"interrupt"}`
 	if string(got) != want {
@@ -261,8 +261,9 @@ func TestRequireAndExemptOverrideDestructive(t *testing.T) {
 	if len(interrupts) != 1 || interrupts[0].(map[string]any)["toolCallId"] != "c2" {
 		t.Errorf("interrupts: %v", interrupts)
 	}
-	if md := interrupts[0].(map[string]any)["metadata"]; md != nil {
-		t.Errorf("a spec with no x-confirm carries metadata %v", md)
+	md, _ := json.Marshal(interrupts[0].(map[string]any)["metadata"])
+	if string(md) != `{"destructive":true,"kind":"approval"}` {
+		t.Errorf("a required spec with no x-confirm carries metadata %s", md)
 	}
 }
 
@@ -395,9 +396,29 @@ func TestOwnWithConfirmationBecomesAnInterrupt(t *testing.T) {
 	if o["type"] != "interrupt" || len(interrupts) != 1 {
 		t.Fatalf("outcome %v", o)
 	}
-	if got := interrupts[0].(map[string]any); got["id"] != "int-c1" || got["metadata"] != nil {
+	got := interrupts[0].(map[string]any)
+	md, _ := json.Marshal(got["metadata"])
+	if got["id"] != "int-c1" || string(md) != `{"destructive":true,"kind":"approval"}` {
 		t.Errorf("interrupt %v", got)
 	}
+}
+
+func TestAConfirmationTheApprovalDoesNotGateIsNotDestructive(t *testing.T) {
+	a := newArchive(t)
+	llm := &scriptLLM{steps: []step{{calls: []*genai.FunctionCall{shelveCall("c1", 3)}}}}
+	gated := tool.WithConfirmation(a.ts, false, func(name string, _ any) bool { return name == "shelve_book" })
+	agent := mustNew(t, librarian(t, llm, gated), WithApproval(NewApproval(a.entries)))
+	s := serve(t, agent, input("run-own", text("user", "Shelve 3.")))
+
+	interrupts, _ := outcome(t, s)["interrupts"].([]any)
+	if len(interrupts) != 1 {
+		t.Fatalf("interrupts %v", interrupts)
+	}
+	md, _ := json.Marshal(interrupts[0].(map[string]any)["metadata"])
+	if string(md) != `{"destructive":false,"kind":"approval"}` {
+		t.Errorf("metadata %s", md)
+	}
+	golden(t, "approval-not-destructive", s)
 }
 
 func TestOwnWithConfirmationResumesWithoutAnApproval(t *testing.T) {
@@ -411,6 +432,28 @@ func TestOwnWithConfirmationResumesWithoutAnApproval(t *testing.T) {
 	}
 	if result := s.first("TOOL_CALL_RESULT"); result["toolCallId"] != "c1" {
 		t.Errorf("result: %v", result)
+	}
+}
+
+// A confirmation the approval does not gate is safe only for a spec the approval
+// knows to be not destructive: an exempt destructive spec, or a tool that is no
+// spec at all, still counts as destructive.
+func TestAConfirmationTheApprovalCannotVouchForIsDestructive(t *testing.T) {
+	for name, approval := range map[string]func(a *archive) *Approval{
+		"exempt destructive spec":         func(a *archive) *Approval { return NewApproval(a.entries, Exempt("discard_book")) },
+		"tool the approval does not know": func(*archive) *Approval { return NewApproval(nil) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := newArchive(t)
+			llm := &scriptLLM{steps: []step{{calls: []*genai.FunctionCall{discardCall("c1", 7)}}}}
+			gated := tool.WithConfirmation(a.ts, true, nil)
+			s := serve(t, mustNew(t, librarian(t, llm, gated), WithApproval(approval(a))),
+				input("run-vouch", text("user", "Discard 7.")))
+			interrupts, _ := outcome(t, s)["interrupts"].([]any)
+			if len(interrupts) != 1 || interrupts[0].(map[string]any)["metadata"].(map[string]any)["destructive"] != true {
+				t.Errorf("interrupts %v", interrupts)
+			}
+		})
 	}
 }
 

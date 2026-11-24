@@ -21,6 +21,15 @@ const interruptPrefix = "int-"
 // confirmKey is the interrupt metadata key the web component reads its prompt from.
 const confirmKey = "x-confirm"
 
+// The web component restores a waiting thread only for an interrupt whose
+// metadata kind is "approval", and approves one in place from its inbox only
+// when destructive is false; a missing flag counts as destructive.
+const (
+	kindKey        = "kind"
+	kindApproval   = "approval"
+	destructiveKey = "destructive"
+)
+
 // Approval decides which server tools wait for a person, and carries each spec's
 // prompt to the client.
 //
@@ -45,6 +54,8 @@ const confirmKey = "x-confirm"
 type Approval struct {
 	gated   map[string]bool
 	prompts map[string]string
+	// safe names the specs that do not declare themselves destructive.
+	safe map[string]bool
 }
 
 // ApprovalOption adjusts which tools an Approval gates.
@@ -73,10 +84,12 @@ func NewApproval(entries []services.Entry, opts ...ApprovalOption) *Approval {
 	for _, opt := range opts {
 		opt(&lists)
 	}
-	a := &Approval{gated: map[string]bool{}, prompts: map[string]string{}}
+	a := &Approval{gated: map[string]bool{}, prompts: map[string]string{}, safe: map[string]bool{}}
 	for _, e := range entries {
 		if e.Destructive != nil && *e.Destructive {
 			a.gated[e.Name] = true
+		} else {
+			a.safe[e.Name] = true
 		}
 		if prompt, ok := e.Metadata[confirmKey].(string); ok && strings.TrimSpace(prompt) != "" {
 			a.prompts[e.Name] = prompt
@@ -107,6 +120,14 @@ func WithApproval(a *Approval) Option {
 			b.optErr = errors.New("aguiadk: WithApproval needs an approval")
 		}
 	}
+}
+
+// destructive reports whether a call to name counts as destructive. A call a's
+// own gate asks about does, as django-ag-ui marks it; any other is safe only for
+// a spec a knows does not declare itself destructive, since the web component
+// approves a safe call in one click and counts an unknown one as destructive.
+func (a *Approval) destructive(name string) bool {
+	return a == nil || a.gated[name] || !a.safe[name]
 }
 
 func (a *Approval) prompt(name string) (string, bool) {
@@ -150,9 +171,11 @@ func (a *Approval) interruptFor(confirmation *genai.FunctionCall) (aguix.Interru
 		Message:        fmt.Sprintf("Approve %s(%s)?", original.Name, encoded),
 		ResponseSchema: responseSchema(),
 	}
+	metadata := map[string]any{kindKey: kindApproval, destructiveKey: a.destructive(original.Name)}
 	if prompt, ok := a.prompt(original.Name); ok {
-		in.Metadata = map[string]any{confirmKey: prompt}
+		metadata[confirmKey] = prompt
 	}
+	in.Metadata = metadata
 	return in, nil
 }
 
