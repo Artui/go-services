@@ -4,4 +4,7 @@
 // A call that ADK's tool confirmation gates ends the run on an AG-UI interrupt,
 // and the client's answer in the next run's resume runs or denies it; Approval
 // gates the specs that declare themselves destructive.
+//
+// The client's shared state seeds the session's state, and the agent's writes
+// to it stream back as STATE_SNAPSHOT and STATE_DELTA.
 package aguiadk

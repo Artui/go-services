@@ -2,6 +2,7 @@ package aguiadk
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -47,8 +48,10 @@ func WithUserID(fn func(ctx context.Context) (string, error)) Option {
 //
 // Every run starts from the conversation the client sends: it is replayed into
 // a fresh in-memory session, and the trailing user or tool message is what the
-// agent answers. Nothing is kept between runs, so the client's history is the
-// only state, as AG-UI intends.
+// agent answers. The client's state, a JSON object, seeds that session's state;
+// a non-empty one is echoed as a STATE_SNAPSHOT, and each write the run makes
+// streams as a STATE_DELTA. Nothing is kept between runs, so the client's
+// history and state are the only state, as AG-UI intends.
 //
 // The run's text and tool calls stream as they arrive. Add ClientToolset to the
 // agent to let it call the tools the browser declares: a run that calls one
@@ -94,6 +97,10 @@ type bridge struct {
 }
 
 func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) error {
+	seed, err := seedState(in.State)
+	if err != nil {
+		return err
+	}
 	history, tail, err := rebuild(in.Messages, b.root.Name())
 	if err != nil {
 		return err
@@ -114,13 +121,18 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 	if err != nil {
 		return err
 	}
-	r, userID, err := b.prepare(ctx, in.ThreadID, history)
+	r, userID, err := b.prepare(ctx, in.ThreadID, history, seed)
 	if err != nil {
 		return err
 	}
+	if len(seed) > 0 {
+		if err := out.Emit(aguix.StateSnapshot(seed)); err != nil {
+			return err
+		}
+	}
 
 	tr := newTranslator(messageIDs(in.RunID))
-	tr.approval, tr.denied = b.approval, denied
+	tr.approval, tr.denied, tr.based = b.approval, denied, seed != nil
 	runErr := b.drive(withClientTools(ctx, tools), r, userID, in.ThreadID, tail, tr, out)
 	// Whatever the run opened is closed before it ends, so a failed run still
 	// leaves a well-formed stream ahead of the handler's RUN_ERROR.
@@ -141,11 +153,24 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 	return nil
 }
 
-// prepare stores the replayed history in a session of its own and returns a
-// runner over it. The session id is the thread's, so ADK and its telemetry name
-// the conversation the client does.
+// seedState decodes the client's state into the session's initial state, keeping
+// numbers as json.Number. Absent or null is no state and returns nil.
+func seedState(raw json.RawMessage) (map[string]any, error) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil, nil
+	}
+	state, err := decodeObject(string(raw))
+	if err != nil {
+		return nil, fmt.Errorf("aguiadk: the run's state is not a JSON object: %w", err)
+	}
+	return state, nil
+}
+
+// prepare stores the replayed history in a session of its own, seeded with the
+// client's state, and returns a runner over it. The session id is the thread's,
+// so ADK and its telemetry name the conversation the client does.
 func (b *bridge) prepare(
-	ctx context.Context, threadID string, history []*session.Event,
+	ctx context.Context, threadID string, history []*session.Event, state map[string]any,
 ) (*runner.Runner, string, error) {
 	userID, err := b.userID(ctx)
 	if err != nil {
@@ -156,7 +181,7 @@ func (b *bridge) prepare(
 	}
 	svc := b.newService()
 	created, err := svc.Create(ctx, &session.CreateRequest{
-		AppName: appName, UserID: userID, SessionID: threadID,
+		AppName: appName, UserID: userID, SessionID: threadID, State: state,
 	})
 	if err != nil {
 		return nil, "", fmt.Errorf("aguiadk: creating the run's session: %w", err)

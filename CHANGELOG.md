@@ -246,6 +246,35 @@ approval card works against a Go server. Its floors are unchanged.
 - The resume bodies its tests read are written by `@ag-ui/client` under
   `aguiadk/testdata/agui/inbound`.
 
+`aguiadk/v0.3.0` carries AG-UI shared state through a run, so a client's
+`state` reaches the agent and the agent's writes reach the client. Its floors
+are unchanged.
+
+- **`RunInput.state` seeds the run's session state.** A JSON object becomes
+  the session's initial state, with numbers kept as `json.Number`, so a tool
+  reading a seeded number gets a `json.Number` rather than a `float64`, and an
+  instruction template such as `{draft}` sees the client's value. A state that
+  is present but not an object fails the run; absent and `null` are no state.
+- **A non-empty state is echoed as a `STATE_SNAPSHOT`** right after
+  `RUN_STARTED`. `{}`, which `@ag-ui/client` sends by default, adds no frame.
+  A conversation that ends on an assistant message still runs nothing and
+  sends no snapshot.
+- **Every write to the session state is a `STATE_DELTA`.** Each event's
+  `Actions.StateDelta` becomes one frame after that event's own frames, with
+  one RFC 6902 `add` per key, in key order, the key escaped as a JSON Pointer
+  token. A write of `nil` sends `"value":null`. A `temp:` key is never sent,
+  since ADK does not keep it past the invocation. When the client sent no
+  state, the run's first write is a `STATE_SNAPSHOT` instead, so there is an
+  object to patch.
+- **No `MESSAGES_SNAPSHOT` is sent.** The bridge rewrites history only inside
+  ADK's session: reused call ids are renamed and a resume adds the
+  confirmation ADK resumes from. Neither change reaches the client's thread.
+- A run's two transcripts, a seeded run and the next run seeded from the
+  state the first produced, are recorded under
+  `aguiadk/testdata/agui/transcripts` and checked by the wire script. The
+  seeded input is the body `@ag-ui/client` wrote for `aguix`'s reasoning
+  fixture.
+
 ## [Unreleased]
 
 ### Added

@@ -1,0 +1,15 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-2"}
+
+data: {"type":"STATE_SNAPSHOT","snapshot":{"draft":"sunset","summary":"Noted.","turns":3}}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"run-2-1","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-2-1","delta":"Still "}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-2-1","delta":"sunset."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"run-2-1"}
+
+data: {"type":"STATE_DELTA","delta":[{"op":"add","path":"/summary","value":"Still sunset."}]}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-2"}
