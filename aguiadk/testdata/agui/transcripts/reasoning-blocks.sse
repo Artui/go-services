@@ -1,0 +1,33 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-think"}
+
+data: {"type":"REASONING_START","messageId":"run-think-1"}
+
+data: {"type":"REASONING_MESSAGE_START","messageId":"run-think-1","role":"reasoning"}
+
+data: {"type":"REASONING_MESSAGE_CONTENT","messageId":"run-think-1","delta":"The email field "}
+
+data: {"type":"REASONING_MESSAGE_CONTENT","messageId":"run-think-1","delta":"is the one to fill."}
+
+data: {"type":"REASONING_MESSAGE_CONTENT","messageId":"run-think-1","delta":" Its value is "}
+
+data: {"type":"REASONING_MESSAGE_CONTENT","messageId":"run-think-1","delta":"the account address."}
+
+data: {"type":"REASONING_MESSAGE_END","messageId":"run-think-1"}
+
+data: {"type":"REASONING_END","messageId":"run-think-1"}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"run-think-2","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-think-2","delta":"Filling it in."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"run-think-2"}
+
+data: {"type":"REASONING_ENCRYPTED_VALUE","subtype":"message","entityId":"run-think-1","encryptedValue":"{\"blocks\":[{\"length\":35,\"signature\":\"RXFRQkNrWUlCeGdDS2tEZmlyc3Q9PQ==\"},{\"length\":34,\"signature\":\"RXBZQkNrWUlCeGdDS2tEc2Vjb25kPT0=\"},{\"length\":0,\"signature\":\"RW13S0FoZ0JFZ3kzcmVkYWN0ZWQ9PQ==\"}]}"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"toolu_01","toolCallName":"fill_field","parentMessageId":"run-think-2"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"field\":\"email\"}","toolCallId":"toolu_01"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"toolu_01"}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-think","usage":[{"model":"claude-sonnet-4-5-20250929","inputTokens":40,"outputTokens":60,"totalTokens":100}],"outcome":{"type":"success","pendingToolCallIds":["toolu_01"]}}

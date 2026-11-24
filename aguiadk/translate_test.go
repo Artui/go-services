@@ -2,6 +2,7 @@ package aguiadk
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"iter"
@@ -56,7 +57,15 @@ func trLine(e aguix.Event) string {
 	case aguix.EventReasoningEnd:
 		return "THINK_END " + e.MessageID
 	case aguix.EventReasoningEncryptedValue:
-		return "SEAL " + e.Subtype + " " + e.EntityID + " " + e.EncryptedValue
+		var v sealed
+		if err := json.Unmarshal([]byte(e.EncryptedValue), &v); err != nil {
+			return "UNREADABLE SEAL " + e.EncryptedValue
+		}
+		line := "SEAL " + e.Subtype + " " + e.EntityID
+		for _, b := range v.Blocks {
+			line += fmt.Sprintf(" %s@%d", b.Signature, b.Length)
+		}
+		return line
 	}
 	return "UNEXPECTED " + string(e.Type)
 }
@@ -558,17 +567,17 @@ func TestTranslateARealRunner(t *testing.T) {
 	}
 	thought := func(id, sig string) []string {
 		return []string{"THINK_START " + id, "THINK_MSG " + id, "THINK " + id + " thinking",
-			"THINK_MSG_END " + id, "THINK_END " + id, "SEAL message " + id + " " + sig}
+			"THINK_MSG_END " + id, "THINK_END " + id, "SEAL message " + id + " " + sig + "@8"}
 	}
 	// Streamed, the seal follows the span it closes and precedes the text.
 	sse := slices.Concat(
 		[]string{"THINK_START m1", "THINK_MSG m1", "THINK m1 thinking", "THINK_MSG_END m1", "THINK_END m1",
 			"TEXT_START m2", "TEXT m2 Let ", "TEXT m2 me ", "TEXT m2 check ", "TEXT m2 the ",
-			"TEXT m2 shelf.", "TEXT_END m2", "SEAL message m1 sig-Le"},
+			"TEXT m2 shelf.", "TEXT_END m2", "SEAL message m1 sig-Le@8"},
 		call1, []string{fmt.Sprintf(refusal, "m3")},
 		[]string{"THINK_START m4", "THINK_MSG m4", "THINK m4 thinking", "THINK_MSG_END m4", "THINK_END m4",
 			"TEXT_START m5", "TEXT m5 It ", "TEXT m5 is ", "TEXT m5 reference ", "TEXT m5 only. ",
-			"TEXT m5 Shall ", "TEXT m5 I ", "TEXT m5 ask?", "TEXT_END m5", "SEAL message m4 sig-It"},
+			"TEXT m5 Shall ", "TEXT m5 I ", "TEXT m5 ask?", "TEXT_END m5", "SEAL message m4 sig-It@8"},
 		call2("m5"),
 	)
 	whole := slices.Concat(

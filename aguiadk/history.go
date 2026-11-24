@@ -70,17 +70,14 @@ func rebuild(messages []aguix.Message, author string) (history []*session.Event,
 			turns = append(turns, turn{userTurn, genai.NewContentFromText(m.Text(), genai.RoleUser)})
 		case "reasoning":
 			// Claude refuses a tool result whose call's turn lost its thinking, so
-			// a signed block goes back unchanged, on the model turn it sits in: the
-			// client files a block sealed after the text started behind that text.
-			if m.EncryptedValue == "" {
-				continue
-			}
-			part := &genai.Part{Thought: true, Text: m.Text(), ThoughtSignature: []byte(m.EncryptedValue)}
+			// its signed blocks go back unchanged, on the model turn they sit in:
+			// the client files a message sealed after the text began behind it.
+			blocks := unseal(m)
 			if n := len(turns); n > 0 && turns[n-1].kind == modelTurn {
-				turns[n-1].content.Parts = withThoughts(turns[n-1].content.Parts, part)
+				turns[n-1].content.Parts = withThoughts(turns[n-1].content.Parts, blocks...)
 				continue
 			}
-			thoughts = append(thoughts, part)
+			thoughts = append(thoughts, blocks...)
 		case "assistant":
 			parts, err := assistantParts(m, i, lastCall, calls)
 			if err != nil {

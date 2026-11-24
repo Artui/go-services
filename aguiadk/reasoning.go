@@ -1,8 +1,8 @@
 package aguiadk
 
 import (
+	"encoding/json"
 	"strings"
-	"unicode/utf8"
 
 	"github.com/Artui/go-services/aguix"
 	"google.golang.org/genai"
@@ -40,44 +40,45 @@ func (t *translator) endReasoning(out []aguix.Event) []aguix.Event {
 // settle matches a complete event's thought parts against the reasoning its
 // partials streamed, and returns the indexes of the parts still to be sent.
 //
-// Partials carry no signature and no block boundary, so the signature reaches
-// the client only here, as a REASONING_ENCRYPTED_VALUE on the message that
-// already holds the text. That is sound only when the stream holds exactly one
-// block: one reasoning message whose text is, byte for byte, the event's first
-// thought part. The parts after it did not stream (a redacted part never does),
-// so each is sent as a span of its own. Any other shape seals and sends
-// nothing more, so the next run replays none of that turn's thinking rather
-// than a block Claude would reject as modified.
+// Partials carry no signature and no block boundary, so a stream that held
+// several blocks reads as one reasoning message, and the signatures reach the
+// client only here, as a REASONING_ENCRYPTED_VALUE on that message. It is sound
+// only when the stream holds exactly one reasoning message whose text is, byte
+// for byte, the event's thought parts joined in order (a redacted part never
+// streams, and adds no text): the seal then lists every part, so the next run
+// can split the text back into the blocks Claude sent. Any other shape seals
+// and sends nothing more, so the next run replays none of that turn's thinking
+// rather than a block Claude would reject as modified.
 func (t *translator) settle(out []aguix.Event, parts []*genai.Part) ([]aguix.Event, map[int]bool) {
 	streamed := t.thoughts
 	t.thoughts = nil
-	var thoughts []int
+	spans := map[int]bool{}
+	var (
+		thoughts []*genai.Part
+		joined   strings.Builder
+	)
 	for i, p := range parts {
 		if p != nil && p.Thought {
-			thoughts = append(thoughts, i)
-		}
-	}
-	spans := map[int]bool{}
-	if len(streamed) == 0 {
-		for _, i := range thoughts {
 			spans[i] = true
+			thoughts = append(thoughts, p)
+			joined.WriteString(p.Text)
 		}
+	}
+	if len(streamed) == 0 {
 		return out, spans
 	}
-	if len(streamed) != 1 || len(thoughts) == 0 || parts[thoughts[0]].Text != streamed[0].text.String() {
+	clear(spans)
+	if len(streamed) != 1 || joined.String() != streamed[0].text.String() {
 		return out, spans
 	}
-	for _, i := range thoughts[1:] {
-		spans[i] = true
-	}
-	return seal(out, streamed[0].id, parts[thoughts[0]].ThoughtSignature), spans
+	return seal(out, streamed[0].id, thoughts...), spans
 }
 
 // span sends a thought part that did not stream as a whole reasoning span. A
 // redacted part has no text, so its span is empty and only the seal says what
 // it holds; an unsigned part with no text has nothing to say and is skipped.
 func (t *translator) span(out []aguix.Event, p *genai.Part) []aguix.Event {
-	if p.Text == "" && !sealable(p.ThoughtSignature) {
+	if p.Text == "" && len(p.ThoughtSignature) == 0 {
 		return out
 	}
 	out = t.endText(out)
@@ -87,20 +88,61 @@ func (t *translator) span(out []aguix.Event, p *genai.Part) []aguix.Event {
 		out = append(out, aguix.ReasoningMessageContent(id, p.Text))
 	}
 	out = append(out, aguix.ReasoningMessageEnd(id), aguix.ReasoningEnd(id))
-	return seal(out, id, p.ThoughtSignature)
+	return seal(out, id, p)
 }
 
-// seal sends a signature as the message's encrypted value, which the client
-// keeps on the message and returns in the next run's history.
-func seal(out []aguix.Event, id string, signature []byte) []aguix.Event {
-	if !sealable(signature) {
+// sealed is a reasoning message's encrypted value: the thinking blocks its
+// text holds, in order, each as the bytes of that text it covers and its
+// signature. The client keeps it opaque and returns it in the next run.
+type sealed struct {
+	Blocks []sealedBlock `json:"blocks"`
+}
+
+// sealedBlock's signature is base64 in JSON, so any bytes a provider signs
+// with survive the round trip unchanged.
+type sealedBlock struct {
+	Length    int    `json:"length"`
+	Signature []byte `json:"signature,omitempty"`
+}
+
+// seal sends the blocks of a message as its encrypted value, unless none of
+// them is signed, which leaves nothing the next run could send back.
+func seal(out []aguix.Event, id string, blocks ...*genai.Part) []aguix.Event {
+	var value sealed
+	signed := false
+	for _, p := range blocks {
+		if p.Text == "" && len(p.ThoughtSignature) == 0 {
+			continue
+		}
+		signed = signed || len(p.ThoughtSignature) > 0
+		value.Blocks = append(value.Blocks, sealedBlock{Length: len(p.Text), Signature: p.ThoughtSignature})
+	}
+	if !signed {
 		return out
 	}
-	return append(out, aguix.ReasoningEncryptedValue("message", id, string(signature)))
+	raw, _ := json.Marshal(value)
+	return append(out, aguix.ReasoningEncryptedValue("message", id, string(raw)))
 }
 
-// sealable reports whether a signature survives JSON as it is. Claude's are
-// ASCII; raw bytes from another provider would be rewritten, so are not sent.
-func sealable(signature []byte) bool {
-	return len(signature) > 0 && utf8.Valid(signature)
+// unseal splits a reasoning message back into the thinking blocks its seal
+// lists. A value it cannot read, or whose lengths do not cover the text
+// exactly, as another server's might not, yields nothing.
+func unseal(m aguix.Message) []*genai.Part {
+	var value sealed
+	if json.Unmarshal([]byte(m.EncryptedValue), &value) != nil {
+		return nil
+	}
+	text, at := m.Text(), 0
+	var parts []*genai.Part
+	for _, b := range value.Blocks {
+		if b.Length < 0 || b.Length > len(text)-at {
+			return nil
+		}
+		parts = append(parts, &genai.Part{Thought: true, Text: text[at : at+b.Length], ThoughtSignature: b.Signature})
+		at += b.Length
+	}
+	if at != len(text) {
+		return nil
+	}
+	return parts
 }

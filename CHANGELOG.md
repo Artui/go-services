@@ -351,25 +351,26 @@ them.
   and `REASONING_END`; text and reasoning never interleave, each ending the
   other, and a run that fails mid-thought still closes its span before
   `RUN_ERROR`. The reasoning message is never a tool call's parent.
-- **A signed block's signature is its `REASONING_ENCRYPTED_VALUE`**, of subtype
-  `message`, after the span. `anthropicmodel` signs a block only in the
-  complete response, so a streamed block is sealed only when the stream holds
-  exactly one reasoning message whose text is the response's first thought
-  part, byte for byte; the parts after it never streamed and are spans of their
-  own, a redacted block an empty one. Any other shape seals nothing and sends
-  none of the parts that did not stream, a redacted block included, so the next
-  run returns none of that turn's thinking, which Claude refuses on a tool
-  result turn; a signature that is not UTF-8, which JSON would rewrite, is not
-  sent.
+- **Each reasoning message is sealed with the blocks it holds**, as its
+  `REASONING_ENCRYPTED_VALUE` of subtype `message`, after the span: a JSON
+  object listing every thinking block in order, each as the bytes of the text
+  it covers and its signature in base64. `anthropicmodel` streams a response's
+  thinking blocks with no boundary between them and signs them only in the
+  complete response, so they stream as one reasoning message, and its seal
+  lists them all, a redacted block as one that covers no text. Thought parts
+  that did not stream are each a span of their own, a redacted block an empty
+  one. A stream whose text is not the response's thought parts joined, which
+  `anthropicmodel` does not produce, is not sealed.
 - **The next run hands Claude its thinking back.** Claude requires the final
   assistant turn of a thinking-enabled request to start with its thinking
-  block, which is the turn a tool result or an approval resume answers. A
-  `reasoning` message with an `encryptedValue` is replayed as a signed
-  `Thought` part, unchanged, on the model turn it sits in, ahead of that turn's
-  text and calls; the client files a block sealed after the text started behind
+  blocks, which is the turn a tool result or an approval resume answers. A
+  `reasoning` message with an `encryptedValue` is split back into the blocks
+  its seal lists, each replayed as a signed `Thought` part, unchanged and in
+  order, on the model turn it sits in, ahead of that turn's text and calls; the client files a block sealed after the text started behind
   the assistant message, so the turn is found on either side. A `reasoning`
-  message with no `encryptedValue`, or with a user or tool message before the
-  next model turn, is still dropped.
+  message with no `encryptedValue`, one whose seal does not split its text
+  exactly, or one with a user or tool message before the next model turn, is
+  still dropped.
 - **`PublishInvalidation(ctx, reason, keys...)`** queues a CUSTOM
   `ag_ui.invalidate` event, `{keys, reason}` with an empty reason sent as
   `null`, as django-ag-ui sends it. A spec's handler calls it with its
@@ -380,10 +381,12 @@ them.
   ends, a failed one included, is sent before it finishes. It returns
   `false`, and queues nothing, outside a bridge run or with no keys.
   `InvalidateEventName` names the event.
-- Four transcripts are added under `aguiadk/testdata/agui/transcripts`, and
-  `scripts/agui-wire/generate.mjs` writes two inbound fixtures from two of
+- Five transcripts are added under `aguiadk/testdata/agui/transcripts`, and
+  `scripts/agui-wire/generate.mjs` writes three inbound fixtures from three of
   them: the client's request after the page answers a browser tool the model
-  thought before, and its resume of an approval the model thought before.
+  thought before, the same after a Claude response with two signed thinking
+  blocks and a redacted one, served to `anthropicmodel` as the Messages API
+  streams it, and the client's resume of an approval the model thought before.
 
 ## [Unreleased]
 

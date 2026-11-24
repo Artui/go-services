@@ -8,7 +8,7 @@
 // The client's shared state seeds the session's state, and the agent's writes
 // to it stream back as STATE_SNAPSHOT and STATE_DELTA.
 //
-// A model's thinking streams as REASONING frames, each signed block sealed with
-// its signature, and the next run hands the signed blocks back to the model.
+// A model's thinking streams as REASONING frames, each message sealed with the
+// signed blocks it holds, and the next run hands every block back unchanged.
 // PublishInvalidation tells the page which of its resources a call changed.
 package aguiadk

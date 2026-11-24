@@ -34,17 +34,7 @@ data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-think-2","delta":"in."}
 
 data: {"type":"TEXT_MESSAGE_END","messageId":"run-think-2"}
 
-data: {"type":"REASONING_ENCRYPTED_VALUE","subtype":"message","entityId":"run-think-1","encryptedValue":"EqQBCkYIBxgCKkDsig=="}
-
-data: {"type":"REASONING_START","messageId":"run-think-3"}
-
-data: {"type":"REASONING_MESSAGE_START","messageId":"run-think-3","role":"reasoning"}
-
-data: {"type":"REASONING_MESSAGE_END","messageId":"run-think-3"}
-
-data: {"type":"REASONING_END","messageId":"run-think-3"}
-
-data: {"type":"REASONING_ENCRYPTED_VALUE","subtype":"message","entityId":"run-think-3","encryptedValue":"EmwKAhgBEgy3redacted=="}
+data: {"type":"REASONING_ENCRYPTED_VALUE","subtype":"message","entityId":"run-think-1","encryptedValue":"{\"blocks\":[{\"length\":35,\"signature\":\"RXFRQkNrWUlCeGdDS2tEc2lnPT0=\"},{\"length\":0,\"signature\":\"RW13S0FoZ0JFZ3kzcmVkYWN0ZWQ9PQ==\"}]}"}
 
 data: {"type":"TOOL_CALL_START","toolCallId":"c1","toolCallName":"fill_field","parentMessageId":"run-think-2"}
 

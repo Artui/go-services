@@ -2,6 +2,7 @@ package aguiadk
 
 import (
 	"bytes"
+	"encoding/json"
 	"errors"
 	"slices"
 	"testing"
@@ -38,7 +39,7 @@ func TestTranslateStreamedThinkingIsSealedOnTheMessageThatHoldsIt(t *testing.T) 
 		"THINK_START m1", "THINK_MSG m1", "THINK m1 Check ", "THINK m1 the shelf.",
 		"THINK_MSG_END m1", "THINK_END m1",
 		"TEXT_START m2", "TEXT m2 On it.", "TEXT_END m2",
-		"SEAL message m1 sig-1")
+		"SEAL message m1 sig-1@16")
 }
 
 func TestTranslateUnstreamedThoughtsAreWholeSpansInOrder(t *testing.T) {
@@ -50,27 +51,27 @@ func TestTranslateUnstreamedThoughtsAreWholeSpansInOrder(t *testing.T) {
 		genai.NewPartFromText("Answer"),
 	))
 	trWant(t, got, slices.Concat(
-		thinkLines("m1", "Plan."), []string{"SEAL message m1 sig-1"},
-		thinkLines("m2", ""), []string{"SEAL message m2 redacted-blob"},
+		thinkLines("m1", "Plan."), []string{"SEAL message m1 sig-1@5"},
+		thinkLines("m2", ""), []string{"SEAL message m2 redacted-blob@0"},
 		thinkLines("m3", "Unsigned."),
 		[]string{"TEXT_START m4", "TEXT m4 Answer", "TEXT_END m4"},
 	)...)
 }
 
-// The blocks after the streamed one did not stream, so each is its own span.
-func TestTranslateBlocksAfterAStreamedOneAreSpansOfTheirOwn(t *testing.T) {
+// Several blocks stream as one message, so its seal lists each in order, a
+// redacted block as one that holds none of the text.
+func TestTranslateStreamedBlocksAreSealedTogetherInOrder(t *testing.T) {
 	got := trFeed(t, newTranslator(trIDs()),
 		trEvent(true, thought("Plan.", "")),
-		trEvent(false, thought("Plan.", "sig-1"), thought("", "redacted-blob"), thought("More.", "sig-3")),
+		trEvent(true, thought("More.", "")),
+		trEvent(false, thought("Plan.", "sig-1"), thought("", "redacted-blob"), thought("", ""),
+			thought("More.", "sig-3")),
 	)
-	trWant(t, got, slices.Concat(
-		thinkLines("m1", "Plan."), []string{"SEAL message m1 sig-1"},
-		thinkLines("m2", ""), []string{"SEAL message m2 redacted-blob"},
-		thinkLines("m3", "More."), []string{"SEAL message m3 sig-3"},
-	)...)
+	trWant(t, got, "THINK_START m1", "THINK_MSG m1", "THINK m1 Plan.", "THINK m1 More.",
+		"THINK_MSG_END m1", "THINK_END m1", "SEAL message m1 sig-1@5 redacted-blob@0 sig-3@5")
 }
 
-// Every shape the stream cannot attribute to one block seals nothing and sends
+// Every shape the stream cannot attribute to its blocks seals nothing and sends
 // nothing more: the streamed text stays, and the next run replays no thinking.
 func TestTranslateSealsNothingItCannotAttribute(t *testing.T) {
 	for name, events := range map[string][]feedEvent{
@@ -78,13 +79,13 @@ func TestTranslateSealsNothingItCannotAttribute(t *testing.T) {
 			{true, []*genai.Part{thought("Plan", "")}},
 			{false, []*genai.Part{thought("Plan.", "sig-1")}},
 		},
-		"two text blocks": {
+		"a streamed block is missing": {
 			{true, []*genai.Part{thought("AB", "")}},
-			{false, []*genai.Part{thought("A", "sig-1"), thought("B", "sig-2")}},
+			{false, []*genai.Part{thought("A", "sig-1")}},
 		},
-		"redacted first": {
-			{true, []*genai.Part{thought("Plan.", "")}},
-			{false, []*genai.Part{thought("", "redacted-blob"), thought("Plan.", "sig-1")}},
+		"a block did not stream": {
+			{true, []*genai.Part{thought("A", "")}},
+			{false, []*genai.Part{thought("A", "sig-1"), thought("B", "sig-2")}},
 		},
 		// Sending B as a span would show it twice.
 		"two streamed messages": {
@@ -93,9 +94,19 @@ func TestTranslateSealsNothingItCannotAttribute(t *testing.T) {
 			{true, []*genai.Part{thought("B", "")}},
 			{false, []*genai.Part{thought("A", "sig-1"), genai.NewPartFromText("x"), thought("B", "sig-2")}},
 		},
+		"a second streamed message is missing": {
+			{true, []*genai.Part{thought("A", "")}},
+			{true, []*genai.Part{genai.NewPartFromText("x")}},
+			{true, []*genai.Part{thought("B", "")}},
+			{false, []*genai.Part{thought("A", "sig-1"), genai.NewPartFromText("x")}},
+		},
 		"no thought in the complete event": {
 			{true, []*genai.Part{thought("Plan.", "")}},
 			{false, []*genai.Part{genai.NewPartFromText("Done.")}},
+		},
+		"no block is signed": {
+			{true, []*genai.Part{thought("Plan.", "")}},
+			{false, []*genai.Part{thought("Plan.", "")}},
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
@@ -117,10 +128,40 @@ func TestTranslateSealsNothingItCannotAttribute(t *testing.T) {
 	}
 }
 
-// A signature that is not UTF-8 would be rewritten by JSON, so it is not sent.
-func TestTranslateDoesNotSealASignatureJSONWouldRewrite(t *testing.T) {
-	got := trFeed(t, newTranslator(trIDs()), trEvent(false, thought("Plan.", "\xff\xfe"), thought("", "\xff")))
-	trWant(t, got, thinkLines("m1", "Plan.")...)
+// A signature is base64 in the seal, so bytes JSON would rewrite come back as
+// they were signed.
+func TestASealCarriesAnySignatureBytes(t *testing.T) {
+	got := trFeed(t, newTranslator(trIDs()), trEvent(false, thought("Plan.", "\xff\xfe")))
+	if len(got) != 6 || got[5].Type != aguix.EventReasoningEncryptedValue {
+		t.Fatalf("frames %v", trLines(got))
+	}
+	blocks := unseal(aguix.Message{Content: aguix.TextContent("Plan."), EncryptedValue: got[5].EncryptedValue})
+	if len(blocks) != 1 || blocks[0].Text != "Plan." || string(blocks[0].ThoughtSignature) != "\xff\xfe" {
+		t.Errorf("unsealed %v", blocks)
+	}
+}
+
+// What another server sealed, or a seal whose blocks do not cover the text,
+// is not replayed: a block Claude would reject as modified is worse than none.
+func TestUnsealRefusesWhatItCannotSplit(t *testing.T) {
+	for name, value := range map[string]string{
+		"not ours":         "EqQBCkYIBxgCKkDsig==",
+		"not an object":    `["x"]`,
+		"too long":         sealOf(sealedBlock{Length: 6, Signature: []byte("s")}),
+		"negative":         sealOf(sealedBlock{Length: -1, Signature: []byte("s")}, sealedBlock{Length: 6}),
+		"short of the end": sealOf(sealedBlock{Length: 4, Signature: []byte("s")}),
+		"no blocks":        `{"blocks":[]}`,
+		"none":             "",
+	} {
+		if got := unseal(aguix.Message{Content: aguix.TextContent("Plan."), EncryptedValue: value}); got != nil {
+			t.Errorf("%s: unsealed %v", name, got)
+		}
+	}
+}
+
+func sealOf(blocks ...sealedBlock) string {
+	raw, _ := json.Marshal(sealed{Blocks: blocks})
+	return string(raw)
 }
 
 func TestTranslateCloseEndsAnOpenReasoningSpan(t *testing.T) {
@@ -150,7 +191,7 @@ func TestTranslateACallAfterThinkingHasTheTextAsItsParent(t *testing.T) {
 func TestTranslateAnUnstreamedThoughtAfterTextEndsTheText(t *testing.T) {
 	got := trFeed(t, newTranslator(trIDs()), trEvent(false, genai.NewPartFromText("A"), thought("", "sig")))
 	trWant(t, got, slices.Concat([]string{"TEXT_START m1", "TEXT m1 A", "TEXT_END m1"},
-		thinkLines("m2", ""), []string{"SEAL message m2 sig"})...)
+		thinkLines("m2", ""), []string{"SEAL message m2 sig@0"})...)
 }
 
 type feedEvent struct {
@@ -239,8 +280,6 @@ func TestThinkingStreamsAndReturnsOnTheToolResultTurn(t *testing.T) {
 			"REASONING_MESSAGE_END", "REASONING_END",
 			"TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_CONTENT",
 			"TEXT_MESSAGE_END", "REASONING_ENCRYPTED_VALUE",
-			"REASONING_START", "REASONING_MESSAGE_START", "REASONING_MESSAGE_END", "REASONING_END",
-			"REASONING_ENCRYPTED_VALUE",
 			"TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_END", "RUN_FINISHED"})...)
 	golden(t, "reasoning-pending", s)
 
@@ -275,12 +314,15 @@ func TestThinkingReturnsOnAResumedApproval(t *testing.T) {
 // assistant message, ahead of the turn's other parts; thinking with no seal, or
 // with a user or tool message before the next model turn, is not replayed.
 func TestRebuildPlacesSealedThinkingOnTheModelTurnItSitsIn(t *testing.T) {
-	sealed := aguix.Message{ID: "r1", Role: "reasoning", Content: aguix.TextContent("Plan."), EncryptedValue: "sig-1"}
+	sealed := aguix.Message{ID: "r1", Role: "reasoning", Content: aguix.TextContent("Plan."),
+		EncryptedValue: sealOf(sealedBlock{Length: 5, Signature: []byte("sig-1")})}
 	history, tail, err := rebuild([]aguix.Message{
 		text("user", "go"),
 		sealed,
 		{ID: "a0", Role: "assistant"},
 		text("assistant", "On it."),
+		{ID: "r2", Role: "reasoning", Content: aguix.TextContent("Then."),
+			EncryptedValue: sealOf(sealedBlock{Length: 5, Signature: []byte("sig-2")})},
 		{ID: "a2", Role: "assistant", ToolCalls: []aguix.ToolCall{{ID: "c1", Type: "function",
 			Function: aguix.FunctionCall{Name: "fill_field", Arguments: "{}"}}}},
 		{ID: "a3", Role: "assistant", ToolCalls: []aguix.ToolCall{{ID: "c2", Type: "function",
@@ -313,7 +355,7 @@ func TestRebuildPlacesSealedThinkingOnTheModelTurnItSitsIn(t *testing.T) {
 			}
 		}
 	}
-	want := []string{"text go", "thought Plan. sig-1", "text On it.", "call c1", "call c2",
+	want := []string{"text go", "thought Plan. sig-1", "thought Then. sig-2", "text On it.", "call c1", "call c2",
 		"response c1", "response c2", "thought Plan. sig-1", "text Both done.",
 		"text again", "thought Plan. sig-1", "text Sure."}
 	if !slices.Equal(got, want) {
@@ -325,7 +367,8 @@ func TestRebuildPlacesSealedThinkingOnTheModelTurnItSitsIn(t *testing.T) {
 func TestRebuildDropsSealedThinkingAUserMessageFollows(t *testing.T) {
 	history, _, err := rebuild([]aguix.Message{
 		text("user", "a"),
-		{ID: "r1", Role: "reasoning", Content: aguix.TextContent("Old."), EncryptedValue: "sig-1"},
+		{ID: "r1", Role: "reasoning", Content: aguix.TextContent("Old."),
+			EncryptedValue: sealOf(sealedBlock{Length: 4, Signature: []byte("s")})},
 		text("user", "b"),
 		{ID: "a1", Role: "assistant", ToolCalls: []aguix.ToolCall{{ID: "c1", Type: "function",
 			Function: aguix.FunctionCall{Name: "fill_field", Arguments: "{}"}}}},

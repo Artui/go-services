@@ -282,6 +282,12 @@ const toolResult = await twoRuns("reasoning-tool-result", transcript("reasoning-
   (agent) => agent.addMessage({ id: "t1", role: "tool", toolCallId: "c1", content: '{"filled":true}' }));
 writeFileSync(join(approvalInbound, "reasoning-tool-result.json"), `${toolResult}\n`);
 
+const blocksResult = await twoRuns("reasoning-blocks-tool-result", transcript("reasoning-blocks"),
+  [{ id: "user-Fill in my email.", role: "user", content: "Fill in my email." }],
+  { runId: "run-think", tools: [fillField] }, { tools: [fillField] },
+  (agent) => agent.addMessage({ id: "t1", role: "tool", toolCallId: "toolu_01", content: '{"filled":true}' }));
+writeFileSync(join(approvalInbound, "reasoning-blocks-tool-result.json"), `${blocksResult}\n`);
+
 const call = { id: "c1", type: "function", function: { name: "borrow_book", arguments: '{"book_id":4}' } };
 
 const frames = {
