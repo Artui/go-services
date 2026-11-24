@@ -21,6 +21,15 @@ const interruptPrefix = "int-"
 // confirmKey is the interrupt metadata key the web component reads its prompt from.
 const confirmKey = "x-confirm"
 
+// The web component restores a waiting thread only for an interrupt whose
+// metadata kind is "approval", and approves one in place from its inbox only
+// when destructive is false; a missing flag counts as destructive.
+const (
+	kindKey        = "kind"
+	kindApproval   = "approval"
+	destructiveKey = "destructive"
+)
+
 // Approval decides which server tools wait for a person, and carries each spec's
 // prompt to the client.
 //
@@ -109,6 +118,13 @@ func WithApproval(a *Approval) Option {
 	}
 }
 
+// destructive reports whether a's own gate asks about name, which is how
+// django-ag-ui marks a waiting call destructive. Without an approval the gate is
+// unknown, so the call counts as destructive, as the web component counts it.
+func (a *Approval) destructive(name string) bool {
+	return a == nil || a.gated[name]
+}
+
 func (a *Approval) prompt(name string) (string, bool) {
 	if a == nil {
 		return "", false
@@ -150,9 +166,11 @@ func (a *Approval) interruptFor(confirmation *genai.FunctionCall) (aguix.Interru
 		Message:        fmt.Sprintf("Approve %s(%s)?", original.Name, encoded),
 		ResponseSchema: responseSchema(),
 	}
+	metadata := map[string]any{kindKey: kindApproval, destructiveKey: a.destructive(original.Name)}
 	if prompt, ok := a.prompt(original.Name); ok {
-		in.Metadata = map[string]any{confirmKey: prompt}
+		metadata[confirmKey] = prompt
 	}
+	in.Metadata = metadata
 	return in, nil
 }
 
