@@ -1,0 +1,55 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-think"}
+
+data: {"type":"REASONING_START","messageId":"run-think-1"}
+
+data: {"type":"REASONING_MESSAGE_START","messageId":"run-think-1","role":"reasoning"}
+
+data: {"type":"REASONING_MESSAGE_CONTENT","messageId":"run-think-1","delta":"The "}
+
+data: {"type":"REASONING_MESSAGE_CONTENT","messageId":"run-think-1","delta":"email "}
+
+data: {"type":"REASONING_MESSAGE_CONTENT","messageId":"run-think-1","delta":"field "}
+
+data: {"type":"REASONING_MESSAGE_CONTENT","messageId":"run-think-1","delta":"is "}
+
+data: {"type":"REASONING_MESSAGE_CONTENT","messageId":"run-think-1","delta":"the "}
+
+data: {"type":"REASONING_MESSAGE_CONTENT","messageId":"run-think-1","delta":"one "}
+
+data: {"type":"REASONING_MESSAGE_CONTENT","messageId":"run-think-1","delta":"to "}
+
+data: {"type":"REASONING_MESSAGE_CONTENT","messageId":"run-think-1","delta":"fill."}
+
+data: {"type":"REASONING_MESSAGE_END","messageId":"run-think-1"}
+
+data: {"type":"REASONING_END","messageId":"run-think-1"}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"run-think-2","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-think-2","delta":"Filling "}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-think-2","delta":"it "}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-think-2","delta":"in."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"run-think-2"}
+
+data: {"type":"REASONING_ENCRYPTED_VALUE","subtype":"message","entityId":"run-think-1","encryptedValue":"EqQBCkYIBxgCKkDsig=="}
+
+data: {"type":"REASONING_START","messageId":"run-think-3"}
+
+data: {"type":"REASONING_MESSAGE_START","messageId":"run-think-3","role":"reasoning"}
+
+data: {"type":"REASONING_MESSAGE_END","messageId":"run-think-3"}
+
+data: {"type":"REASONING_END","messageId":"run-think-3"}
+
+data: {"type":"REASONING_ENCRYPTED_VALUE","subtype":"message","entityId":"run-think-3","encryptedValue":"EmwKAhgBEgy3redacted=="}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"c1","toolCallName":"fill_field","parentMessageId":"run-think-2"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"field\":\"email\"}","toolCallId":"c1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"c1"}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-think","outcome":{"type":"success","pendingToolCallIds":["c1"]}}

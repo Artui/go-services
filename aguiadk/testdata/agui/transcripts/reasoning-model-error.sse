@@ -1,0 +1,17 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-1"}
+
+data: {"type":"REASONING_START","messageId":"run-1-1"}
+
+data: {"type":"REASONING_MESSAGE_START","messageId":"run-1-1","role":"reasoning"}
+
+data: {"type":"REASONING_MESSAGE_CONTENT","messageId":"run-1-1","delta":"Let "}
+
+data: {"type":"REASONING_MESSAGE_CONTENT","messageId":"run-1-1","delta":"me "}
+
+data: {"type":"REASONING_MESSAGE_CONTENT","messageId":"run-1-1","delta":"see"}
+
+data: {"type":"REASONING_MESSAGE_END","messageId":"run-1-1"}
+
+data: {"type":"REASONING_END","messageId":"run-1-1"}
+
+data: {"type":"RUN_ERROR","message":"The assistant could not complete that. The reason was recorded on the server.","code":"error"}

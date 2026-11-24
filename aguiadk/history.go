@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 
 	"github.com/Artui/go-services/aguix"
 	"google.golang.org/adk/v2/model"
@@ -57,12 +58,29 @@ func rebuild(messages []aguix.Message, author string) (history []*session.Event,
 		}
 	}
 	calls := map[string]callRef{}
-	var turns []turn
+	var (
+		turns    []turn
+		thoughts []*genai.Part
+	)
 	for i, m := range messages {
 		switch m.Role {
 		case "user":
+			thoughts = nil
 			// Text only: image and other non-text parts are not carried yet.
 			turns = append(turns, turn{userTurn, genai.NewContentFromText(m.Text(), genai.RoleUser)})
+		case "reasoning":
+			// Claude refuses a tool result whose call's turn lost its thinking, so
+			// a signed block goes back unchanged, on the model turn it sits in: the
+			// client files a block sealed after the text started behind that text.
+			if m.EncryptedValue == "" {
+				continue
+			}
+			part := &genai.Part{Thought: true, Text: m.Text(), ThoughtSignature: []byte(m.EncryptedValue)}
+			if n := len(turns); n > 0 && turns[n-1].kind == modelTurn {
+				turns[n-1].content.Parts = withThoughts(turns[n-1].content.Parts, part)
+				continue
+			}
+			thoughts = append(thoughts, part)
 		case "assistant":
 			parts, err := assistantParts(m, i, lastCall, calls)
 			if err != nil {
@@ -71,6 +89,8 @@ func rebuild(messages []aguix.Message, author string) (history []*session.Event,
 			if len(parts) == 0 {
 				continue
 			}
+			parts = withThoughts(parts, thoughts...)
+			thoughts = nil
 			// One model turn, however many messages the client split it into:
 			// ADK pairs a merged tool result with every call event it answers.
 			if n := len(turns); n > 0 && turns[n-1].kind == modelTurn {
@@ -79,6 +99,7 @@ func rebuild(messages []aguix.Message, author string) (history []*session.Event,
 			}
 			turns = append(turns, turn{modelTurn, &genai.Content{Role: genai.RoleModel, Parts: parts}})
 		case "tool":
+			thoughts = nil
 			part, err := toolPart(m, calls)
 			if err != nil {
 				return nil, nil, err
@@ -92,7 +113,8 @@ func rebuild(messages []aguix.Message, author string) (history []*session.Event,
 			turns = append(turns, turn{toolTurn, &genai.Content{Role: genai.RoleUser, Parts: []*genai.Part{part}}})
 		}
 		// The agent's Instruction is the system prompt, so a client's system or
-		// developer message is dropped, as are reasoning and activity messages.
+		// developer message is dropped, as are activity messages and unsigned or
+		// unfollowed reasoning.
 	}
 
 	if n := len(turns); n > 0 && turns[n-1].kind != modelTurn {
@@ -107,6 +129,16 @@ func rebuild(messages []aguix.Message, author string) (history []*session.Event,
 		history = append(history, &session.Event{Author: who, LLMResponse: model.LLMResponse{Content: t.content}})
 	}
 	return history, tail, nil
+}
+
+// withThoughts puts thoughts after the turn's leading thoughts and ahead of the
+// rest, the order a provider produced them in.
+func withThoughts(parts []*genai.Part, thoughts ...*genai.Part) []*genai.Part {
+	at := 0
+	for at < len(parts) && parts[at].Thought {
+		at++
+	}
+	return slices.Insert(parts, at, thoughts...)
 }
 
 func assistantParts(m aguix.Message, at int, lastCall map[string]int, calls map[string]callRef) ([]*genai.Part, error) {

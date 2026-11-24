@@ -55,11 +55,11 @@ func WithUserID(fn func(ctx context.Context) (string, error)) Option {
 // streams as a STATE_DELTA. Nothing is kept between runs, so the client's
 // history and state are the only state, as AG-UI intends.
 //
-// The run's text and tool calls stream as they arrive. Add ClientToolset to the
-// agent to let it call the tools the browser declares: a run that calls one
-// finishes with the call pending, and the client answers it in the next run. A
-// run that ends on an assistant message has nothing to answer and finishes
-// without calling the agent.
+// The run's thinking, text and tool calls stream as they arrive. Add
+// ClientToolset to the agent to let it call the tools the browser declares: a
+// run that calls one finishes with the call pending, and the client answers it
+// in the next run. A run that ends on an assistant message has nothing to
+// answer and finishes without calling the agent.
 func New(root agent.Agent, opts ...Option) (aguix.Agent, error) {
 	if root == nil {
 		return nil, errors.New("aguiadk: New needs an agent")
@@ -137,10 +137,12 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 
 	tr := newTranslator(messageIDs(in.RunID))
 	tr.approval, tr.denied, tr.based = b.approval, denied, seed != nil
-	runErr := b.drive(withClientTools(ctx, tools), r, userID, in.ThreadID, tail, tr, out)
+	ctx, queued := withSink(withClientTools(ctx, tools))
+	runErr := b.drive(ctx, r, userID, in.ThreadID, tail, tr, queued, out)
 	// Whatever the run opened is closed before it ends, so a failed run still
-	// leaves a well-formed stream ahead of the handler's RUN_ERROR.
-	if closeErr := emit(out, tr.close()); runErr == nil {
+	// leaves a well-formed stream ahead of the handler's RUN_ERROR, and still
+	// tells the page about a write that committed before the failure.
+	if closeErr := emit(out, append(tr.close(), queued.drain()...)); runErr == nil {
 		runErr = closeErr
 	}
 	if runErr != nil {
@@ -214,7 +216,7 @@ func (b *bridge) prepare(
 // request follows it, and becomes the run's interrupt.
 func (b *bridge) drive(
 	ctx context.Context, r *runner.Runner, userID, sessionID string,
-	tail *genai.Content, tr *translator, out *aguix.Stream,
+	tail *genai.Content, tr *translator, queued *sink, out *aguix.Stream,
 ) error {
 	cfg := agent.RunConfig{StreamingMode: agent.StreamingModeSSE, MaxLLMCalls: b.maxLLMCalls}
 	awaitingClient := false
@@ -234,7 +236,8 @@ func (b *bridge) drive(
 		if err != nil {
 			return err
 		}
-		if err := emit(out, frames); err != nil {
+		// What a call published goes after the event carrying its result.
+		if err := emit(out, append(frames, queued.drain()...)); err != nil {
 			return err
 		}
 		if ev.Partial {

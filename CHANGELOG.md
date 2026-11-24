@@ -342,6 +342,44 @@ floor rises to `v0.6.0`, so a failed run's `RUN_ERROR` now carries a `code`.
   two-call run's usage and an interrupt that is not destructive, and the wire
   script checks them.
 
+`aguiadk/v0.5.0` streams a model's thinking and lets a tool tell the page what
+it changed. It needs no new aguix type, so its floors stay where `v0.4.0` set
+them.
+
+- **Thinking streams as `REASONING_*` frames.** `Thought` parts are sent as
+  `REASONING_START`, `REASONING_MESSAGE_START`, the deltas, `REASONING_MESSAGE_END`
+  and `REASONING_END`; text and reasoning never interleave, each ending the
+  other, and a run that fails mid-thought still closes its span before
+  `RUN_ERROR`. The reasoning message is never a tool call's parent.
+- **A signed block's signature is its `REASONING_ENCRYPTED_VALUE`**, of subtype
+  `message`, after the span. `anthropicmodel` signs a block only in the
+  complete response, so a streamed block is sealed only when the stream holds
+  exactly one reasoning message whose text is the response's first thought
+  part, byte for byte; the parts after it never streamed and are spans of their
+  own, a redacted block an empty one. Any other shape is sent unsealed, and a
+  signature that is not UTF-8, which JSON would rewrite, is not sent.
+- **The next run hands Claude its thinking back.** Claude requires the final
+  assistant turn of a thinking-enabled request to start with its thinking
+  block, which is the turn a tool result or an approval resume answers. A
+  `reasoning` message with an `encryptedValue` is replayed as a signed
+  `Thought` part, unchanged, on the model turn it sits in, ahead of that turn's
+  text and calls; the client files a block sealed after the text started behind
+  the assistant message, so the turn is found on either side. A `reasoning`
+  message with no `encryptedValue`, or with a user or tool message before the
+  next model turn, is still dropped.
+- **`PublishInvalidation(ctx, reason, keys...)`** queues a CUSTOM
+  `ag_ui.invalidate` event, `{keys, reason}` with an empty reason sent as
+  `null`, as django-ag-ui sends it. A spec's handler calls it with its
+  `Ctx.Context`. The event is sent after the event carrying the call's result,
+  so after a spec's transaction has committed, and whatever is still queued when
+  a run ends, a failed one included, is sent before it finishes. It returns
+  `false`, and queues nothing, outside a bridge run or with no keys.
+  `InvalidateEventName` names the event.
+- Four transcripts are added under `aguiadk/testdata/agui/transcripts`, and
+  `scripts/agui-wire/generate.mjs` writes two inbound fixtures from two of
+  them: the client's request after the page answers a browser tool the model
+  thought before, and its resume of an approval the model thought before.
+
 ## [Unreleased]
 
 ### Added

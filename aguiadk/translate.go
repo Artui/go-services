@@ -51,6 +51,11 @@ type translator struct {
 	// based is whether the client holds an object a STATE_DELTA can patch:
 	// the run sent one, or this run has sent a STATE_SNAPSHOT.
 	based bool
+
+	// reasoning is the reasoning message being streamed, and thoughts those
+	// streamed since the last complete event, which settle seals.
+	reasoning string
+	thoughts  []streamedThought
 }
 
 func newTranslator(newID func() string) *translator {
@@ -76,8 +81,12 @@ func (t *translator) translate(ev *session.Event) ([]aguix.Event, error) {
 	if ev.Partial {
 		var out []aguix.Event
 		for _, p := range parts {
-			if p != nil && !p.Thought && p.Text != "" {
-				out = t.text(out, p.Text)
+			switch {
+			case p == nil || p.Text == "":
+			case p.Thought:
+				out = t.think(out, p.Text)
+			default:
+				out = t.text(t.endReasoning(out), p.Text)
 				t.streamed = true
 			}
 		}
@@ -109,11 +118,14 @@ func (t *translator) translate(ev *session.Event) ([]aguix.Event, error) {
 
 	streamed := t.streamed
 	t.streamed = false
-	var out []aguix.Event
+	out, spans := t.settle(t.endText(t.endReasoning(nil)), parts)
 	for i, p := range parts {
 		switch {
-		// Thought parts are reasoning, which this bridge does not stream yet.
-		case p == nil, p.Thought:
+		case p == nil:
+		case p.Thought:
+			if spans[i] {
+				out = t.span(out, p)
+			}
 		case confirmation(p, ev):
 		case p.FunctionResponse != nil && hasKey(awaiting, p.FunctionResponse.ID):
 		case p.FunctionCall != nil:
@@ -129,7 +141,7 @@ func (t *translator) translate(ev *session.Event) ([]aguix.Event, error) {
 
 // close ends whatever is still open when the run stops.
 func (t *translator) close() []aguix.Event {
-	return t.endText(nil)
+	return t.endText(t.endReasoning(nil))
 }
 
 // pending names the long-running calls seen and not yet answered, in order.

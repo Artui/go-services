@@ -31,15 +31,17 @@ var update = flag.Bool("update", false, "rewrite the SSE transcripts under testd
 // step is one scripted model answer. A step with err fails mid-stream, after its
 // text partials; a step with code answers with that error code; a step that
 // blocks waits for its context to end. usage and model ride on every response.
+// thoughts lead the complete response, and those with text stream first.
 type step struct {
-	text   string
-	calls  []*genai.FunctionCall
-	err    error
-	code   string
-	block  bool
-	usage  *genai.GenerateContentResponseUsageMetadata
-	model  string
-	custom map[string]any
+	thoughts []*genai.Part
+	text     string
+	calls    []*genai.FunctionCall
+	err      error
+	code     string
+	block    bool
+	usage    *genai.GenerateContentResponseUsageMetadata
+	model    string
+	custom   map[string]any
 }
 
 // scriptLLM answers as anthropicmodel does under SSE: the text as partials,
@@ -89,6 +91,16 @@ func (m *scriptLLM) GenerateContent(
 			yield(&model.LLMResponse{ErrorCode: s.code, ErrorMessage: "provider detail"}, nil)
 			return
 		}
+		for _, th := range s.thoughts {
+			for _, word := range strings.SplitAfter(th.Text, " ") {
+				if stream && word != "" && !yield(&model.LLMResponse{
+					Content: &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{{Text: word, Thought: true}}},
+					Partial: true,
+				}, nil) {
+					return
+				}
+			}
+		}
 		if stream && s.text != "" {
 			for _, word := range strings.SplitAfter(s.text, " ") {
 				if !yield(&model.LLMResponse{
@@ -103,7 +115,7 @@ func (m *scriptLLM) GenerateContent(
 			yield(nil, s.err)
 			return
 		}
-		var parts []*genai.Part
+		parts := slices.Clone(s.thoughts)
 		if s.text != "" {
 			parts = append(parts, genai.NewPartFromText(s.text))
 		}
