@@ -32,10 +32,12 @@ type invalidation struct {
 // has returned, so a spec's transaction has committed by then; a sibling
 // branch of a ParallelAgent does not carry it out early. A call made by a
 // sub-agent that agenttool runs counts as part of the delegating call, whose
-// result is the one the client sees. One published outside a call, from a
-// model callback say, goes out ahead of the run's next event. A call that publishes
-// and then fails still sends it, which costs the page a refetch of unchanged
-// data.
+// result is the one the client sees. ADK runs a streaming tool without the
+// tool callbacks, so its call has no id here: what it publishes goes out after
+// the run's next event, its result unless a ParallelAgent sibling yields first.
+// One published outside a call, from a model callback say, goes out ahead of
+// the run's next event. A call that publishes and then fails still sends it,
+// which costs the page a refetch of unchanged data.
 //
 // It reports whether a run was listening. Outside a bridge run, or with no
 // keys, nothing is queued and it returns false.

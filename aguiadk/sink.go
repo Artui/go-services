@@ -20,14 +20,17 @@ import (
 // committed by the time the page hears of it, whatever a sibling branch of a
 // ParallelAgent yields meanwhile. A frame published anywhere else, a model
 // callback for instance, has no result to wait for and goes out ahead of the
-// next event, which ADK yields after the callback ran.
+// next event, which ADK yields after the callback ran. A call the plugin could
+// not name (ADK runs a streaming tool without the tool callbacks) has no id to
+// wait on, so its frames go out after the next event, which is its result's.
 //
 // ADK may run a step's calls concurrently, hence the lock.
 type sink struct {
-	mu     sync.Mutex
-	loose  []aguix.Event
-	byCall map[string][]aguix.Event
-	order  []string
+	mu       sync.Mutex
+	loose    []aguix.Event
+	trailing []aguix.Event
+	byCall   map[string][]aguix.Event
+	order    []string
 
 	// live sends a frame now, for what is only worth seeing while it happens.
 	live func(aguix.Event)
@@ -48,11 +51,16 @@ func sinkFrom(ctx context.Context) *sink {
 
 // publish queues ev under the call ctx belongs to, if any.
 func (s *sink) publish(ctx context.Context, ev aguix.Event) {
-	id := slotOf(ctx).root()
+	c := slotOf(ctx)
+	id := c.root()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if id == "" {
+	if c == nil {
 		s.loose = append(s.loose, ev)
+		return
+	}
+	if id == "" {
+		s.trailing = append(s.trailing, ev)
 		return
 	}
 	if _, held := s.byCall[id]; !held {
@@ -63,13 +71,13 @@ func (s *sink) publish(ctx context.Context, ev aguix.Event) {
 
 // drain returns what goes out around the frames of the next event: before
 // them, everything published outside a call, which happened before the event
-// was yielded; after them, what each call the event answers published, in the
-// order it answers them.
+// was yielded; after them, what unnamed calls published and then what each
+// call the event answers published, in the order it answers them.
 func (s *sink) drain(answered []string) (before, after []aguix.Event) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	before = s.loose
-	s.loose = nil
+	before, after = s.loose, s.trailing
+	s.loose, s.trailing = nil, nil
 	for _, id := range answered {
 		after = append(after, s.byCall[id]...)
 		s.release(id)
@@ -83,8 +91,8 @@ func (s *sink) drain(answered []string) (before, after []aguix.Event) {
 func (s *sink) drainAll() []aguix.Event {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := s.loose
-	s.loose = nil
+	out := append(s.loose, s.trailing...)
+	s.loose, s.trailing = nil, nil
 	for _, id := range slices.Clone(s.order) {
 		out = append(out, s.byCall[id]...)
 		s.release(id)
@@ -167,15 +175,16 @@ func sinkPlugin() *plugin.Plugin {
 			return nil, nil
 		},
 		// A call to a tool the agent lacks reaches only the error callback; one
-		// that fails reaches both, and is reported once.
+		// that fails reaches it first, so the after callback never reports an
+		// error, and a call is reported once.
 		OnToolErrorCallback: func(ctx agent.Context, _ tool.Tool, _ map[string]any, _ error) (map[string]any, error) {
 			returned(ctx, false)
 			return nil, nil
 		},
 		AfterToolCallback: func(
-			ctx agent.Context, _ tool.Tool, _, result map[string]any, err error,
+			ctx agent.Context, _ tool.Tool, _, result map[string]any, _ error,
 		) (map[string]any, error) {
-			returned(ctx, err == nil && !failed(result))
+			returned(ctx, !failed(result))
 			return nil, nil
 		},
 	})

@@ -3,6 +3,7 @@ package aguiadk
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"regexp"
 	"strings"
@@ -16,6 +17,7 @@ import (
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/agenttool"
+	"google.golang.org/adk/v2/tool/functiontool"
 	"google.golang.org/genai"
 )
 
@@ -248,6 +250,9 @@ func TestADelegatedSubAgentsCallsStreamAsProgress(t *testing.T) {
 			t.Errorf("a result preceded its call:\n%s", strings.Join(got, "\n"))
 		}
 	}
+	if len(got) < 5 {
+		t.Fatalf("want four progress frames and an invalidation:\n%s", strings.Join(got, "\n"))
+	}
 	for _, c := range got[:4] {
 		if !strings.Contains(c, `{"name":"ag_ui.subagent","type":"CUSTOM","value":{"agent":"researcher","delegationId":"d1"`) {
 			t.Errorf("progress frame %s", c)
@@ -257,4 +262,50 @@ func TestADelegatedSubAgentsCallsStreamAsProgress(t *testing.T) {
 		t.Errorf("the sub-agent's write was not sent after the delegation's result: %s", got[4])
 	}
 	golden(t, "subagent", s)
+}
+
+// delegate runs a researcher with tools that makes call once, and returns the
+// progress frames it sent.
+func delegate(t *testing.T, tools []tool.Tool, call *genai.FunctionCall) []string {
+	t.Helper()
+	researcher, err := llmagent.New(llmagent.Config{
+		Name: "researcher", Description: "Looks things up.", Tools: tools,
+		Model: &scriptLLM{steps: []step{{calls: []*genai.FunctionCall{call}}, {text: "Looked."}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	root, err := llmagent.New(llmagent.Config{
+		Name: "librarian", Tools: []tool.Tool{agenttool.New(researcher, nil)},
+		Model: &scriptLLM{steps: []step{
+			{calls: []*genai.FunctionCall{{ID: "d1", Name: "researcher", Args: map[string]any{"request": "Look."}}}},
+			{text: "Done."},
+		}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return customs(serve(t, mustNew(t, root), input("run-del", text("user", "Look it up."))))
+}
+
+// A delegated call that fails, by its error or by the result ADK makes of
+// one, is reported once, as not ok.
+func TestADelegatedCallThatFailsIsReportedOnceAsNotOK(t *testing.T) {
+	type in struct{}
+	for name, run := range map[string]func(agent.Context, in) (map[string]any, error){
+		"error":  func(agent.Context, in) (map[string]any, error) { return nil, errors.New("boom") },
+		"result": func(agent.Context, in) (map[string]any, error) { return map[string]any{"error": "nope"}, nil },
+	} {
+		t.Run(name, func(t *testing.T) {
+			ft, err := functiontool.New(functiontool.Config{Name: "look", Description: "Looks."}, run)
+			if err != nil {
+				t.Fatal(err)
+			}
+			got := delegate(t, []tool.Tool{ft}, &genai.FunctionCall{ID: "r1", Name: "look"})
+			want := `"phase":"tool_result","status":"researcher: look failed","tool":{"name":"look","ok":false,"toolCallId":"r1"}`
+			if len(got) != 2 || !strings.Contains(got[1], want) {
+				t.Errorf("progress:\n%s", strings.Join(got, "\n"))
+			}
+		})
+	}
 }

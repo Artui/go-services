@@ -9,6 +9,7 @@ import (
 	"sync"
 	"testing"
 
+	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/genai"
 )
@@ -162,5 +163,68 @@ func TestALongHistoryIsCompacted(t *testing.T) {
 	}
 	if text := ofType(frames, "TEXT_MESSAGE_START"); len(text) != 1 || text[0] < snaps[0] {
 		t.Errorf("the notice (%d) does not lead the answer (%v)", snaps[0], text)
+	}
+}
+
+func history(roles ...string) []*genai.Content {
+	var out []*genai.Content
+	for i, r := range roles {
+		switch r {
+		case "user":
+			out = append(out, genai.NewContentFromText(fmt.Sprint("q", i), genai.RoleUser))
+		case "call":
+			out = append(out, &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{
+				{FunctionCall: &genai.FunctionCall{ID: fmt.Sprint("c", i), Name: "list_books"}}}})
+		case "result":
+			out = append(out, &genai.Content{Role: genai.RoleUser, Parts: []*genai.Part{
+				{FunctionResponse: &genai.FunctionResponse{ID: fmt.Sprint("c", i-1), Name: "list_books"}}}})
+		}
+	}
+	return out
+}
+
+// The cut moves forward past a tool round trip to the next member's message, and
+// a window holding no member's message is left alone, since a tool result
+// without its call is a request the provider refuses.
+func TestTheCutNeverSplitsAToolRoundTrip(t *testing.T) {
+	var roles []string
+	for range 5 {
+		roles = append(roles, "user", "call", "result")
+	}
+	roles = append(roles, "user", "call", "result", "call", "result", "call", "result", "call", "result", "user")
+	req := &model.LLMRequest{Contents: history(roles...)}
+	if roles[len(roles)-keepContents] != "result" {
+		t.Fatal("the window must start on a tool result")
+	}
+	if _, err := compact(&agent.ContextMock{}, req); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(req.Contents); n != keepContents-1 || req.Contents[0].Parts[0].Text != "q6" {
+		t.Errorf("kept %d contents starting %+v, want 19 from the member's q6", n, req.Contents[0].Parts[0])
+	}
+
+	roles = []string{"user"}
+	for range keepContents {
+		roles = append(roles, "call", "result")
+	}
+	req = &model.LLMRequest{Contents: history(roles...)}
+	if _, err := compact(&agent.ContextMock{}, req); err != nil {
+		t.Fatal(err)
+	}
+	if n := len(req.Contents); n != len(roles) {
+		t.Errorf("a window with no member's message was cut to %d", n)
+	}
+}
+
+// Five follow-ups are refused, and the model hears why.
+func TestTooManyFollowUpsAreRefused(t *testing.T) {
+	frames := run(t, &byAgent{librarian: []*genai.FunctionCall{{ID: "c1", Name: "suggest_follow_ups", Args: map[string]any{
+		"prompts": []any{"a", "b", "c", "d", "e"},
+	}}}}, newDB(t))
+	if len(ofType(frames, "ACTIVITY_SNAPSHOT")) != 0 {
+		t.Error("the refused follow-ups were drawn")
+	}
+	if r := encoded(frames[resultOf(t, frames, "c1")]["content"]); !strings.Contains(r, "at most 4 suggestions") {
+		t.Errorf("result = %s", r)
 	}
 }

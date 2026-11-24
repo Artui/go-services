@@ -403,8 +403,9 @@ needs no new aguix type, so its floors stay where `v0.5.0` set them.
   event no longer carries it out before the spec's transaction commits. The
   call is found from a context the call derives, a spec's transaction
   included. A call made by a sub-agent that `agenttool` runs counts as the
-  delegating call, whose result is the one the client sees. What is published
-  outside a call, from a model callback say, now goes out ahead of the run's
+  delegating call, whose result is the one the client sees. A streaming tool,
+  which ADK runs without the tool callbacks, keeps `v0.5.0`'s rule: after the
+  run's next event. What is published outside a call, from a model callback say, now goes out ahead of the run's
   next event rather than after it. Whatever is still held when a run ends is
   sent before it finishes, as before. The bridge fans a step's calls out
   through its own `platform.TaskRunner`, still one goroutine per call, so a

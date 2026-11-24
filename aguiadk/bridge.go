@@ -62,6 +62,10 @@ func WithUserID(fn func(ctx context.Context) (string, error)) Option {
 // run that calls one finishes with the call pending, and the client answers it
 // in the next run. A run that ends on an assistant message has nothing to
 // answer and finishes without calling the agent.
+//
+// Each run installs its own ADK task runner (platform.WithTaskRunner) to tell a
+// step's concurrent calls apart, replacing one a caller put on the request's
+// context; ADK has no way to read the installed one back and wrap it.
 func New(root agent.Agent, opts ...Option) (aguix.Agent, error) {
 	if root == nil {
 		return nil, errors.New("aguiadk: New needs an agent")

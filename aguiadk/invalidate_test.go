@@ -18,6 +18,7 @@ import (
 	"google.golang.org/adk/v2/agent/workflowagents/parallelagent"
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/tool"
+	"google.golang.org/adk/v2/tool/functiontool"
 	"google.golang.org/genai"
 )
 
@@ -257,4 +258,39 @@ func TestUnderAParallelAgentAnInvalidationFollowsItsOwnCallsResult(t *testing.T)
 			meanwhile, result, s.body)
 	}
 	golden(t, "invalidate-parallel", s)
+}
+
+// ADK runs a streaming tool without the tool callbacks, so the plugin never
+// names its call; what it publishes still follows the result it yields.
+func TestAStreamingToolsInvalidationFollowsItsResult(t *testing.T) {
+	stream, err := functiontool.NewStreaming(functiontool.Config{Name: "count", Description: "Counts."},
+		func(ctx agent.Context, _ struct{}) iter.Seq2[string, error] {
+			return func(yield func(string, error) bool) {
+				PublishInvalidation(ctx, "count", "counts")
+				yield("one", nil)
+			}
+		})
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := llmagent.New(llmagent.Config{
+		Name: "counter", Tools: []tool.Tool{stream},
+		Model: &scriptLLM{steps: []step{{calls: []*genai.FunctionCall{{ID: "c1", Name: "count"}}}, {text: "Counted."}}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := serve(t, mustNew(t, a), input("run-stream", text("user", "Count.")))
+	result, custom := -1, -1
+	for i, f := range s.frames {
+		switch {
+		case f["type"] == "TOOL_CALL_RESULT" && result < 0:
+			result = i
+		case f["type"] == "CUSTOM":
+			custom = i
+		}
+	}
+	if result < 0 || custom < result {
+		t.Errorf("the invalidation (%d) is not after the call's result (%d)", custom, result)
+	}
 }

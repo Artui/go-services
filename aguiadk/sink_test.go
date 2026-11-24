@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"net/http/httptest"
 	"slices"
 	"testing"
 
@@ -87,5 +88,24 @@ func TestThePluginIgnoresACallWithoutASlot(t *testing.T) {
 	}
 	if r, err := p.AfterToolCallback()(ctx, nil, nil, nil, nil); r != nil || err != nil {
 		t.Errorf("after: %v %v", r, err)
+	}
+}
+
+// A frame sent live after the run's last frames is dropped, not written past
+// RUN_FINISHED.
+func TestAFrameSentLiveAfterTheRunEndsIsDropped(t *testing.T) {
+	rec := httptest.NewRecorder()
+	stream, err := aguix.NewStream(rec)
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := &wire{out: stream}
+	if err := w.end(nil); err != nil {
+		t.Fatal(err)
+	}
+	before := rec.Body.Len()
+	w.live(aguix.Custom(SubagentEventName, nil))
+	if rec.Body.Len() != before {
+		t.Errorf("wrote after the end: %q", rec.Body.String()[before:])
 	}
 }
