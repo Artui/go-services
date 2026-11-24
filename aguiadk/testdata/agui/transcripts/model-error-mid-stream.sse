@@ -8,4 +8,4 @@ data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-1-1","delta":"there"}
 
 data: {"type":"TEXT_MESSAGE_END","messageId":"run-1-1"}
 
-data: {"type":"RUN_ERROR","message":"The assistant could not complete that. The reason was recorded on the server."}
+data: {"type":"RUN_ERROR","message":"The assistant could not complete that. The reason was recorded on the server.","code":"error"}
