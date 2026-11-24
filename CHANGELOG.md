@@ -389,39 +389,36 @@ them.
   blocks and a redacted one, served to `anthropicmodel` as the Messages API
   streams it, and the client's resume of an approval the model thought before.
 
-## [Unreleased]
-
-### aguiadk
-
-The next aguiadk release sends what a tool publishes after that tool's own
-result, adds activity helpers, and reports a delegated sub-agent's calls. It
-needs no new aguix type, so its floors stay where `v0.5.0` set them.
+`aguiadk/v0.6.0` sends what a tool publishes after that tool's own result, adds
+activity helpers, and reports a delegated sub-agent's calls. It needs no new
+aguix type, so its floors stay where `v0.5.0` set them.
 
 - **An invalidation now follows its own call's `TOOL_CALL_RESULT`, even under a
   `ParallelAgent`.** What a tool call publishes is held under that call's id and
   sent right after the event that carries its result, so a sibling branch's
-  event no longer carries it out before the spec's transaction commits. The
-  call is found from a context the call derives, a spec's transaction
-  included. A call made by a sub-agent that `agenttool` runs counts as the
-  delegating call, whose result is the one the client sees. A streaming tool,
-  which ADK runs without the tool callbacks, keeps `v0.5.0`'s rule: after the
-  run's next event. What is published outside a call, from a model callback say, now goes out ahead of the run's
-  next event rather than after it. Whatever is still held when a run ends is
-  sent before it finishes, as before. The bridge fans a step's calls out
-  through its own `platform.TaskRunner`, still one goroutine per call, so a
-  runner installed on the request's context is replaced for the run.
+  event no longer carries it out before the spec's transaction commits. The call
+  is found from a context the call derives, a spec's transaction included. A
+  call made by a sub-agent that `agenttool` runs counts as the delegating call,
+  whose result is the one the client sees. A streaming tool, which ADK runs
+  without the tool callbacks, keeps `v0.5.0`'s rule: after the run's next event.
+  What is published outside a call, from a model callback say, now goes out
+  ahead of the run's next event rather than after it. Whatever is still held
+  when a run ends is sent before it finishes, as before. The bridge fans a
+  step's calls out through its own `platform.TaskRunner`, still one goroutine
+  per call, so a runner installed on the request's context is replaced for the
+  run.
 - **`PublishSuggestions(ctx, id, prompts...)`** sends an `ACTIVITY_SNAPSHOT` of
   type `suggestions`, `{prompts}`, with `replace: true`: at most
-  `MaxSuggestions` (4) prompts of at most `MaxSuggestionChars` (120)
-  characters, trimmed, none blank. An empty id is `suggestions-<uuid>`; the same
-  id replaces a row already drawn.
+  `MaxSuggestions` (4) prompts of at most `MaxSuggestionChars` (120) characters,
+  trimmed, none blank. An empty id is `suggestions-<uuid>`; the same id replaces
+  a row already drawn.
 - **`PublishChart(ctx, id, ChartSpec)`** sends one of type `chart`, the content
   django-ag-ui's `ChartSpec.as_content` builds: `kind` (empty is `bar`),
   `labels`, `series` of `{label, points}`, a `title` when set, and `Metadata`
-  merged beneath them. A spec the web component would drop is refused: no
-  labels or series, more than `MaxChartLabels` labels or `MaxChartPoints`
-  points, a series of the wrong length, or a point that is not finite or is
-  past `MaxChartMagnitude`. An empty id is `chart-<uuid>`.
+  merged beneath them. A spec the web component would drop is refused: no labels
+  or series, more than `MaxChartLabels` labels or `MaxChartPoints` points, a
+  series of the wrong length, or a point that is not finite or is past
+  `MaxChartMagnitude`. An empty id is `chart-<uuid>`.
 - **`PublishCompaction(ctx, before, after)`** sends one of type `compaction`,
   `{removed, before, after}`, when `after` is below `before`.
 - These follow the invalidation's rule: published inside a call, after its
@@ -439,6 +436,8 @@ needs no new aguix type, so its floors stay where `v0.5.0` set them.
 - Three transcripts are added under `aguiadk/testdata/agui/transcripts`: an
   invalidation under a `ParallelAgent`, activities from a tool and a model
   callback, and a delegated sub-agent's progress.
+
+## [Unreleased]
 
 ### Added
 

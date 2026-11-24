@@ -36,8 +36,8 @@ const (
 // Every Publish function below queues its frame as PublishInvalidation does:
 // from inside a tool call it goes out right after that call's result (a
 // streaming tool's, after the next event), and from anywhere else ahead of the
-// run's next event. Each reports whether a run was
-// listening, and refuses what the web component would not draw.
+// run's next event. Each reports whether a run was listening, and refuses what
+// the web component would not draw.
 
 // PublishSuggestions offers up to MaxSuggestions follow-up prompts as chips;
 // clicking one sends its text as the user's message, so write each as the user
