@@ -43,7 +43,9 @@ const modelName = "claude-sonnet-5-5"
 const instruction = `You are the librarian of a small lending library. Use the tools to look up
 books and loans and to borrow a book for the member you are talking to. Report what the tool
 returned, in a sentence or two; when a tool refuses, say why and do not retry the same call.
-Fines are reported in cents.`
+Fines are reported in cents. Ask the catalogue when a question needs several lookups. Draw
+chart_loans when the member asks how popular the books are. After you answer, you may offer
+follow-ups with suggest_follow_ups.`
 
 // memberKey carries the signed-in member through the request context.
 //
@@ -80,9 +82,14 @@ func newHandler(llm model.LLM, db *sql.DB) (http.Handler, error) {
 	if err != nil {
 		return nil, fmt.Errorf("toolset: %w", err)
 	}
+	tools, err := pageTools(llm, specs, db)
+	if err != nil {
+		return nil, err
+	}
 	root, err := llmagent.New(llmagent.Config{
 		Name: "librarian", Model: llm, Instruction: instruction,
-		Toolsets: []tool.Toolset{specs, aguiadk.ClientToolset()},
+		Tools: tools, Toolsets: []tool.Toolset{specs, aguiadk.ClientToolset()},
+		BeforeModelCallbacks: []llmagent.BeforeModelCallback{compact},
 	})
 	if err != nil {
 		return nil, fmt.Errorf("agent: %w", err)

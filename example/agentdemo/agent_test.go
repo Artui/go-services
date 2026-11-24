@@ -73,13 +73,18 @@ func newDB(t *testing.T) *sql.DB {
 
 func run(t *testing.T, llm model.LLM, db *sql.DB) []map[string]any {
 	t.Helper()
+	return runBody(t, llm, db,
+		`{"threadId":"t","runId":"r","messages":[{"id":"u","role":"user","content":"borrow book 10"}]}`)
+}
+
+func runBody(t *testing.T, llm model.LLM, db *sql.DB, body string) []map[string]any {
+	t.Helper()
 	h, err := newHandler(llm, db)
 	if err != nil {
 		t.Fatal(err)
 	}
 	rec := httptest.NewRecorder()
-	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/agent", strings.NewReader(
-		`{"threadId":"t","runId":"r","messages":[{"id":"u","role":"user","content":"borrow book 10"}]}`)))
+	h.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/agent", strings.NewReader(body)))
 	var frames []map[string]any
 	for _, block := range strings.Split(strings.TrimSpace(rec.Body.String()), "\n\n") {
 		var f map[string]any
