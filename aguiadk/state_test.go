@@ -278,3 +278,43 @@ func TestTranslateUnencodableStateFailsWithoutChangingState(t *testing.T) {
 		t.Errorf("close after the failure = %v", got)
 	}
 }
+
+func TestASeededTempKeyIsNeitherSeededNorEchoed(t *testing.T) {
+	llm := &scriptLLM{steps: []step{{text: "Hi."}}}
+	a, err := llmagent.New(llmagent.Config{Name: "librarian", Model: llm, Instruction: "Scratch: {temp:scratch?}."})
+	if err != nil {
+		t.Fatal(err)
+	}
+	in := input("run-1", text("user", "Hi."))
+	in.State = json.RawMessage(`{"temp:scratch":"sent","keep":1}`)
+	s := serve(t, mustNew(t, a), in)
+	if got := mustJSON(t, s.first("STATE_SNAPSHOT")["snapshot"]); got != `{"keep":1}` {
+		t.Errorf("snapshot = %s", got)
+	}
+	if got := instruction(llm.request(0)); !strings.HasPrefix(got, "Scratch: .\n") {
+		t.Errorf("the model saw %q", got)
+	}
+}
+
+func TestAWriteOnTheResumeRunFollowsTheApprovedResult(t *testing.T) {
+	ar := newArchive(t)
+	llm := &scriptLLM{steps: []step{{text: "Discarded."}}}
+	approval := NewApproval(ar.entries)
+	root, err := llmagent.New(llmagent.Config{
+		Name: "librarian", Model: llm, Toolsets: []tool.Toolset{approval.Gate(ar.ts), ClientToolset()},
+		AfterToolCallbacks: []llmagent.AfterToolCallback{
+			func(ctx agent.Context, tl tool.Tool, _, result map[string]any, _ error) (map[string]any, error) {
+				return result, ctx.State().Set("last_tool", tl.Name())
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := serve(t, mustNew(t, root, WithApproval(approval)), inbound(t, "approve"))
+	wantTypes(t, s, "RUN_STARTED", "TOOL_CALL_RESULT", "STATE_DELTA",
+		"TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED")
+	if got := mustJSON(t, s.first("STATE_DELTA")["delta"]); got != `[{"op":"add","path":"/last_tool","value":"discard_book"}]` {
+		t.Errorf("delta = %s", got)
+	}
+}

@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
+	"strings"
 
 	"github.com/Artui/go-services/aguix"
 	"google.golang.org/adk/v2/agent"
@@ -154,7 +156,8 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 }
 
 // seedState decodes the client's state into the session's initial state, keeping
-// numbers as json.Number. Absent or null is no state and returns nil.
+// numbers as json.Number. Absent or null is no state and returns nil. A "temp:"
+// key is dropped: it belongs to one invocation, and the run's writes never send one.
 func seedState(raw json.RawMessage) (map[string]any, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
@@ -163,6 +166,7 @@ func seedState(raw json.RawMessage) (map[string]any, error) {
 	if err != nil {
 		return nil, fmt.Errorf("aguiadk: the run's state is not a JSON object: %w", err)
 	}
+	maps.DeleteFunc(state, func(key string, _ any) bool { return strings.HasPrefix(key, session.KeyPrefixTemp) })
 	return state, nil
 }
 
