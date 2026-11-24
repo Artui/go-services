@@ -19,23 +19,39 @@ import (
 // scripted answers as a model does: it calls the tool it is told to on its
 // first turn and speaks once it has seen the tool's result.
 type scripted struct {
-	tool string
-	args map[string]any
+	tool     string
+	args     map[string]any
+	thinking string
 }
 
 func (scripted) Name() string { return "scripted" }
 
 func (s scripted) GenerateContent(
-	_ context.Context, req *model.LLMRequest, _ bool,
+	_ context.Context, req *model.LLMRequest, stream bool,
 ) iter.Seq2[*model.LLMResponse, error] {
 	last := req.Contents[len(req.Contents)-1]
-	part := genai.NewPartFromText("Done.")
+	parts := []*genai.Part{genai.NewPartFromText("Done.")}
+	thinking := ""
 	if last.Parts[0].FunctionResponse == nil {
-		part = &genai.Part{FunctionCall: &genai.FunctionCall{ID: "call-1", Name: s.tool, Args: s.args}}
+		thinking = s.thinking
+		parts = []*genai.Part{{FunctionCall: &genai.FunctionCall{ID: "call-1", Name: s.tool, Args: s.args}}}
 	}
 	return func(yield func(*model.LLMResponse, error) bool) {
+		// As anthropicmodel does under SSE: thinking arrives as partials, then
+		// one complete response repeats it with the call.
+		for _, word := range strings.SplitAfter(thinking, " ") {
+			if stream && word != "" && !yield(&model.LLMResponse{
+				Content: &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{{Text: word, Thought: true}}},
+				Partial: true,
+			}, nil) {
+				return
+			}
+		}
+		if thinking != "" {
+			parts = append([]*genai.Part{{Text: thinking, Thought: true, ThoughtSignature: []byte("sig")}}, parts...)
+		}
 		yield(&model.LLMResponse{
-			Content:      &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{part}},
+			Content:      &genai.Content{Role: genai.RoleModel, Parts: parts},
 			TurnComplete: true,
 		}, nil)
 	}
@@ -97,7 +113,7 @@ func TestAToolTurnBorrowsABook(t *testing.T) {
 		types = append(types, fmt.Sprint(f["type"]))
 	}
 	want := []string{
-		"RUN_STARTED", "TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_END", "TOOL_CALL_RESULT",
+		"RUN_STARTED", "TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_END", "TOOL_CALL_RESULT", "CUSTOM",
 		"TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED",
 	}
 	if fmt.Sprint(types) != fmt.Sprint(want) {
@@ -125,5 +141,40 @@ func TestThePageLoadsTheSuccessor(t *testing.T) {
 	}
 	if strings.Contains(html, "ag-ui-web-component") {
 		t.Error("the page still names the retired package")
+	}
+}
+
+// Thinking and a write's invalidation reach the page as the protocol's own
+// frames: the model's thoughts as a closed REASONING span, and the borrow's
+// invalidation as a CUSTOM event after the call's result, never before it.
+func TestThinkingAndAnInvalidationReachTheWire(t *testing.T) {
+	db := newDB(t)
+	frames := run(t, scripted{
+		tool: "borrow_book", args: map[string]any{"book_id": 10},
+		thinking: "The member wants book ten, so borrow it.",
+	}, db)
+
+	at := func(typ string) int {
+		for i, f := range frames {
+			if f["type"] == typ {
+				return i
+			}
+		}
+		t.Fatalf("no %s frame in %v", typ, frames)
+		return -1
+	}
+	start, content, end := at("REASONING_START"), at("REASONING_MESSAGE_CONTENT"), at("REASONING_END")
+	result, custom := at("TOOL_CALL_RESULT"), at("CUSTOM")
+	if start >= content || content >= end || end >= result {
+		t.Errorf("reasoning is not a closed span before the result: %d %d %d %d", start, content, end, result)
+	}
+	if custom < result {
+		t.Errorf("the invalidation (%d) precedes the call's result (%d)", custom, result)
+	}
+	f := frames[custom]
+	value, _ := f["value"].(map[string]any)
+	if f["name"] != "ag_ui.invalidate" || fmt.Sprint(value["keys"]) != "[books loans]" ||
+		value["reason"] != "borrow_book" {
+		t.Errorf("invalidation = %v", f)
 	}
 }
