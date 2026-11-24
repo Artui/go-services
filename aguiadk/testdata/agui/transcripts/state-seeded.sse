@@ -1,0 +1,23 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-reasoning"}
+
+data: {"type":"STATE_SNAPSHOT","snapshot":{"draft":"sunset","turns":2}}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"c1","toolCallName":"count_turn"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{}","toolCallId":"c1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"c1"}
+
+data: {"type":"TOOL_CALL_RESULT","messageId":"run-reasoning-1","role":"tool","toolCallId":"c1","content":"{\"turns\":3}"}
+
+data: {"type":"STATE_DELTA","delta":[{"op":"add","path":"/turns","value":3}]}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"run-reasoning-2","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-reasoning-2","delta":"Noted."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"run-reasoning-2"}
+
+data: {"type":"STATE_DELTA","delta":[{"op":"add","path":"/summary","value":"Noted."}]}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-reasoning"}

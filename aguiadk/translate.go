@@ -4,7 +4,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
+	"strings"
 
 	"github.com/Artui/go-services/aguix"
 	"google.golang.org/adk/v2/session"
@@ -45,6 +47,10 @@ type translator struct {
 	approval   *Approval
 	denied     map[string]bool
 	interrupts []aguix.Interrupt
+
+	// based is whether the client holds an object a STATE_DELTA can patch:
+	// the run sent one, or this run has sent a STATE_SNAPSHOT.
+	based bool
 }
 
 func newTranslator(newID func() string) *translator {
@@ -82,6 +88,10 @@ func (t *translator) translate(ev *session.Event) ([]aguix.Event, error) {
 	if err != nil {
 		return nil, err
 	}
+	writes, err := encodeState(ev.Actions.StateDelta)
+	if err != nil {
+		return nil, err
+	}
 	var interrupts []aguix.Interrupt
 	for _, p := range parts {
 		if confirmation(p, ev) {
@@ -114,7 +124,7 @@ func (t *translator) translate(ev *session.Event) ([]aguix.Event, error) {
 			out = t.text(out, p.Text)
 		}
 	}
-	return t.endText(out), nil
+	return t.state(t.endText(out), writes), nil
 }
 
 // close ends whatever is still open when the run stops.
@@ -143,6 +153,45 @@ func (t *translator) endText(out []aguix.Event) []aguix.Event {
 	out = append(out, aguix.TextMessageEnd(t.open))
 	t.open = ""
 	return out
+}
+
+// state reports what an event wrote to the session: as a STATE_SNAPSHOT when
+// the client has nothing to patch, or else as one "add" per key, which RFC 6902
+// applies whether or not the key exists.
+func (t *translator) state(out []aguix.Event, writes map[string]json.RawMessage) []aguix.Event {
+	if len(writes) == 0 {
+		return out
+	}
+	if !t.based {
+		t.based = true
+		return append(out, aguix.StateSnapshot(writes))
+	}
+	ops := make([]aguix.PatchOperation, 0, len(writes))
+	for _, key := range slices.Sorted(maps.Keys(writes)) {
+		ops = append(ops, aguix.PatchOperation{Op: "add", Path: "/" + pointerEscape.Replace(key), Value: writes[key]})
+	}
+	return append(out, aguix.StateDelta(ops...))
+}
+
+// pointerEscape writes a key as an RFC 6901 token in one pass, so "~1" is never re-escaped.
+var pointerEscape = strings.NewReplacer("~", "~0", "/", "~1")
+
+// encodeState encodes an event's state writes up front, as encodeParts does its
+// parts. A "temp:" key lives for one invocation and ADK never stores it, so the
+// client is not told of it either.
+func encodeState(delta map[string]any) (map[string]json.RawMessage, error) {
+	writes := map[string]json.RawMessage{}
+	for key, value := range delta {
+		if strings.HasPrefix(key, session.KeyPrefixTemp) {
+			continue
+		}
+		raw, err := json.Marshal(value)
+		if err != nil {
+			return nil, fmt.Errorf("aguiadk: state key %q cannot be encoded: %w", key, err)
+		}
+		writes[key] = raw
+	}
+	return writes, nil
 }
 
 func (t *translator) call(
