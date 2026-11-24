@@ -26,11 +26,14 @@ for m in $MODULES; do
   # A module with no Go files of its own yet has nothing to measure.
   ls "$m"/*.go >/dev/null 2>&1 || continue
   profile="$PWD/cover-$(echo "$m" | tr -d './').out"
-  (cd "$m" && go test -covermode=set -coverprofile="$profile" ./... >/dev/null)
-  gaps=$(go tool cover -func="$profile" | grep -v '100.0%$' | grep -v '^total:' || true)
+  # Both commands run inside the module: from the root, `go tool cover -func`
+  # cannot resolve a submodule's packages without a go.work, which CI lacks.
+  # Its failure is fatal under set -e, so a module can never report no total.
+  report=$(cd "$m" && go test -covermode=set -coverprofile="$profile" ./... >/dev/null && go tool cover -func="$profile")
+  gaps=$(echo "$report" | grep -v '100.0%$' | grep -v '^total:' || true)
   [ -n "$gaps" ] && below="$below$gaps
 "
-  echo "$m: $(go tool cover -func="$profile" | tail -1 | awk '{print $NF}')"
+  echo "$m: $(echo "$report" | tail -1 | awk '{print $NF}')"
 done
 
 if [ -z "$(echo "$below" | tr -d '[:space:]')" ]; then
@@ -46,7 +49,7 @@ while IFS= read -r line; do
   location="${line%%:*}"
   func=$(echo "$line" | awk '{print $2}')
   key="$location:$func"
-  if grep -qF -- "$key" "$EXCLUSIONS" 2>/dev/null; then
+  if grep -qxF -- "$key" "$EXCLUSIONS" 2>/dev/null; then
     echo "allowed gap: $line"
   else
     echo "UNCOVERED: $line"
