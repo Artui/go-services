@@ -366,8 +366,9 @@ them.
   blocks, which is the turn a tool result or an approval resume answers. A
   `reasoning` message with an `encryptedValue` is split back into the blocks
   its seal lists, each replayed as a signed `Thought` part, unchanged and in
-  order, on the model turn it sits in, ahead of that turn's text and calls; the client files a block sealed after the text started behind
-  the assistant message, so the turn is found on either side. A `reasoning`
+  order, on the model turn it sits in, ahead of that turn's text and calls;
+  the client files a block sealed after the text started behind the assistant
+  message, so the turn is found on either side. A `reasoning`
   message with no `encryptedValue`, one whose seal does not split its text
   exactly, or one with a user or tool message before the next model turn, is
   still dropped.

@@ -141,13 +141,31 @@ func TestASealCarriesAnySignatureBytes(t *testing.T) {
 	}
 }
 
+// Lengths are bytes, so text beyond ASCII splits back exactly, and an unsigned
+// block after a signed one is still listed.
+func TestASealSplitsBackIntoItsBlocks(t *testing.T) {
+	got := trFeed(t, newTranslator(trIDs()),
+		trEvent(true, thought("Voilà, 日本.", "")),
+		trEvent(true, thought(" Encore é.", "")),
+		trEvent(false, thought("Voilà, 日本.", "sig-1"), thought(" Encore é.", "")),
+	)
+	seal := got[len(got)-1]
+	blocks := unseal(aguix.Message{Content: aguix.TextContent("Voilà, 日本. Encore é."), EncryptedValue: seal.EncryptedValue})
+	if len(blocks) != 2 || blocks[0].Text != "Voilà, 日本." || string(blocks[0].ThoughtSignature) != "sig-1" ||
+		blocks[1].Text != " Encore é." || blocks[1].ThoughtSignature != nil {
+		t.Errorf("unsealed %v from %s", blocks, trLine(seal))
+	}
+}
+
 // What another server sealed, or a seal whose blocks do not cover the text,
 // is not replayed: a block Claude would reject as modified is worse than none.
 func TestUnsealRefusesWhatItCannotSplit(t *testing.T) {
 	for name, value := range map[string]string{
-		"not ours":         "EqQBCkYIBxgCKkDsig==",
-		"not an object":    `["x"]`,
-		"too long":         sealOf(sealedBlock{Length: 6, Signature: []byte("s")}),
+		"not ours":      "EqQBCkYIBxgCKkDsig==",
+		"not an object": `["x"]`,
+		"too long":      sealOf(sealedBlock{Length: 6, Signature: []byte("s")}),
+		"too long after one": sealOf(sealedBlock{Length: 3, Signature: []byte("s")},
+			sealedBlock{Length: 3, Signature: []byte("t")}),
 		"negative":         sealOf(sealedBlock{Length: -1, Signature: []byte("s")}, sealedBlock{Length: 6}),
 		"short of the end": sealOf(sealedBlock{Length: 4, Signature: []byte("s")}),
 		"no blocks":        `{"blocks":[]}`,
@@ -331,7 +349,8 @@ func TestRebuildPlacesSealedThinkingOnTheModelTurnItSitsIn(t *testing.T) {
 		sealed,
 		{ID: "t2", Role: "tool", ToolCallID: "c2", Content: aguix.TextContent("ok")},
 		text("assistant", "Both done."),
-		sealed,
+		{ID: "r4", Role: "reasoning", Content: aguix.TextContent("AB"), EncryptedValue: sealOf(
+			sealedBlock{Length: 1, Signature: []byte("sig-a")}, sealedBlock{Length: 1, Signature: []byte("sig-b")})},
 		text("user", "again"),
 		{ID: "r3", Role: "reasoning", Content: aguix.TextContent("Unsealed.")},
 		text("assistant", "Sure."),
@@ -356,7 +375,7 @@ func TestRebuildPlacesSealedThinkingOnTheModelTurnItSitsIn(t *testing.T) {
 		}
 	}
 	want := []string{"text go", "thought Plan. sig-1", "thought Then. sig-2", "text On it.", "call c1", "call c2",
-		"response c1", "response c2", "thought Plan. sig-1", "text Both done.",
+		"response c1", "response c2", "thought A sig-a", "thought B sig-b", "text Both done.",
 		"text again", "thought Plan. sig-1", "text Sure."}
 	if !slices.Equal(got, want) {
 		t.Errorf("history parts:\n got %v\nwant %v", got, want)
