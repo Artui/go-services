@@ -1,0 +1,27 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-usage"}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"run-usage-1","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-usage-1","delta":"Let "}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-usage-1","delta":"me "}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-usage-1","delta":"check."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"run-usage-1"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"c1","toolCallName":"borrow_book","parentMessageId":"run-usage-1"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"book_id\":7}","toolCallId":"c1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"c1"}
+
+data: {"type":"TOOL_CALL_RESULT","messageId":"run-usage-2","role":"tool","toolCallId":"c1","content":"{\"by\":\"\",\"loan\":70}"}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"run-usage-3","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-usage-3","delta":"Lent."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"run-usage-3"}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-usage","usage":[{"model":"m-1","inputTokens":31,"outputTokens":11,"totalTokens":42,"reasoningTokens":2,"cachedInputTokens":3}]}
