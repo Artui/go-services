@@ -348,6 +348,11 @@ its last frame. Its floors are unchanged.
   exclusions match the whole line, so an uncovered function whose name is a
   prefix of an excluded one is no longer exempted.
 
+- **`make release` failed intermittently on a long Adapters section.** The
+  token check piped `awk` into `grep -q`, which quits at its first match and
+  kills `awk` with SIGPIPE; under `pipefail` that read as a missing token. The
+  section is now captured first.
+
 ### Documentation
 
 - **`WithAtomic` now names the write-lock consequence of its own ordering.**

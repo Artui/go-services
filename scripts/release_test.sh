@@ -183,6 +183,18 @@ expect "refuse: the sum database does not answer" 1 'could not ask the sum datab
   env SUMDB_URL=http://127.0.0.1:9 "$release" tag aguix v0.5.0
 
 fixture
+# A long Adapters section after the token: grep -q exits at the first match, so a
+# pipe into it kills the writer with SIGPIPE and pipefail fails the check.
+{
+  sed -n '1,/^`aguix\/v0.5.0`/p' CHANGELOG.md
+  for i in $(seq 3000); do printf 'filler paragraph %s that pads the Adapters section well past a pipe buffer.\n\n' "$i"; done
+  sed -n '/^## \[Unreleased\]/,$p' CHANGELOG.md
+} >CHANGELOG.new
+mv CHANGELOG.new CHANGELOG.md
+git commit -q -am pad && git push -q origin main
+expect "tag: a token ahead of a long Adapters section" 0 'created aguix/v0.5.0' "$release" tag aguix v0.5.0
+
+fixture
 expect "refuse: no Adapters paragraph" 1 'does not name `aguix/v0.7.0`' "$release" tag aguix v0.7.0
 
 fixture
