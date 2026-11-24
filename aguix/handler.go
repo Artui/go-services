@@ -1,11 +1,15 @@
 package aguix
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"strconv"
+	"time"
 
 	services "github.com/Artui/go-services"
 )
@@ -46,6 +50,23 @@ func WithMaxBodyBytes(limit int64) Option {
 	return func(h *handler) { h.maxBody = limit }
 }
 
+// WithRunTimeout bounds how long a run may take. An agent that fails once the
+// deadline has passed ends the run as a cancel, RUN_FINISHED with a "cancelled"
+// outcome, never a RUN_ERROR: the run was stopped, it did not fail. Spans the agent left open are closed first, and its
+// usage is kept. A client that declares no protocolVersion, or one before 1.0,
+// gets a bare RUN_FINISHED instead, as its schema rejects the outcome.
+//
+// The deadline is the context the agent runs under, so it only stops an agent
+// that honours its context; the handler waits for the agent to return either
+// way. The agent's error still goes to WithOnError. Zero or less is no bound.
+func WithRunTimeout(d time.Duration) Option {
+	return func(h *handler) { h.runTimeout = d }
+}
+
+// errRunTimeout is the cause the handler's own deadline carries, which is what
+// tells it apart from a deadline the agent hit and from a client hanging up.
+var errRunTimeout = errors.New("aguix: the run passed its timeout")
+
 // Handler serves one agent over AG-UI.
 //
 // The wire is a POST carrying RunAgentInput and a Server-Sent Events response.
@@ -64,9 +85,10 @@ func Handler(agent Agent, opts ...Option) (http.Handler, error) {
 }
 
 type handler struct {
-	agent   Agent
-	maxBody int64
-	onError func(*http.Request, error)
+	agent      Agent
+	maxBody    int64
+	runTimeout time.Duration
+	onError    func(*http.Request, error)
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -101,16 +123,67 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.agent.Run(r.Context(), input, stream); err != nil {
+	ctx := r.Context()
+	if h.runTimeout > 0 {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeoutCause(ctx, h.runTimeout, errRunTimeout)
+		defer cancel()
+	}
+
+	err = h.agent.Run(ctx, input, stream)
+	switch {
+	case err == nil:
+		h.finish(stream, input)
+	case errors.Is(context.Cause(ctx), errRunTimeout):
 		h.observe(r, err)
-		_ = stream.Emit(RunError(h.explain(err)))
-		return
+		if stream.closeOpen() == nil {
+			_ = stream.Finish(Cancelled())
+			h.finish(stream, input)
+		}
+	case errors.Is(r.Context().Err(), context.Canceled):
+		// The client hung up, so there is nobody to write a terminal event to.
+		h.observe(r, err)
+	default:
+		h.observe(r, err)
+		_ = stream.Emit(RunError(h.explain(err)).WithCode(code(err)))
 	}
-	if outcome, ok := stream.finishedWith(); ok {
-		_ = stream.Emit(RunFinishedWith(input.ThreadID, input.RunID, outcome))
-		return
+}
+
+// finish writes RUN_FINISHED with the outcome and usage the agent set.
+func (h *handler) finish(stream *Stream, input RunInput) {
+	event := RunFinished(input.ThreadID, input.RunID)
+	if outcome, ok := stream.finishedWith(); ok &&
+		(outcome.Type != "cancelled" || declaresOneZero(input.ProtocolVersion)) {
+		event = RunFinishedWith(input.ThreadID, input.RunID, outcome)
 	}
-	_ = stream.Emit(RunFinished(input.ThreadID, input.RunID))
+	_ = stream.Emit(event.WithUsage(stream.usedTokens()))
+}
+
+var protocolGrammar = regexp.MustCompile(`^(\d+)\.(\d+)$`)
+
+// declaresOneZero reports a client that declared AG-UI 1.0 or newer, the rule
+// pydantic-ai applies: no declaration is older, one outside the spec's
+// MAJOR.MINOR grammar is read as newer.
+func declaresOneZero(version string) bool {
+	if version == "" {
+		return false
+	}
+	match := protocolGrammar.FindStringSubmatch(version)
+	if match == nil {
+		return true
+	}
+	major, _ := strconv.Atoi(match[1])
+	return major >= 1
+}
+
+// code is RUN_ERROR's code: timed_out for an error that reports itself a
+// timeout, as context.DeadlineExceeded and net and os deadline errors do.
+func code(err error) string {
+	var timeout interface{ Timeout() bool }
+	if errors.As(err, &timeout) && timeout.Timeout() {
+		return CodeTimedOut
+	}
+	return CodeError
 }
 
 // explain decides what the client is told about a failed run.

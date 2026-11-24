@@ -280,6 +280,35 @@ are unchanged.
   seeded input is the body `@ag-ui/client` wrote for `aguix`'s reasoning
   fixture.
 
+`aguix/v0.6.0` says how a run ended in the fields the web component reads off
+its last frame. Its floors are unchanged.
+
+- **`RUN_ERROR` carries a `code`**, in the vocabulary django-ag-ui uses:
+  `timed_out` for an error that reports itself a timeout
+  (`context.DeadlineExceeded`, a net or os deadline), `error` for anything
+  else. The message is redacted as before; the code is not. `Event.WithCode`,
+  `CodeError` and `CodeTimedOut` are exported.
+- **`Stream.SetUsage`** reports token usage, written on `RUN_FINISHED` as
+  AG-UI 1.0's `usage` list of `TokenUsage`. It is absent unless the agent sets
+  it and never sent on `RUN_ERROR`. A later call replaces an earlier one, an
+  entry with neither input nor output tokens is dropped, a zero count is
+  omitted, and a count below zero or above 2^53-1 is refused.
+- **`WithRunTimeout(d)`** bounds a run. When the agent fails after the
+  handler's deadline passed, the run ends as a cancel, `RUN_FINISHED` with
+  outcome `cancelled`, never `RUN_ERROR`. Text, reasoning and tool-call spans
+  still open are closed first, since the client's verifier rejects a finish
+  over them, and the usage is kept. The agent's error still reaches
+  `WithOnError`. A deadline the handler did not set is the agent's
+  `RUN_ERROR` `timed_out`; a client that hung up gets no terminal frame.
+- **`Cancelled()`** is accepted by `Stream.Finish`. A cancelled outcome goes
+  only to a client that declares `protocolVersion` 1.0 or newer, now read
+  into `RunInput.ProtocolVersion`; a value outside `MAJOR.MINOR` counts as
+  newer. An older client's schema rejects the outcome, so that client gets a
+  bare `RUN_FINISHED`, as pydantic-ai does.
+- `Stream.Emit` is now safe to call from several goroutines.
+- Its tests record timed-out runs under `aguix/testdata/agui/transcripts`, and
+  `scripts/agui-wire/verify-transcripts.mjs` checks them beside aguiadk's.
+
 ## [Unreleased]
 
 ### Added

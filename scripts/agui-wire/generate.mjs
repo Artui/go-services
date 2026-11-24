@@ -326,6 +326,26 @@ const frames = {
     type: "RUN_FINISHED", threadId: "t1", runId: "r1",
     outcome: { type: "interrupt", interrupts: [{ id: "int-1", reason: "input_required" }] },
   },
+  "run-finished-cancelled": {
+    type: "RUN_FINISHED", threadId: "t1", runId: "r1", outcome: { type: "cancelled" },
+  },
+  "run-finished-usage": {
+    type: "RUN_FINISHED", threadId: "t1", runId: "r1",
+    usage: [
+      {
+        provider: "anthropic", model: "claude-opus-5-5", inputTokens: 1200, outputTokens: 340,
+        totalTokens: 1540, reasoningTokens: 120, cachedInputTokens: 800, cacheWriteInputTokens: 64,
+      },
+      { provider: "google", model: "gemini-flash", inputTokens: 9 },
+    ],
+  },
+  "run-finished-cancelled-usage": {
+    type: "RUN_FINISHED", threadId: "t1", runId: "r1", outcome: { type: "cancelled" },
+    usage: [{ inputTokens: 5, outputTokens: 2, totalTokens: 7 }],
+  },
+  "run-error-code": {
+    type: "RUN_ERROR", message: "The assistant could not complete that.", code: "timed_out",
+  },
 };
 
 rmSync(outbound, { recursive: true, force: true });

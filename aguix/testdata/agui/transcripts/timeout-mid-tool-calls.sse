@@ -1,0 +1,17 @@
+data: {"type":"RUN_STARTED","threadId":"t1","runId":"r1"}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"m1","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"m1"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"c1","toolCallName":"borrow_book","parentMessageId":"m1"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"book_id\":4}","toolCallId":"c1"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"c2","toolCallName":"borrow_book","parentMessageId":"m1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"c1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"c2"}
+
+data: {"type":"RUN_FINISHED","threadId":"t1","runId":"r1","usage":[{"inputTokens":5,"outputTokens":2,"totalTokens":7}],"outcome":{"type":"cancelled"}}

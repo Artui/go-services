@@ -1,0 +1,1 @@
+{"type":"RUN_FINISHED","threadId":"t1","runId":"r1","outcome":{"type":"cancelled"},"usage":[{"inputTokens":5,"outputTokens":2,"totalTokens":7}]}

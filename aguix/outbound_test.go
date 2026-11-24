@@ -62,6 +62,18 @@ func outboundFrames() map[string]aguix.Event {
 		})),
 		"run-finished-interrupt-minimal": aguix.RunFinishedWith("t1", "r1",
 			aguix.Interrupted(aguix.Interrupt{ID: "int-1", Reason: "input_required"})),
+		"run-finished-cancelled": aguix.RunFinishedWith("t1", "r1", aguix.Cancelled()),
+		"run-finished-usage": aguix.RunFinished("t1", "r1").WithUsage([]aguix.TokenUsage{
+			{
+				Provider: "anthropic", Model: "claude-opus-5-5", InputTokens: 1200, OutputTokens: 340,
+				TotalTokens: 1540, ReasoningTokens: 120, CachedInputTokens: 800, CacheWriteInputTokens: 64,
+			},
+			{Provider: "google", Model: "gemini-flash", InputTokens: 9},
+		}),
+		"run-finished-cancelled-usage": aguix.RunFinishedWith("t1", "r1", aguix.Cancelled()).
+			WithUsage([]aguix.TokenUsage{{InputTokens: 5, OutputTokens: 2, TotalTokens: 7}}),
+		"run-error-code": aguix.RunError("The assistant could not complete that.").
+			WithCode(aguix.CodeTimedOut),
 	}
 }
 
@@ -190,7 +202,7 @@ func TestFinishRefusesAnUnknownOutcomeType(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewStream: %v", err)
 	}
-	if err := stream.Finish(aguix.RunOutcome{Type: "cancelled"}); err == nil {
+	if err := stream.Finish(aguix.RunOutcome{Type: "paused"}); err == nil {
 		t.Error("Finish accepted an unknown type")
 	}
 }

@@ -21,6 +21,8 @@ type Stream struct {
 
 	mu      sync.Mutex
 	outcome *RunOutcome
+	usage   []TokenUsage
+	open    []Event
 }
 
 // NewStream prepares w for streaming and writes the response headers.
@@ -62,10 +64,62 @@ func (s *Stream) Emit(event Event) error {
 	if err != nil {
 		return err
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	if _, err := fmt.Fprintf(s.writer, "data: %s\n\n", payload); err != nil {
 		return err
 	}
 	s.flusher.Flush()
+	s.track(event)
+	return nil
+}
+
+// spanEnds pairs each span-opening event with the event that closes it.
+var spanEnds = map[EventType]EventType{
+	EventTextMessageStart:      EventTextMessageEnd,
+	EventToolCallStart:         EventToolCallEnd,
+	EventReasoningStart:        EventReasoningEnd,
+	EventReasoningMessageStart: EventReasoningMessageEnd,
+}
+
+// track keeps the spans still open, which the client's verifier refuses to see
+// a RUN_FINISHED over. Only a run the handler cut off has any left to close.
+func (s *Stream) track(event Event) {
+	if _, opens := spanEnds[event.Type]; opens {
+		s.open = append(s.open, event)
+		return
+	}
+	for i := len(s.open) - 1; i >= 0; i-- {
+		if spanEnds[s.open[i].Type] == event.Type && spanID(s.open[i]) == spanID(event) {
+			s.open = append(s.open[:i], s.open[i+1:]...)
+			return
+		}
+	}
+}
+
+func spanID(event Event) string {
+	if event.ToolCallID != "" {
+		return event.ToolCallID
+	}
+	return event.MessageID
+}
+
+// closeOpen ends every span still open, innermost first.
+func (s *Stream) closeOpen() error {
+	s.mu.Lock()
+	open := append([]Event(nil), s.open...)
+	s.mu.Unlock()
+	for i := len(open) - 1; i >= 0; i-- {
+		end := Event{Type: spanEnds[open[i].Type]}
+		if open[i].Type == EventToolCallStart {
+			end.ToolCallID = open[i].ToolCallID
+		} else {
+			end.MessageID = open[i].MessageID
+		}
+		if err := s.Emit(end); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -99,6 +153,8 @@ func (s *Stream) Finish(outcome RunOutcome) error {
 			}
 		}
 		outcome.PendingToolCallIDs = nil
+	case "cancelled":
+		outcome.PendingToolCallIDs, outcome.Interrupts = nil, nil
 	default:
 		return fmt.Errorf("aguix: unknown outcome type %q", outcome.Type)
 	}
@@ -115,6 +171,45 @@ func (s *Stream) finishedWith() (RunOutcome, bool) {
 		return RunOutcome{}, false
 	}
 	return *s.outcome, true
+}
+
+// maxTokenCount is JavaScript's Number.MAX_SAFE_INTEGER, the ceiling the
+// client's schema puts on every count.
+const maxTokenCount = 1<<53 - 1
+
+// SetUsage reports the run's token usage, for the handler to write on
+// RUN_FINISHED. It is never written on RUN_ERROR, and a later call replaces an
+// earlier one, so an agent that keeps a running sum sets the whole sum each time.
+//
+// An entry with neither input nor output tokens says nothing and is dropped, as
+// pydantic-ai drops it; usage left with no entries is absent from the frame. A
+// count below zero or above 2^53-1 is refused, since the client's parser rejects
+// the frame and ends the run on its side alone.
+func (s *Stream) SetUsage(usage ...TokenUsage) error {
+	var kept []TokenUsage
+	for _, entry := range usage {
+		for _, count := range []int64{
+			entry.InputTokens, entry.OutputTokens, entry.TotalTokens,
+			entry.ReasoningTokens, entry.CachedInputTokens, entry.CacheWriteInputTokens,
+		} {
+			if count < 0 || count > maxTokenCount {
+				return fmt.Errorf("aguix: a token count of %d is outside 0 to 2^53-1", count)
+			}
+		}
+		if entry.InputTokens != 0 || entry.OutputTokens != 0 {
+			kept = append(kept, entry)
+		}
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.usage = kept
+	return nil
+}
+
+func (s *Stream) usedTokens() []TokenUsage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.usage
 }
 
 func isObjectOrAbsent(value any) bool {

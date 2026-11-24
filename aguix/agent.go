@@ -187,6 +187,10 @@ type RunInput struct {
 	// Resume answers the interrupts the previous run ended on, one entry each.
 	// Absent on a run that does not continue one.
 	Resume []ResumeEntry `json:"resume,omitempty"`
+
+	// ProtocolVersion is the AG-UI version the client declares, "1.0" from
+	// @ag-ui/client 1.0. Empty means a client from before versioning.
+	ProtocolVersion string `json:"protocolVersion,omitempty"`
 }
 
 // LastUserMessage returns the message the run is answering, and whether there
