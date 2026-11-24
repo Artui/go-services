@@ -1,0 +1,27 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-sub"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"d1","toolCallName":"researcher"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"request\":\"Shelve 7.\"}","toolCallId":"d1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"d1"}
+
+data: {"type":"CUSTOM","name":"ag_ui.subagent","value":{"delegationId":"d1","agent":"researcher","phase":"tool_call","status":"researcher: calling shelve_book","tool":{"toolCallId":"r1","name":"shelve_book","ok":null}}}
+
+data: {"type":"CUSTOM","name":"ag_ui.subagent","value":{"delegationId":"d1","agent":"researcher","phase":"tool_result","status":"researcher: shelve_book returned","tool":{"toolCallId":"r1","name":"shelve_book","ok":true}}}
+
+data: {"type":"CUSTOM","name":"ag_ui.subagent","value":{"delegationId":"d1","agent":"researcher","phase":"tool_call","status":"researcher: calling missing_tool","tool":{"toolCallId":"r2","name":"missing_tool","ok":null}}}
+
+data: {"type":"CUSTOM","name":"ag_ui.subagent","value":{"delegationId":"d1","agent":"researcher","phase":"tool_result","status":"researcher: missing_tool failed","tool":{"toolCallId":"r2","name":"missing_tool","ok":false}}}
+
+data: {"type":"TOOL_CALL_RESULT","messageId":"run-sub-1","role":"tool","toolCallId":"d1","content":"{\"result\":\"Shelved it.\"}"}
+
+data: {"type":"CUSTOM","name":"ag_ui.invalidate","value":{"keys":["books","books/7"],"reason":"shelve_book"}}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"run-sub-2","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-sub-2","delta":"Done."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"run-sub-2"}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-sub"}

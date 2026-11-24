@@ -8,9 +8,11 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/Artui/go-services/aguix"
 	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/plugin"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
@@ -60,6 +62,10 @@ func WithUserID(fn func(ctx context.Context) (string, error)) Option {
 // run that calls one finishes with the call pending, and the client answers it
 // in the next run. A run that ends on an assistant message has nothing to
 // answer and finishes without calling the agent.
+//
+// Each run installs its own ADK task runner (platform.WithTaskRunner) to tell a
+// step's concurrent calls apart, replacing one a caller put on the request's
+// context; ADK has no way to read the installed one back and wrap it.
 func New(root agent.Agent, opts ...Option) (aguix.Agent, error) {
 	if root == nil {
 		return nil, errors.New("aguiadk: New needs an agent")
@@ -68,8 +74,9 @@ func New(root agent.Agent, opts ...Option) (aguix.Agent, error) {
 		root:       root,
 		newService: session.InMemoryService,
 	}
+	plugins := runner.PluginConfig{Plugins: []*plugin.Plugin{sinkPlugin()}}
 	b.newRunner = func(svc session.Service) (*runner.Runner, error) {
-		return runner.New(runner.Config{AppName: appName, Agent: root, SessionService: svc})
+		return runner.New(runner.Config{AppName: appName, Agent: root, SessionService: svc, PluginConfig: plugins})
 	}
 	for _, opt := range opts {
 		opt(b)
@@ -138,11 +145,13 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 	tr := newTranslator(messageIDs(in.RunID))
 	tr.approval, tr.denied, tr.based = b.approval, denied, seed != nil
 	ctx, queued := withSink(withClientTools(ctx, tools))
-	runErr := b.drive(ctx, r, userID, in.ThreadID, tail, tr, queued, out)
+	w := &wire{out: out}
+	queued.live = w.live
+	runErr := b.drive(ctx, r, userID, in.ThreadID, tail, tr, queued, w)
 	// Whatever the run opened is closed before it ends, so a failed run still
 	// leaves a well-formed stream ahead of the handler's RUN_ERROR, and still
 	// tells the page about a write that committed before the failure.
-	if closeErr := emit(out, append(tr.close(), queued.drain()...)); runErr == nil {
+	if closeErr := w.end(append(tr.close(), queued.drainAll()...)); runErr == nil {
 		runErr = closeErr
 	}
 	if runErr != nil {
@@ -216,7 +225,7 @@ func (b *bridge) prepare(
 // request follows it, and becomes the run's interrupt.
 func (b *bridge) drive(
 	ctx context.Context, r *runner.Runner, userID, sessionID string,
-	tail *genai.Content, tr *translator, queued *sink, out *aguix.Stream,
+	tail *genai.Content, tr *translator, queued *sink, w *wire,
 ) error {
 	cfg := agent.RunConfig{StreamingMode: agent.StreamingModeSSE, MaxLLMCalls: b.maxLLMCalls}
 	awaitingClient := false
@@ -228,7 +237,7 @@ func (b *bridge) drive(
 		// The whole sum is set after each call, so a run the handler cancels on
 		// its timeout, or one that stops for the client, still reports it.
 		if used.add(ev) {
-			if err := out.SetUsage(used.entries...); err != nil {
+			if err := w.out.SetUsage(used.entries...); err != nil {
 				return err
 			}
 		}
@@ -237,7 +246,8 @@ func (b *bridge) drive(
 			return err
 		}
 		// What a call published goes after the event carrying its result.
-		if err := emit(out, append(frames, queued.drain()...)); err != nil {
+		before, after := queued.drain(answered(ev))
+		if err := w.emit(slices.Concat(before, frames, after)); err != nil {
 			return err
 		}
 		if ev.Partial {
@@ -258,13 +268,62 @@ func hasResponses(ev *session.Event) bool {
 	})
 }
 
-func emit(out *aguix.Stream, frames []aguix.Event) error {
+// answered names the calls a complete event carries responses for. A partial
+// event carries none ADK acts on.
+func answered(ev *session.Event) []string {
+	if ev.Partial || ev.Content == nil {
+		return nil
+	}
+	var ids []string
+	for _, p := range ev.Content.Parts {
+		if p != nil && p.FunctionResponse != nil {
+			ids = append(ids, p.FunctionResponse.ID)
+		}
+	}
+	return ids
+}
+
+// wire is the run's stream as the bridge and a running call share it: a
+// delegated sub-agent's progress goes out from the call's goroutine, between
+// the bridge's own frames, never inside a batch of them. Once the run has
+// ended, what a call still running in an abandoned branch sends is dropped.
+type wire struct {
+	mu   sync.Mutex
+	out  *aguix.Stream
+	done bool
+}
+
+func (w *wire) emit(frames []aguix.Event) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	return w.send(frames)
+}
+
+func (w *wire) send(frames []aguix.Event) error {
 	for _, f := range frames {
-		if err := out.Emit(f); err != nil {
+		if err := w.out.Emit(f); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+// live sends one frame now. A write that fails fails the bridge's next one too,
+// which is where the run reports it.
+func (w *wire) live(f aguix.Event) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if !w.done {
+		_ = w.send([]aguix.Event{f})
+	}
+}
+
+// end sends the run's last frames and closes the wire to live ones.
+func (w *wire) end(frames []aguix.Event) error {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.done = true
+	return w.send(frames)
 }
 
 // messageIDs numbers a run's messages under its run id. The client makes run ids

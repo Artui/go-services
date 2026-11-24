@@ -10,5 +10,8 @@
 //
 // A model's thinking streams as REASONING frames, each message sealed with the
 // signed blocks it holds, and the next run hands every block back unchanged.
-// PublishInvalidation tells the page which of its resources a call changed.
+// PublishInvalidation tells the page which of its resources a call changed,
+// and PublishSuggestions, PublishChart and PublishCompaction send the activities
+// the web component draws; what a call publishes goes out after its own result.
+// A sub-agent that agenttool runs reports its calls as they happen.
 package aguiadk

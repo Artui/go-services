@@ -1,0 +1,23 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-act"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"c1","toolCallName":"chart_loans"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"book_id\":3}","toolCallId":"c1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"c1"}
+
+data: {"type":"TOOL_CALL_RESULT","messageId":"run-act-1","role":"tool","toolCallId":"c1","content":"{\"by\":\"\",\"loan\":3}"}
+
+data: {"type":"ACTIVITY_SNAPSHOT","messageId":"chart-11111111","activityType":"chart","replace":true,"content":{"kind":"bar","labels":["Mon"],"series":[{"label":"Loans","points":[3]}]}}
+
+data: {"type":"ACTIVITY_SNAPSHOT","messageId":"suggestions-22222222","activityType":"suggestions","replace":true,"content":{"prompts":["Chart next week too"]}}
+
+data: {"type":"ACTIVITY_SNAPSHOT","messageId":"compaction-33333333","activityType":"compaction","replace":true,"content":{"after":4,"before":9,"removed":5}}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"run-act-2","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-act-2","delta":"Charted."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"run-act-2"}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-act"}

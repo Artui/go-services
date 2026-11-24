@@ -13,6 +13,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 
 	services "github.com/Artui/go-services"
+	"github.com/Artui/go-services/aguiadk"
 )
 
 // BorrowIn is what a caller may say. It names a book and nothing else: the
@@ -391,6 +392,10 @@ func borrow(ctx services.Ctx[Deps], in BorrowIn) (BorrowOut, error) {
 		`SELECT available FROM books WHERE id = ?`, in.BookID).Scan(&remaining); err != nil {
 		return BorrowOut{}, err
 	}
+
+	// Tells a page that started this run, if one did, to refetch what the loan
+	// changed; outside an agent run nothing is listening and it does nothing.
+	aguiadk.PublishInvalidation(ctx.Context, "borrow_book", "books", "loans")
 
 	return BorrowOut{
 		LoanID:    loanID,
