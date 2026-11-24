@@ -316,16 +316,21 @@ floor rises to `v0.6.0`, so a failed run's `RUN_ERROR` now carries a `code`.
 - **An interrupt's `metadata` carries `kind: "approval"` and `destructive`.**
   The web component restores a waiting thread only for an approval, and its
   inbox approves in place only when `destructive` is `false`. `destructive` is
-  whether the `Approval`'s own gate asks about the tool, by a `Destructive` spec
-  or by `Require`, as django-ag-ui decides it. A call some other
-  `tool.WithConfirmation` gates is `false` under `WithApproval` and `true`
-  without it, since the bridge then cannot tell. `x-confirm` sits beside them as
+  `true` when the `Approval`'s own gate asks about the tool, by a `Destructive`
+  spec or by `Require`, as django-ag-ui decides it. A call some other
+  `tool.WithConfirmation` gates is `false` only for a spec the `Approval` knows
+  does not declare itself destructive; an exempted destructive spec, a tool that
+  is no spec, and any call without `WithApproval` stay `true`, since the inbox
+  approves a `false` one in a single click. `x-confirm` sits beside them as
   before.
 - **`RUN_FINISHED` carries the run's token usage**, summed over every model
   call the run made, one entry per model in the order they first answered. Input
-  is the prompt plus any tool-use prompt, output is the candidates plus the
-  thoughts, and reasoning and cache reads are parts of them, as AG-UI counts
-  them; genai has no count of cache writes. Only complete events count, so a
+  is the prompt plus any tool-use prompt. Output is the total less the input,
+  since ADK's OpenAI models count reasoning inside the candidates while its
+  Gemini and Anthropic models do not; without a usable total it is the
+  candidates plus the thoughts. Reasoning and cache counts are parts of them, as
+  AG-UI counts them, and cache writes are read from the metadata ADK's
+  Anthropic model sets. Only complete events count, so a
   provider that repeats its usage on SSE partials is not added twice. The sum is
   set after each call, so a run that ends on the handler's timeout keeps it. A
   run with no usage sends none, a negative count fails the run, and a

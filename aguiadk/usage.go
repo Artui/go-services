@@ -5,13 +5,19 @@ import (
 	"google.golang.org/adk/v2/session"
 )
 
+// cacheWriteKey is where ADK's anthropicmodel puts its cache-creation count, an
+// int64, since genai has no field for it (anthropicmodel.CacheCreationInputTokensMetadataKey).
+const cacheWriteKey = "anthropic_cache_creation_input_tokens"
+
 // tally sums the token usage a run's model calls report, one entry per model
 // in the order the models first answered.
 //
-// AG-UI counts input and output as totals with reasoning and cache reads as
-// parts of them, while genai keeps the model's thoughts and a tool-use prompt
-// apart from the candidates and the prompt, so those are added in. genai has no
-// count of cache writes, and an event names its model but not the provider.
+// AG-UI counts input and output as totals with reasoning and cache counts as
+// parts of them. genai's input is the prompt plus any tool-use prompt; its
+// output is the total less that, because ADK's providers disagree on whether
+// the candidates include the thoughts (OpenAI's do, Gemini's and Anthropic's do
+// not). Without a usable total it is the candidates plus the thoughts. An event
+// names its model but not the provider.
 type tally struct {
 	entries []aguix.TokenUsage
 }
@@ -32,10 +38,18 @@ func (t *tally) add(ev *session.Event) bool {
 		t.entries = append(t.entries, aguix.TokenUsage{Model: ev.ModelVersion})
 	}
 	e := &t.entries[i]
-	e.InputTokens += int64(u.PromptTokenCount) + int64(u.ToolUsePromptTokenCount)
-	e.OutputTokens += int64(u.CandidatesTokenCount) + int64(u.ThoughtsTokenCount)
-	e.TotalTokens += int64(u.TotalTokenCount)
+	input, total := int64(u.PromptTokenCount)+int64(u.ToolUsePromptTokenCount), int64(u.TotalTokenCount)
+	output := int64(u.CandidatesTokenCount) + int64(u.ThoughtsTokenCount)
+	if total > 0 && total >= input {
+		output = total - input
+	}
+	e.InputTokens += input
+	e.OutputTokens += output
+	e.TotalTokens += total
 	e.ReasoningTokens += int64(u.ThoughtsTokenCount)
 	e.CachedInputTokens += int64(u.CachedContentTokenCount)
+	if written, ok := ev.CustomMetadata[cacheWriteKey].(int64); ok {
+		e.CacheWriteInputTokens += written
+	}
 	return true
 }

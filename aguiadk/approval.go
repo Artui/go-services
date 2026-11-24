@@ -54,6 +54,8 @@ const (
 type Approval struct {
 	gated   map[string]bool
 	prompts map[string]string
+	// safe names the specs that do not declare themselves destructive.
+	safe map[string]bool
 }
 
 // ApprovalOption adjusts which tools an Approval gates.
@@ -82,10 +84,12 @@ func NewApproval(entries []services.Entry, opts ...ApprovalOption) *Approval {
 	for _, opt := range opts {
 		opt(&lists)
 	}
-	a := &Approval{gated: map[string]bool{}, prompts: map[string]string{}}
+	a := &Approval{gated: map[string]bool{}, prompts: map[string]string{}, safe: map[string]bool{}}
 	for _, e := range entries {
 		if e.Destructive != nil && *e.Destructive {
 			a.gated[e.Name] = true
+		} else {
+			a.safe[e.Name] = true
 		}
 		if prompt, ok := e.Metadata[confirmKey].(string); ok && strings.TrimSpace(prompt) != "" {
 			a.prompts[e.Name] = prompt
@@ -118,11 +122,12 @@ func WithApproval(a *Approval) Option {
 	}
 }
 
-// destructive reports whether a's own gate asks about name, which is how
-// django-ag-ui marks a waiting call destructive. Without an approval the gate is
-// unknown, so the call counts as destructive, as the web component counts it.
+// destructive reports whether a call to name counts as destructive. A call a's
+// own gate asks about does, as django-ag-ui marks it; any other is safe only for
+// a spec a knows does not declare itself destructive, since the web component
+// approves a safe call in one click and counts an unknown one as destructive.
 func (a *Approval) destructive(name string) bool {
-	return a == nil || a.gated[name]
+	return a == nil || a.gated[name] || !a.safe[name]
 }
 
 func (a *Approval) prompt(name string) (string, bool) {

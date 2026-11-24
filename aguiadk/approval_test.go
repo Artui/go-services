@@ -435,6 +435,28 @@ func TestOwnWithConfirmationResumesWithoutAnApproval(t *testing.T) {
 	}
 }
 
+// A confirmation the approval does not gate is safe only for a spec the approval
+// knows to be not destructive: an exempt destructive spec, or a tool that is no
+// spec at all, still counts as destructive.
+func TestAConfirmationTheApprovalCannotVouchForIsDestructive(t *testing.T) {
+	for name, approval := range map[string]func(a *archive) *Approval{
+		"exempt destructive spec":         func(a *archive) *Approval { return NewApproval(a.entries, Exempt("discard_book")) },
+		"tool the approval does not know": func(*archive) *Approval { return NewApproval(nil) },
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := newArchive(t)
+			llm := &scriptLLM{steps: []step{{calls: []*genai.FunctionCall{discardCall("c1", 7)}}}}
+			gated := tool.WithConfirmation(a.ts, true, nil)
+			s := serve(t, mustNew(t, librarian(t, llm, gated), WithApproval(approval(a))),
+				input("run-vouch", text("user", "Discard 7.")))
+			interrupts, _ := outcome(t, s)["interrupts"].([]any)
+			if len(interrupts) != 1 || interrupts[0].(map[string]any)["metadata"].(map[string]any)["destructive"] != true {
+				t.Errorf("interrupts %v", interrupts)
+			}
+		})
+	}
+}
+
 func TestWithApprovalRefusesNil(t *testing.T) {
 	llm := &scriptLLM{}
 	if _, err := New(librarian(t, llm), WithUserID(Anonymous), WithApproval(nil)); err == nil {

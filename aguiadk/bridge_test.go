@@ -32,13 +32,14 @@ var update = flag.Bool("update", false, "rewrite the SSE transcripts under testd
 // text partials; a step with code answers with that error code; a step that
 // blocks waits for its context to end. usage and model ride on every response.
 type step struct {
-	text  string
-	calls []*genai.FunctionCall
-	err   error
-	code  string
-	block bool
-	usage *genai.GenerateContentResponseUsageMetadata
-	model string
+	text   string
+	calls  []*genai.FunctionCall
+	err    error
+	code   string
+	block  bool
+	usage  *genai.GenerateContentResponseUsageMetadata
+	model  string
+	custom map[string]any
 }
 
 // scriptLLM answers as anthropicmodel does under SSE: the text as partials,
@@ -111,7 +112,7 @@ func (m *scriptLLM) GenerateContent(
 		}
 		yield(&model.LLMResponse{
 			Content: &genai.Content{Role: genai.RoleModel, Parts: parts}, TurnComplete: true,
-			UsageMetadata: s.usage, ModelVersion: s.model,
+			UsageMetadata: s.usage, ModelVersion: s.model, CustomMetadata: s.custom,
 		}, nil)
 	}
 }

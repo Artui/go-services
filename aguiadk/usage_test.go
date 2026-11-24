@@ -2,11 +2,14 @@ package aguiadk
 
 import (
 	"encoding/json"
+	"errors"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/Artui/go-services/adkx"
 	"github.com/Artui/go-services/aguix"
+	"google.golang.org/adk/v2/agent"
 	"google.golang.org/genai"
 )
 
@@ -98,7 +101,7 @@ func TestANegativeTokenCountFailsTheRun(t *testing.T) {
 	if last := s.last(); last["type"] != "RUN_ERROR" || last["usage"] != nil {
 		t.Errorf("last frame %v", last)
 	}
-	if len(s.errs) != 1 {
+	if len(s.errs) != 1 || !strings.Contains(s.errs[0].Error(), "outside 0 to 2^53-1") {
 		t.Errorf("errors %v", s.errs)
 	}
 }
@@ -106,13 +109,72 @@ func TestANegativeTokenCountFailsTheRun(t *testing.T) {
 func TestMaxLLMCallsBoundsTheInvocation(t *testing.T) {
 	lib := &library{}
 	llm := &scriptLLM{steps: []step{{calls: []*genai.FunctionCall{borrowCall("c1", 7)}}}}
-	agent := mustNew(t, librarian(t, llm, lib.toolset(t, adkx.Anonymous)), WithMaxLLMCalls(1))
-	s := serve(t, agent, input("run-limit", text("user", "Borrow book 7.")))
+	bounded := mustNew(t, librarian(t, llm, lib.toolset(t, adkx.Anonymous)), WithMaxLLMCalls(1))
+	s := serve(t, bounded, input("run-limit", text("user", "Borrow book 7.")))
 
 	if last := s.last(); last["type"] != "RUN_ERROR" || last["code"] != aguix.CodeError {
 		t.Errorf("last frame %v", last)
 	}
 	if llm.calls() != 1 {
 		t.Errorf("model called %d times, want 1", llm.calls())
+	}
+	if len(s.errs) != 1 || !errors.Is(s.errs[0], agent.ErrLLMCallsLimitExceeded) {
+		t.Errorf("errors %v", s.errs)
+	}
+}
+
+// usageFor runs one model answer carrying u and custom, and returns its usage.
+func usageFor(t *testing.T, u *genai.GenerateContentResponseUsageMetadata, custom map[string]any) string {
+	t.Helper()
+	llm := &scriptLLM{steps: []step{{text: "Hi.", usage: u, custom: custom}}}
+	return usageOf(t, serve(t, mustNew(t, librarian(t, llm)), input("run-shape", text("user", "Hi."))))
+}
+
+// ADK's OpenAI models count reasoning inside the candidates and again as thoughts.
+func TestOpenAIShapedUsageCountsReasoningOnce(t *testing.T) {
+	got := usageFor(t, &genai.GenerateContentResponseUsageMetadata{
+		PromptTokenCount: 100, CandidatesTokenCount: 20, ThoughtsTokenCount: 7,
+		CachedContentTokenCount: 40, TotalTokenCount: 120,
+	}, nil)
+	want := `[{"cachedInputTokens":40,"inputTokens":100,"outputTokens":20,"reasoningTokens":7,"totalTokens":120}]`
+	if got != want {
+		t.Errorf("usage:\n got %s\nwant %s", got, want)
+	}
+}
+
+// ADK's Anthropic model keeps thinking out of the candidates and puts cache writes in its metadata.
+func TestAnthropicShapedUsageCarriesCacheWrites(t *testing.T) {
+	got := usageFor(t, &genai.GenerateContentResponseUsageMetadata{
+		PromptTokenCount: 100, CandidatesTokenCount: 10, ThoughtsTokenCount: 5,
+		CachedContentTokenCount: 30, TotalTokenCount: 115,
+	}, map[string]any{cacheWriteKey: int64(20)})
+	want := `[{"cacheWriteInputTokens":20,"cachedInputTokens":30,"inputTokens":100,"outputTokens":15,` +
+		`"reasoningTokens":5,"totalTokens":115}]`
+	if got != want {
+		t.Errorf("usage:\n got %s\nwant %s", got, want)
+	}
+}
+
+func TestATotalBelowTheInputFallsBackToTheParts(t *testing.T) {
+	got := usageFor(t, &genai.GenerateContentResponseUsageMetadata{
+		PromptTokenCount: 10, CandidatesTokenCount: 3, ThoughtsTokenCount: 1, TotalTokenCount: 5,
+	}, map[string]any{cacheWriteKey: "20"})
+	if want := `[{"inputTokens":10,"outputTokens":4,"reasoningTokens":1,"totalTokens":5}]`; got != want {
+		t.Errorf("usage:\n got %s\nwant %s", got, want)
+	}
+}
+
+func TestUsageSurvivesARunThatStopsForTheClient(t *testing.T) {
+	llm := &scriptLLM{steps: []step{{calls: []*genai.FunctionCall{fillCall("f1")},
+		usage: &genai.GenerateContentResponseUsageMetadata{PromptTokenCount: 8, CandidatesTokenCount: 3}}}}
+	in := input("run-client", text("user", "Fill the email."))
+	in.Tools = []aguix.ToolDefinition{fillField}
+	s := serve(t, mustNew(t, librarian(t, llm, ClientToolset())), in)
+
+	if o, _ := s.last()["outcome"].(map[string]any); o["pendingToolCallIds"] == nil {
+		t.Fatalf("last frame %v", s.last())
+	}
+	if got, want := usageOf(t, s), `[{"inputTokens":8,"outputTokens":3}]`; got != want {
+		t.Errorf("usage:\n got %s\nwant %s", got, want)
 	}
 }
