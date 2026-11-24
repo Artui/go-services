@@ -152,8 +152,11 @@ $(git status --short)"
       die "CHANGELOG.md at $target has no '## [${version#v}]' heading; promote it in its own PR first"
   else
     # The Adapters section, from its heading to the next level-two heading.
-    awk '/^## /{ in_section = ($0 == "## Adapters") ; next } in_section' <<<"$changelog" |
-      grep -qF "\`$tag\`" ||
+    # Captured first: grep -q quits at its first match, and a pipe into it would
+    # kill awk with SIGPIPE and fail the pipeline under pipefail.
+    local adapters
+    adapters=$(awk '/^## /{ in_section = ($0 == "## Adapters") ; next } in_section' <<<"$changelog")
+    grep -qF "\`$tag\`" <<<"$adapters" ||
       die "the Adapters section of CHANGELOG.md at $target does not name \`$tag\`; promote its paragraph in its own PR first"
 
     local newest floor
