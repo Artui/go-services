@@ -1,7 +1,7 @@
-// Checks every SSE transcript the aguiadk tests record against the client that
-// reads them.
+// Checks every SSE transcript the aguix and aguiadk tests record against the
+// client that reads them.
 //
-// The Go tests write each run's response body to aguiadk/testdata/agui/transcripts
+// The Go tests write each run's response body to <module>/testdata/agui/transcripts
 // and fail when a run's bytes drift from it, so these files are what the server
 // sends. This script reads them as @ag-ui/client 1.0.4 does: each frame through
 // @ag-ui/core's EventSchemas (the parse must not change the frame, as in
@@ -26,7 +26,9 @@ import { EventSchemas } from "@ag-ui/core/schemas";
 import { from, lastValueFrom, tap, toArray } from "rxjs";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const dir = join(here, "..", "..", "aguiadk", "testdata", "agui", "transcripts");
+const dirs = ["aguix", "aguiadk"].map((module) =>
+  join(here, "..", "..", module, "testdata", "agui", "transcripts"),
+);
 
 function frames(body) {
   const chunks = `${body}\n`.split("\n\n");
@@ -59,19 +61,21 @@ async function verify(events) {
   }
 }
 
-const files = readdirSync(dir).filter((name) => name.endsWith(".sse")).sort();
-if (files.length === 0) {
-  console.error(`no transcripts in ${dir}`);
-  process.exit(1);
-}
 let failed = 0;
-for (const name of files) {
-  try {
-    await verify(frames(readFileSync(join(dir, name), "utf8")));
-    console.log(`ok   ${name}`);
-  } catch (err) {
-    failed++;
-    console.error(`FAIL ${name}: ${err.message}`);
+for (const dir of dirs) {
+  const files = readdirSync(dir).filter((name) => name.endsWith(".sse")).sort();
+  if (files.length === 0) {
+    console.error(`no transcripts in ${dir}`);
+    process.exit(1);
+  }
+  for (const name of files) {
+    try {
+      await verify(frames(readFileSync(join(dir, name), "utf8")));
+      console.log(`ok   ${name}`);
+    } catch (err) {
+      failed++;
+      console.error(`FAIL ${name}: ${err.message}`);
+    }
   }
 }
 process.exit(failed === 0 ? 0 : 1);

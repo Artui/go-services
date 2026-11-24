@@ -1,0 +1,1 @@
+{"type":"RUN_FINISHED","threadId":"t1","runId":"r1","usage":[{"provider":"anthropic","model":"claude-opus-5-5","inputTokens":1200,"outputTokens":340,"totalTokens":1540,"reasoningTokens":120,"cachedInputTokens":800,"cacheWriteInputTokens":64},{"provider":"google","model":"gemini-flash","inputTokens":9}]}

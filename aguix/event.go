@@ -156,6 +156,10 @@ type Event struct {
 	// something to say, so a frame without it is the frame it always was.
 	Metadata map[string]any `json:"metadata,omitempty"`
 
+	// RUN_FINISHED's token usage, one entry per provider and model. Absent
+	// unless the agent reported some through Stream.SetUsage.
+	Usage []TokenUsage `json:"usage,omitempty"`
+
 	// CUSTOM's name.
 	Name string `json:"name,omitempty"`
 
@@ -227,6 +231,24 @@ func RunFinished(threadID, runID string) Event {
 // operator, so a handler redacts before it gets here -- see Handler.
 func RunError(message string) Event {
 	return Event{Type: EventRunError, Message: message}
+}
+
+// The codes a handler puts on RUN_ERROR, in the vocabulary the family's Python
+// transport uses, so a client reads one meaning from either server. The code
+// survives redaction: it says what kind of failure it was, never why.
+const (
+	// CodeError is any failure that is not a timeout.
+	CodeError = "error"
+
+	// CodeTimedOut is a run whose agent failed on a deadline of its own, such
+	// as a model call's. A deadline the handler set is a cancel, not this.
+	CodeTimedOut = "timed_out"
+)
+
+// WithCode sets RUN_ERROR's code.
+func (e Event) WithCode(code string) Event {
+	e.Code = code
+	return e
 }
 
 // TextMessageStart opens an assistant message. The id ties the parts together
@@ -318,8 +340,8 @@ type Interrupt struct {
 }
 
 // RunOutcome is how a run ended: "success", possibly with tool calls the client
-// still has to answer, or "interrupt". Build one with Success or Interrupted and
-// hand it to Stream.Finish.
+// still has to answer, "interrupt", or "cancelled". Build one with Success,
+// Interrupted or Cancelled and hand it to Stream.Finish.
 type RunOutcome struct {
 	Type               string      `json:"type"`
 	PendingToolCallIDs []string    `json:"pendingToolCallIds,omitempty"`
@@ -337,6 +359,33 @@ func Success(pendingToolCallIDs ...string) RunOutcome {
 // interrupt is required, and each needs an id and a reason.
 func Interrupted(interrupts ...Interrupt) RunOutcome {
 	return RunOutcome{Type: "interrupt", Interrupts: interrupts}
+}
+
+// Cancelled is a run stopped before it completed that did not fail: nothing is
+// produced and nothing is waited for. A handler sends it only to a client that
+// declared a protocolVersion, as an older client's schema rejects the frame.
+func Cancelled() RunOutcome {
+	return RunOutcome{Type: "cancelled"}
+}
+
+// TokenUsage is one provider and model's token counts, as AG-UI 1.0 defines
+// them: input and output are totals, reasoning and cache counts are parts of
+// them. A zero count is "not reported" and is omitted, as pydantic-ai does.
+type TokenUsage struct {
+	Provider              string `json:"provider,omitempty"`
+	Model                 string `json:"model,omitempty"`
+	InputTokens           int64  `json:"inputTokens,omitempty"`
+	OutputTokens          int64  `json:"outputTokens,omitempty"`
+	TotalTokens           int64  `json:"totalTokens,omitempty"`
+	ReasoningTokens       int64  `json:"reasoningTokens,omitempty"`
+	CachedInputTokens     int64  `json:"cachedInputTokens,omitempty"`
+	CacheWriteInputTokens int64  `json:"cacheWriteInputTokens,omitempty"`
+}
+
+// WithUsage attaches token usage to a RUN_FINISHED.
+func (e Event) WithUsage(usage []TokenUsage) Event {
+	e.Usage = usage
+	return e
 }
 
 // RunFinishedWith closes a run with an outcome. A handler writes it for the
