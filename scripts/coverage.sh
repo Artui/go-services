@@ -49,7 +49,7 @@ while IFS= read -r line; do
   location="${line%%:*}"
   func=$(echo "$line" | awk '{print $2}')
   key="$location:$func"
-  if grep -qF -- "$key" "$EXCLUSIONS" 2>/dev/null; then
+  if grep -qxF -- "$key" "$EXCLUSIONS" 2>/dev/null; then
     echo "allowed gap: $line"
   else
     echo "UNCOVERED: $line"
