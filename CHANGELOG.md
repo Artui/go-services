@@ -434,7 +434,7 @@ needs no new aguix type, so its floors stay where `v0.5.0` set them.
   go out as they happen, while the delegating call runs, rather than after a
   result; a run's own calls are on the wire already and send none.
   `SubagentEventName` names the event. The `SUBAGENT_*` lifecycle events need
-  fields aguix does not have yet, and are not sent.
+  fields aguix does not have yet, and are not in this release.
 - Three transcripts are added under `aguiadk/testdata/agui/transcripts`: an
   invalidation under a `ParallelAgent`, activities from a tool and a model
   callback, and a delegated sub-agent's progress.
