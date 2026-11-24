@@ -307,6 +307,39 @@ func TestATimeoutForAnUndeclaredClientFinishesBare(t *testing.T) {
 	}
 }
 
+func TestTheCancelGateReadsTheDeclaredVersion(t *testing.T) {
+	agent := aguix.AgentFunc(func(_ context.Context, _ aguix.RunInput, out *aguix.Stream) error {
+		return out.Finish(aguix.Cancelled())
+	})
+	for _, tc := range []struct {
+		version   string
+		cancelled bool
+	}{
+		{"1.0", true}, {"1.3", true}, {"2.0", true}, {"0.9", false}, {"next", true}, {"1.0.1", true},
+	} {
+		t.Run(tc.version, func(t *testing.T) {
+			body := `{"threadId":"t1","runId":"r1","protocolVersion":"` + tc.version + `","messages":[]}`
+			got := lastFrame(t, run(t, agent, body))
+			if _, has := got["outcome"]; has != tc.cancelled {
+				t.Errorf("last frame = %v, want outcome present=%v", got, tc.cancelled)
+			}
+		})
+	}
+}
+
+func TestACancelledOutcomeCarriesNothingElse(t *testing.T) {
+	agent := aguix.AgentFunc(func(_ context.Context, _ aguix.RunInput, out *aguix.Stream) error {
+		return out.Finish(aguix.RunOutcome{
+			Type: "cancelled", PendingToolCallIDs: []string{"c1"},
+			Interrupts: []aguix.Interrupt{{ID: "i1", Reason: "r"}},
+		})
+	})
+	got := lastFrame(t, run(t, agent, declared))
+	if want := outboundFixture(t, "run-finished-cancelled"); !reflect.DeepEqual(got, want) {
+		t.Errorf("last frame = %v, want %v", got, want)
+	}
+}
+
 func TestAnAgentsOwnCancelIsGatedTheSameWay(t *testing.T) {
 	agent := aguix.AgentFunc(func(_ context.Context, _ aguix.RunInput, out *aguix.Stream) error {
 		return out.Finish(aguix.Cancelled())
@@ -336,8 +369,11 @@ func TestAZeroTimeoutIsNoBound(t *testing.T) {
 		}
 		return nil
 	})
-	if got := lastFrame(t, run(t, agent, oneTurn, aguix.WithRunTimeout(0))); got["type"] != "RUN_FINISHED" {
-		t.Errorf("last frame = %v", got)
+	for _, d := range []time.Duration{0, -time.Second} {
+		if got := lastFrame(t, run(t, agent, declared, aguix.WithRunTimeout(d))); got["type"] != "RUN_FINISHED" ||
+			got["outcome"] != nil {
+			t.Errorf("%v: last frame = %v", d, got)
+		}
 	}
 }
 

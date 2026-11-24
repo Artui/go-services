@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
+	"strconv"
 	"time"
 
 	services "github.com/Artui/go-services"
@@ -51,8 +53,8 @@ func WithMaxBodyBytes(limit int64) Option {
 // WithRunTimeout bounds how long a run may take. An agent that fails once the
 // deadline has passed ends the run as a cancel, RUN_FINISHED with a "cancelled"
 // outcome, never a RUN_ERROR: the run was stopped, it did not fail. Spans the agent left open are closed first, and its
-// usage is kept. A client that declares no protocolVersion gets a bare
-// RUN_FINISHED instead, as its schema rejects the outcome.
+// usage is kept. A client that declares no protocolVersion, or one before 1.0,
+// gets a bare RUN_FINISHED instead, as its schema rejects the outcome.
 //
 // The deadline is the context the agent runs under, so it only stops an agent
 // that honours its context; the handler waits for the agent to return either
@@ -151,10 +153,27 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 func (h *handler) finish(stream *Stream, input RunInput) {
 	event := RunFinished(input.ThreadID, input.RunID)
 	if outcome, ok := stream.finishedWith(); ok &&
-		(outcome.Type != "cancelled" || input.ProtocolVersion != "") {
+		(outcome.Type != "cancelled" || declaresOneZero(input.ProtocolVersion)) {
 		event = RunFinishedWith(input.ThreadID, input.RunID, outcome)
 	}
 	_ = stream.Emit(event.WithUsage(stream.usedTokens()))
+}
+
+var protocolGrammar = regexp.MustCompile(`^(\d+)\.(\d+)$`)
+
+// declaresOneZero reports a client that declared AG-UI 1.0 or newer, the rule
+// pydantic-ai applies: no declaration is older, one outside the spec's
+// MAJOR.MINOR grammar is read as newer.
+func declaresOneZero(version string) bool {
+	if version == "" {
+		return false
+	}
+	match := protocolGrammar.FindStringSubmatch(version)
+	if match == nil {
+		return true
+	}
+	major, _ := strconv.Atoi(match[1])
+	return major >= 1
 }
 
 // code is RUN_ERROR's code: timed_out for an error that reports itself a

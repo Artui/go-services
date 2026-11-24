@@ -363,7 +363,7 @@ func Interrupted(interrupts ...Interrupt) RunOutcome {
 
 // Cancelled is a run stopped before it completed that did not fail: nothing is
 // produced and nothing is waited for. A handler sends it only to a client that
-// declared a protocolVersion, as an older client's schema rejects the frame.
+// declared protocolVersion 1.0 or newer, as an older client's schema rejects it.
 func Cancelled() RunOutcome {
 	return RunOutcome{Type: "cancelled"}
 }

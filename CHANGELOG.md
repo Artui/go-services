@@ -301,9 +301,10 @@ its last frame. Its floors are unchanged.
   `WithOnError`. A deadline the handler did not set is the agent's
   `RUN_ERROR` `timed_out`; a client that hung up gets no terminal frame.
 - **`Cancelled()`** is accepted by `Stream.Finish`. A cancelled outcome goes
-  only to a client that declares `protocolVersion`, now read into
-  `RunInput.ProtocolVersion`. An older client's schema rejects it, so that
-  client gets a bare `RUN_FINISHED`, as pydantic-ai does.
+  only to a client that declares `protocolVersion` 1.0 or newer, now read
+  into `RunInput.ProtocolVersion`; a value outside `MAJOR.MINOR` counts as
+  newer. An older client's schema rejects the outcome, so that client gets a
+  bare `RUN_FINISHED`, as pydantic-ai does.
 - `Stream.Emit` is now safe to call from several goroutines.
 - Its tests record timed-out runs under `aguix/testdata/agui/transcripts`, and
   `scripts/agui-wire/verify-transcripts.mjs` checks them beside aguiadk's.
