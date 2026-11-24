@@ -309,6 +309,16 @@ are unchanged.
   updatable: they have to move in a single pull request or none of them can be
   green.
 
+### Fixed
+
+- **The coverage gate measured only the kernel in CI.** `scripts/coverage.sh`
+  ran `go tool cover -func` from the repo root, which cannot resolve a
+  submodule's packages without a `go.work` (gitignored, so absent in CI); the
+  failure was discarded, each adapter printed an empty total and the gate
+  exited 0. It now runs inside each module and a failure is fatal. The
+  exclusions match the whole line, so an uncovered function whose name is a
+  prefix of an excluded one is no longer exempted.
+
 ### Documentation
 
 - **`WithAtomic` now names the write-lock consequence of its own ordering.**
