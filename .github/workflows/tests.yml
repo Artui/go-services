@@ -143,7 +143,9 @@ jobs:
           fi
       # aguiadk's tests record whole runs as Go wrote them and fail on drift;
       # this hands those bytes to the client's own schemas and event verifier,
-      # so a frame out of order fails here rather than in a browser.
+      # so a frame out of order fails here rather than in a browser. The state
+      # transcripts are also applied by the client and must reach the state
+      # the Go run recorded beside them.
       - name: Check aguiadk's recorded runs with the pinned client
         working-directory: scripts/agui-wire
         run: node verify-transcripts.mjs
