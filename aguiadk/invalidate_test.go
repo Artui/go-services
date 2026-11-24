@@ -111,7 +111,12 @@ func TestEveryCallOfAStepIsInvalidated(t *testing.T) {
 	if !slices.Equal(got, want) {
 		t.Errorf("custom frames:\n got %v\nwant %v", got, want)
 	}
-	last := slices.IndexFunc(s.frames, func(f map[string]any) bool { return f["type"] == "TOOL_CALL_RESULT" })
+	last := -1
+	for i, f := range s.frames {
+		if f["type"] == "TOOL_CALL_RESULT" {
+			last = i
+		}
+	}
 	if first := slices.IndexFunc(s.frames, func(f map[string]any) bool { return f["type"] == "CUSTOM" }); first < last {
 		t.Errorf("an invalidation preceded the results:\n%s", s.body)
 	}

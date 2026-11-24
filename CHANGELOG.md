@@ -356,8 +356,11 @@ them.
   complete response, so a streamed block is sealed only when the stream holds
   exactly one reasoning message whose text is the response's first thought
   part, byte for byte; the parts after it never streamed and are spans of their
-  own, a redacted block an empty one. Any other shape is sent unsealed, and a
-  signature that is not UTF-8, which JSON would rewrite, is not sent.
+  own, a redacted block an empty one. Any other shape seals nothing and sends
+  none of the parts that did not stream, a redacted block included, so the next
+  run returns none of that turn's thinking, which Claude refuses on a tool
+  result turn; a signature that is not UTF-8, which JSON would rewrite, is not
+  sent.
 - **The next run hands Claude its thinking back.** Claude requires the final
   assistant turn of a thinking-enabled request to start with its thinking
   block, which is the turn a tool result or an approval resume answers. A
@@ -370,9 +373,11 @@ them.
 - **`PublishInvalidation(ctx, reason, keys...)`** queues a CUSTOM
   `ag_ui.invalidate` event, `{keys, reason}` with an empty reason sent as
   `null`, as django-ag-ui sends it. A spec's handler calls it with its
-  `Ctx.Context`. The event is sent after the event carrying the call's result,
-  so after a spec's transaction has committed, and whatever is still queued when
-  a run ends, a failed one included, is sent before it finishes. It returns
+  `Ctx.Context`. What is queued is sent after each event of the run: within one
+  agent that is the event carrying the call's result, so after a spec's
+  transaction has committed, but under a `ParallelAgent` a sibling branch's
+  event can send it before the commit. Whatever is still queued when a run
+  ends, a failed one included, is sent before it finishes. It returns
   `false`, and queues nothing, outside a bridge run or with no keys.
   `InvalidateEventName` names the event.
 - Four transcripts are added under `aguiadk/testdata/agui/transcripts`, and

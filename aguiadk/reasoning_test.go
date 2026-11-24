@@ -146,6 +146,13 @@ func TestTranslateACallAfterThinkingHasTheTextAsItsParent(t *testing.T) {
 			"CALL_START c1 fill_field parent=m2", "CALL_ARGS c1 {}", "CALL_END c1"})...)
 }
 
+// A thought after text in one complete event ends the text before its span.
+func TestTranslateAnUnstreamedThoughtAfterTextEndsTheText(t *testing.T) {
+	got := trFeed(t, newTranslator(trIDs()), trEvent(false, genai.NewPartFromText("A"), thought("", "sig")))
+	trWant(t, got, slices.Concat([]string{"TEXT_START m1", "TEXT m1 A", "TEXT_END m1"},
+		thinkLines("m2", ""), []string{"SEAL message m2 sig"})...)
+}
+
 type feedEvent struct {
 	partial bool
 	parts   []*genai.Part
@@ -311,6 +318,28 @@ func TestRebuildPlacesSealedThinkingOnTheModelTurnItSitsIn(t *testing.T) {
 		"text again", "thought Plan. sig-1", "text Sure."}
 	if !slices.Equal(got, want) {
 		t.Errorf("history parts:\n got %v\nwant %v", got, want)
+	}
+}
+
+// A block left waiting for a model turn is dropped when the user speaks first.
+func TestRebuildDropsSealedThinkingAUserMessageFollows(t *testing.T) {
+	history, _, err := rebuild([]aguix.Message{
+		text("user", "a"),
+		{ID: "r1", Role: "reasoning", Content: aguix.TextContent("Old."), EncryptedValue: "sig-1"},
+		text("user", "b"),
+		{ID: "a1", Role: "assistant", ToolCalls: []aguix.ToolCall{{ID: "c1", Type: "function",
+			Function: aguix.FunctionCall{Name: "fill_field", Arguments: "{}"}}}},
+		{ID: "t1", Role: "tool", ToolCallID: "c1", Content: aguix.TextContent("ok")},
+	}, "librarian")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, ev := range history {
+		for _, p := range ev.Content.Parts {
+			if p.Thought {
+				t.Errorf("a stale block rode on a later turn: %q", p.Text)
+			}
+		}
 	}
 }
 

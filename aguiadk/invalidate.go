@@ -50,9 +50,12 @@ func (s *sink) drain() []aguix.Event {
 // matched by the page, never by this package. Reason names what wrote, for the
 // page's logs; empty sends null.
 //
-// The event is queued, not sent: the bridge sends it after the event that
-// carries the call's result, which ADK yields only once the call has returned,
-// so a spec's transaction has committed by then. A call that publishes and then
+// The event is queued, not sent: the bridge sends what is queued after each
+// event of the run. Within one agent the next event after a call is the one
+// carrying its result, which ADK yields only once every call of the step has
+// returned, so a spec's transaction has committed by then. Under a
+// ParallelAgent a sibling branch's event can carry it out first, before the
+// commit, and the page may refetch the old data. A call that publishes and then
 // fails still sends it, which costs the page a refetch of unchanged data.
 //
 // It reports whether a run was listening. Outside a bridge run, or with no
