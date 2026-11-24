@@ -9,6 +9,12 @@
 // which rejects arguments before their call starts, content outside a message,
 // and a run that finishes with something still open.
 //
+// A transcript with a <name>.state.json beside it is then applied by the client's
+// own default applier (defaultApplyEvents), starting from the state the Go run was
+// sent, and the state it reaches must equal the state the Go run ended with. That
+// file is written by the Go test from the run's session, never by hand. Every
+// state-* transcript must have one.
+//
 // A transcript is stored without the body's final blank line, which the
 // repository's end-of-file hook would strip; it is put back before splitting.
 //
@@ -21,7 +27,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { isDeepStrictEqual } from "node:util";
 
-import { verifyEvents } from "@ag-ui/client";
+import { HttpAgent, defaultApplyEvents, verifyEvents } from "@ag-ui/client";
 import { EventSchemas } from "@ag-ui/core/schemas";
 import { from, lastValueFrom, tap, toArray } from "rxjs";
 
@@ -61,6 +67,41 @@ async function verify(events) {
   }
 }
 
+async function applied(events, sent) {
+  const input = {
+    threadId: "thread",
+    runId: "run",
+    state: structuredClone(sent ?? {}),
+    messages: [],
+    tools: [],
+    context: [],
+    forwardedProps: {},
+  };
+  const agent = new HttpAgent({ url: "http://unused.invalid" });
+  const mutations = await lastValueFrom(
+    defaultApplyEvents(input, from(events), agent, []).pipe(toArray()),
+  );
+  return mutations.filter((m) => m.state !== undefined).at(-1)?.state ?? input.state;
+}
+
+async function checkState(dir, name, events) {
+  const path = join(dir, name.replace(/\.sse$/, ".state.json"));
+  let record;
+  try {
+    record = JSON.parse(readFileSync(path, "utf8"));
+  } catch (err) {
+    if (err.code === "ENOENT" && !name.startsWith("state-")) return false;
+    throw new Error(`no readable final state beside it: ${err.message}`);
+  }
+  const got = await applied(events, record.sent);
+  if (!isDeepStrictEqual(got, record.final)) {
+    throw new Error(
+      `the client applies it to ${JSON.stringify(got)}, the Go run ended with ${JSON.stringify(record.final)}`,
+    );
+  }
+  return true;
+}
+
 let failed = 0;
 for (const dir of dirs) {
   const files = readdirSync(dir).filter((name) => name.endsWith(".sse")).sort();
@@ -70,8 +111,10 @@ for (const dir of dirs) {
   }
   for (const name of files) {
     try {
-      await verify(frames(readFileSync(join(dir, name), "utf8")));
-      console.log(`ok   ${name}`);
+      const events = frames(readFileSync(join(dir, name), "utf8"));
+      await verify(events);
+      const state = await checkState(dir, name, events);
+      console.log(`ok   ${name}${state ? " (state applied)" : ""}`);
     } catch (err) {
       failed++;
       console.error(`FAIL ${name}: ${err.message}`);

@@ -1,6 +1,7 @@
 package aguiadk
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -110,6 +111,60 @@ func applyState(t *testing.T, state map[string]any, s served) map[string]any {
 	return state
 }
 
+// ended wraps the bridge's session service so a test can read the state the run ended with.
+type ended struct{ svc session.Service }
+
+func remember(t *testing.T, a aguix.Agent) *ended {
+	t.Helper()
+	b, ok := a.(*bridge)
+	if !ok {
+		t.Fatalf("%T is not the bridge", a)
+	}
+	e := &ended{}
+	open := b.newService
+	b.newService = func() session.Service { e.svc = open(); return e.svc }
+	return e
+}
+
+// goldenState records beside the transcript the state the Go run ended with and the state the
+// client sent, which scripts/agui-wire applies the frames to and compares.
+func goldenState(t *testing.T, name string, in aguix.RunInput, e *ended) {
+	t.Helper()
+	got, err := e.svc.Get(context.Background(), &session.GetRequest{
+		AppName: appName, UserID: "anonymous", SessionID: in.ThreadID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	final := map[string]any{}
+	for k, v := range got.Session.State().All() {
+		final[k] = v
+	}
+	sent := json.RawMessage("null")
+	if len(in.State) > 0 {
+		sent = in.State
+	}
+	raw, err := json.MarshalIndent(map[string]any{"sent": sent, "final": final}, "", "  ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join("testdata", "agui", "transcripts", name+".state.json")
+	raw = append(raw, '\n')
+	if *update {
+		if err := os.WriteFile(path, raw, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		return
+	}
+	want, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("%v (run the tests with -update to write it)", err)
+	}
+	if string(raw) != string(want) {
+		t.Errorf("%s drifted:\ngot:\n%s\nwant:\n%s", path, raw, want)
+	}
+}
+
 func TestStateRoundTripsThroughARun(t *testing.T) {
 	llm := &scriptLLM{steps: []step{
 		{calls: []*genai.FunctionCall{countCall("c1")}},
@@ -117,6 +172,7 @@ func TestStateRoundTripsThroughARun(t *testing.T) {
 		{text: "Still sunset."},
 	}}
 	b := mustNew(t, stateAgent(t, llm))
+	e := remember(t, b)
 
 	first := producerInput(t, "reasoning")
 	s := serve(t, b, first)
@@ -131,6 +187,7 @@ func TestStateRoundTripsThroughARun(t *testing.T) {
 		t.Errorf("an invocation-only key reached the client:\n%s", s.body)
 	}
 	golden(t, "state-seeded", s)
+	goldenState(t, "state-seeded", first, e)
 
 	state := applyState(t, nil, s)
 	want := map[string]any{"draft": "sunset", "turns": float64(3), "summary": "Noted."}
@@ -145,6 +202,7 @@ func TestStateRoundTripsThroughARun(t *testing.T) {
 		t.Errorf("the next run's model saw %q", got)
 	}
 	golden(t, "state-next", s)
+	goldenState(t, "state-next", second, e)
 	if got := applyState(t, nil, s)["summary"]; got != "Still sunset." {
 		t.Errorf("summary after the next run = %v", got)
 	}
@@ -163,7 +221,11 @@ func TestEmptyStatePatchesWithoutASnapshot(t *testing.T) {
 	llm := &scriptLLM{steps: []step{{text: "Hello."}}}
 	in := input("run-1", text("user", "Hi."))
 	in.State = json.RawMessage(`{}`)
-	s := serve(t, mustNew(t, stateAgent(t, llm)), in)
+	b := mustNew(t, stateAgent(t, llm))
+	e := remember(t, b)
+	s := serve(t, b, in)
+	golden(t, "state-delta-only", s)
+	goldenState(t, "state-delta-only", in, e)
 	wantTypes(t, s, "RUN_STARTED",
 		"TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "STATE_DELTA", "RUN_FINISHED")
 	if got := mustJSON(t, s.first("STATE_DELTA")["delta"]); got != `[{"op":"add","path":"/summary","value":"Hello."}]` {
@@ -287,7 +349,11 @@ func TestASeededTempKeyIsNeitherSeededNorEchoed(t *testing.T) {
 	}
 	in := input("run-1", text("user", "Hi."))
 	in.State = json.RawMessage(`{"temp:scratch":"sent","keep":1}`)
-	s := serve(t, mustNew(t, a), in)
+	b := mustNew(t, a)
+	e := remember(t, b)
+	s := serve(t, b, in)
+	golden(t, "state-temp", s)
+	goldenState(t, "state-temp", in, e)
 	if got := mustJSON(t, s.first("STATE_SNAPSHOT")["snapshot"]); got != `{"keep":1}` {
 		t.Errorf("snapshot = %s", got)
 	}
