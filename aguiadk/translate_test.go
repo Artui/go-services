@@ -2,6 +2,7 @@ package aguiadk
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"iter"
@@ -45,6 +46,26 @@ func trLine(e aguix.Event) string {
 		return "CALL_END " + e.ToolCallID
 	case aguix.EventToolCallResult:
 		return fmt.Sprintf("RESULT %s %s outcome=%q %s", e.MessageID, e.ToolCallID, e.Outcome, e.Content)
+	case aguix.EventReasoningStart:
+		return "THINK_START " + e.MessageID
+	case aguix.EventReasoningMessageStart:
+		return "THINK_MSG " + e.MessageID
+	case aguix.EventReasoningMessageContent:
+		return "THINK " + e.MessageID + " " + e.Delta
+	case aguix.EventReasoningMessageEnd:
+		return "THINK_MSG_END " + e.MessageID
+	case aguix.EventReasoningEnd:
+		return "THINK_END " + e.MessageID
+	case aguix.EventReasoningEncryptedValue:
+		var v sealed
+		if err := json.Unmarshal([]byte(e.EncryptedValue), &v); err != nil {
+			return "UNREADABLE SEAL " + e.EncryptedValue
+		}
+		line := "SEAL " + e.Subtype + " " + e.EntityID
+		for _, b := range v.Blocks {
+			line += fmt.Sprintf(" %s@%d", b.Signature, b.Length)
+		}
+		return line
 	}
 	return "UNEXPECTED " + string(e.Type)
 }
@@ -62,13 +83,23 @@ func trLines(events []aguix.Event) []string {
 // and nothing left open.
 func trCheckSequence(t *testing.T, events []aguix.Event) {
 	t.Helper()
-	openText := ""
+	openText, openThought := "", ""
+	thoughtState := map[string]string{}
 	callState := map[string]string{}
 	for i, e := range events {
+		if e.Type != aguix.EventReasoningEncryptedValue && strings.HasPrefix(string(e.Type), "REASONING_") {
+			trCheckThought(t, i, e, &openThought, openText, thoughtState)
+			continue
+		}
 		switch e.Type {
+		case aguix.EventReasoningEncryptedValue:
+			if e.Subtype != "message" || thoughtState[e.EntityID] != "ended" {
+				t.Errorf("frame %d seals %s %s, which is not a closed reasoning message", i, e.Subtype, e.EntityID)
+			}
+			thoughtState[e.EntityID] = "sealed"
 		case aguix.EventTextMessageStart:
-			if openText != "" {
-				t.Errorf("frame %d starts %s while %s is open", i, e.MessageID, openText)
+			if openText != "" || openThought != "" {
+				t.Errorf("frame %d starts %s while %s%s is open", i, e.MessageID, openText, openThought)
 			}
 			openText = e.MessageID
 		case aguix.EventTextMessageContent:
@@ -81,8 +112,8 @@ func trCheckSequence(t *testing.T, events []aguix.Event) {
 			}
 			openText = ""
 		case aguix.EventToolCallStart:
-			if openText != "" {
-				t.Errorf("frame %d starts a call inside text %s", i, openText)
+			if openText != "" || openThought != "" {
+				t.Errorf("frame %d starts a call inside %s%s", i, openText, openThought)
 			}
 			if callState[e.ToolCallID] != "" {
 				t.Errorf("frame %d: call %s announced twice", i, e.ToolCallID)
@@ -107,13 +138,44 @@ func trCheckSequence(t *testing.T, events []aguix.Event) {
 			t.Errorf("frame %d: unexpected %s", i, e.Type)
 		}
 	}
-	if openText != "" {
-		t.Errorf("text %s still open at the end", openText)
+	if openText != "" || openThought != "" {
+		t.Errorf("%s%s still open at the end", openText, openThought)
 	}
 	for id, state := range callState {
 		if state == "started" || state == "args" {
 			t.Errorf("call %s left %s", id, state)
 		}
+	}
+}
+
+// trCheckThought follows one reasoning span: START, MESSAGE_START, content,
+// MESSAGE_END, END, never beside open text, and never reopened.
+func trCheckThought(t *testing.T, i int, e aguix.Event, open *string, openText string, state map[string]string) {
+	t.Helper()
+	id, at := e.MessageID, state[e.MessageID]
+	want, next := map[aguix.EventType]string{
+		aguix.EventReasoningStart:          "",
+		aguix.EventReasoningMessageStart:   "span",
+		aguix.EventReasoningMessageContent: "message",
+		aguix.EventReasoningMessageEnd:     "message",
+		aguix.EventReasoningEnd:            "closed",
+	}[e.Type], map[aguix.EventType]string{
+		aguix.EventReasoningStart:          "span",
+		aguix.EventReasoningMessageStart:   "message",
+		aguix.EventReasoningMessageContent: "message",
+		aguix.EventReasoningMessageEnd:     "closed",
+		aguix.EventReasoningEnd:            "ended",
+	}[e.Type]
+	if at != want || (e.Type == aguix.EventReasoningStart && (*open != "" || openText != "")) {
+		t.Errorf("frame %d: %s for %s in state %q (open %q, text %q)", i, e.Type, id, at, *open, openText)
+	}
+	if e.Type == aguix.EventReasoningMessageContent && e.Delta == "" {
+		t.Errorf("frame %d: empty reasoning delta", i)
+	}
+	state[id] = next
+	*open = id
+	if next == "ended" {
+		*open = ""
 	}
 }
 
@@ -184,7 +246,9 @@ func TestTranslateThoughtPartialsDoNotSuppressTheFinalText(t *testing.T) {
 		trEvent(true, genai.NewPartFromText("")),
 		trEvent(false, thought, genai.NewPartFromText("Answer")),
 	)
-	trWant(t, got, "TEXT_START m1", "TEXT m1 Answer", "TEXT_END m1")
+	trWant(t, got,
+		"THINK_START m1", "THINK_MSG m1", "THINK m1 pondering", "THINK_MSG_END m1", "THINK_END m1",
+		"TEXT_START m2", "TEXT m2 Answer", "TEXT_END m2")
 }
 
 // Each model turn's dedupe is its own: text after a tool result is a new message.
@@ -400,7 +464,10 @@ func (m *trStreamingLLM) GenerateContent(
 				}
 			}
 		}
-		parts := []*genai.Part{genai.NewPartFromText(step.text)}
+		parts := []*genai.Part{
+			{Text: "thinking", Thought: true, ThoughtSignature: []byte("sig-" + step.text[:2])},
+			genai.NewPartFromText(step.text),
+		}
 		for _, c := range step.calls {
 			parts = append(parts, &genai.Part{FunctionCall: c})
 		}
@@ -491,26 +558,35 @@ func trRun(t *testing.T, mode agent.StreamingMode) ([]aguix.Event, []string) {
 func TestTranslateARealRunner(t *testing.T) {
 	refusal := `RESULT %s c1 outcome="failed" {"error":"permission denied: book 13 is reference only"}`
 	call1 := []string{
-		"CALL_START c1 borrow_book parent=m1", `CALL_ARGS c1 {"book_id":13}`, "CALL_END c1",
+		"CALL_START c1 borrow_book parent=m2", `CALL_ARGS c1 {"book_id":13}`, "CALL_END c1",
 	}
 	call2 := func(parent string) []string {
 		return []string{
 			"CALL_START c2 ask_user parent=" + parent, `CALL_ARGS c2 {"question":"Another?"}`, "CALL_END c2",
 		}
 	}
+	thought := func(id, sig string) []string {
+		return []string{"THINK_START " + id, "THINK_MSG " + id, "THINK " + id + " thinking",
+			"THINK_MSG_END " + id, "THINK_END " + id, "SEAL message " + id + " " + sig + "@8"}
+	}
+	// Streamed, the seal follows the span it closes and precedes the text.
 	sse := slices.Concat(
-		[]string{"TEXT_START m1", "TEXT m1 Let ", "TEXT m1 me ", "TEXT m1 check ", "TEXT m1 the ",
-			"TEXT m1 shelf.", "TEXT_END m1"},
-		call1, []string{fmt.Sprintf(refusal, "m2")},
-		[]string{"TEXT_START m3", "TEXT m3 It ", "TEXT m3 is ", "TEXT m3 reference ", "TEXT m3 only. ",
-			"TEXT m3 Shall ", "TEXT m3 I ", "TEXT m3 ask?", "TEXT_END m3"},
-		call2("m3"),
+		[]string{"THINK_START m1", "THINK_MSG m1", "THINK m1 thinking", "THINK_MSG_END m1", "THINK_END m1",
+			"TEXT_START m2", "TEXT m2 Let ", "TEXT m2 me ", "TEXT m2 check ", "TEXT m2 the ",
+			"TEXT m2 shelf.", "TEXT_END m2", "SEAL message m1 sig-Le@8"},
+		call1, []string{fmt.Sprintf(refusal, "m3")},
+		[]string{"THINK_START m4", "THINK_MSG m4", "THINK m4 thinking", "THINK_MSG_END m4", "THINK_END m4",
+			"TEXT_START m5", "TEXT m5 It ", "TEXT m5 is ", "TEXT m5 reference ", "TEXT m5 only. ",
+			"TEXT m5 Shall ", "TEXT m5 I ", "TEXT m5 ask?", "TEXT_END m5", "SEAL message m4 sig-It@8"},
+		call2("m5"),
 	)
 	whole := slices.Concat(
-		[]string{"TEXT_START m1", "TEXT m1 Let me check the shelf.", "TEXT_END m1"},
-		call1, []string{fmt.Sprintf(refusal, "m2")},
-		[]string{"TEXT_START m3", "TEXT m3 It is reference only. Shall I ask?", "TEXT_END m3"},
-		call2("m3"),
+		thought("m1", "sig-Le"),
+		[]string{"TEXT_START m2", "TEXT m2 Let me check the shelf.", "TEXT_END m2"},
+		call1, []string{fmt.Sprintf(refusal, "m3")},
+		thought("m4", "sig-It"),
+		[]string{"TEXT_START m5", "TEXT m5 It is reference only. Shall I ask?", "TEXT_END m5"},
+		call2("m5"),
 	)
 	for name, tc := range map[string]struct {
 		mode agent.StreamingMode

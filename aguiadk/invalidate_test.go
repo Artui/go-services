@@ -1,0 +1,169 @@
+package aguiadk
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"slices"
+	"sync"
+	"testing"
+
+	services "github.com/Artui/go-services"
+	"github.com/Artui/go-services/adkx"
+	"github.com/Artui/go-services/aguix"
+	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/agent/llmagent"
+	"google.golang.org/adk/v2/model"
+	"google.golang.org/adk/v2/tool"
+	"google.golang.org/genai"
+)
+
+// shelf is a registry whose one mutation publishes an invalidation from inside
+// its transaction; log records the order of commits and publications.
+type shelf struct {
+	mu  sync.Mutex
+	log []string
+}
+
+func (s *shelf) record(line string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.log = append(s.log, line)
+}
+
+func (s *shelf) toolset(t *testing.T) tool.Toolset {
+	t.Helper()
+	reg := services.New[struct{}](nil, services.WithAtomic[struct{}](
+		func(ctx context.Context, run func(context.Context) error) error {
+			err := run(ctx)
+			s.record("commit")
+			return err
+		}))
+	services.MustRegister(reg, services.Spec[struct{}, borrowIn, borrowOut]{
+		Name: "shelve_book", Description: "Shelve a book.", Kind: services.Mutation,
+		Run: func(c services.Ctx[struct{}], in borrowIn) (borrowOut, error) {
+			reason := "shelve_book"
+			if in.BookID == 0 {
+				reason = ""
+			}
+			listening := PublishInvalidation(c.Context, reason, "books", fmt.Sprintf("books/%d", in.BookID))
+			s.record(fmt.Sprintf("publish %d %v", in.BookID, listening))
+			return borrowOut{Loan: in.BookID}, nil
+		},
+	})
+	ts, err := adkx.Toolset(reg, adkx.Anonymous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return ts
+}
+
+func shelveBook(id string, book int) *genai.FunctionCall {
+	return &genai.FunctionCall{ID: id, Name: "shelve_book", Args: map[string]any{"book_id": book}}
+}
+
+func customs(s served) []string {
+	var out []string
+	for _, f := range s.frames {
+		if f["type"] == "CUSTOM" {
+			raw, _ := json.Marshal(f)
+			out = append(out, string(raw))
+		}
+	}
+	return out
+}
+
+func TestAMutationsInvalidationFollowsItsResult(t *testing.T) {
+	sh := &shelf{}
+	llm := &scriptLLM{steps: []step{{calls: []*genai.FunctionCall{shelveBook("c1", 7)}}, {text: "Shelved."}}}
+	s := serve(t, mustNew(t, librarian(t, llm, sh.toolset(t))), input("run-inv", text("user", "Shelve book 7.")))
+
+	wantTypes(t, s, "RUN_STARTED", "TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_END",
+		"TOOL_CALL_RESULT", "CUSTOM",
+		"TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED")
+	want := []string{`{"name":"ag_ui.invalidate","type":"CUSTOM","value":{"keys":["books","books/7"],"reason":"shelve_book"}}`}
+	if got := customs(s); !slices.Equal(got, want) {
+		t.Errorf("custom frames:\n got %v\nwant %v", got, want)
+	}
+	// Published inside the transaction, sent once the result shows it committed.
+	if !slices.Equal(sh.log, []string{"publish 7 true", "commit"}) {
+		t.Errorf("log %v", sh.log)
+	}
+	golden(t, "invalidate", s)
+}
+
+// A step's calls may run concurrently; each one's invalidation is sent, after
+// the event that carries the step's results.
+func TestEveryCallOfAStepIsInvalidated(t *testing.T) {
+	sh := &shelf{}
+	llm := &scriptLLM{steps: []step{
+		{calls: []*genai.FunctionCall{shelveBook("c1", 7), shelveBook("c2", 0)}}, {text: "Shelved."},
+	}}
+	s := serve(t, mustNew(t, librarian(t, llm, sh.toolset(t))), input("run-inv", text("user", "Shelve both.")))
+
+	got := customs(s)
+	slices.Sort(got)
+	want := []string{
+		`{"name":"ag_ui.invalidate","type":"CUSTOM","value":{"keys":["books","books/0"],"reason":null}}`,
+		`{"name":"ag_ui.invalidate","type":"CUSTOM","value":{"keys":["books","books/7"],"reason":"shelve_book"}}`,
+	}
+	if !slices.Equal(got, want) {
+		t.Errorf("custom frames:\n got %v\nwant %v", got, want)
+	}
+	last := -1
+	for i, f := range s.frames {
+		if f["type"] == "TOOL_CALL_RESULT" {
+			last = i
+		}
+	}
+	if first := slices.IndexFunc(s.frames, func(f map[string]any) bool { return f["type"] == "CUSTOM" }); first < last {
+		t.Errorf("an invalidation preceded the results:\n%s", s.body)
+	}
+}
+
+// What was published before the run failed is still sent, ahead of RUN_ERROR.
+func TestAnInvalidationQueuedBeforeAFailureIsSent(t *testing.T) {
+	boom := errors.New("callback refused")
+	a, err := llmagent.New(llmagent.Config{
+		Name: "librarian", Model: &scriptLLM{},
+		BeforeModelCallbacks: []llmagent.BeforeModelCallback{
+			func(ctx agent.Context, _ *model.LLMRequest) (*model.LLMResponse, error) {
+				PublishInvalidation(ctx, "", "books")
+				return nil, boom
+			},
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := serve(t, mustNew(t, a), input("run-inv", text("user", "Shelve.")))
+	wantTypes(t, s, "RUN_STARTED", "CUSTOM", "RUN_ERROR")
+	wantRunError(t, s, boom.Error())
+}
+
+func TestPublishInvalidationOutsideARunOrWithoutKeysQueuesNothing(t *testing.T) {
+	if PublishInvalidation(context.Background(), "why", "books") {
+		t.Error("a context with no run reported a listener")
+	}
+	ctx, queued := withSink(context.Background())
+	if PublishInvalidation(ctx, "why") {
+		t.Error("an invalidation with no keys reported a listener")
+	}
+	keys := []string{"books"}
+	if !PublishInvalidation(ctx, "why", keys...) {
+		t.Error("a run's context reported no listener")
+	}
+	keys[0] = "changed"
+	got := queued.drain()
+	if len(got) != 1 || got[0].Type != aguix.EventCustom || got[0].Name != InvalidateEventName {
+		t.Fatalf("queued %v", got)
+	}
+	raw, _ := json.Marshal(got[0])
+	if string(raw) != `{"type":"CUSTOM","name":"ag_ui.invalidate","value":{"keys":["books"],"reason":"why"}}` {
+		t.Errorf("queued %s", raw)
+	}
+	if again := queued.drain(); len(again) != 0 {
+		t.Errorf("a drained sink still held %v", again)
+	}
+}

@@ -222,19 +222,26 @@ for (const [name, body] of Object.entries(written)) {
 // copy of it; the second records the request that answers the interrupt.
 const approvalDir = join(here, "..", "..", "aguiadk", "testdata", "agui");
 const approvalInbound = join(approvalDir, "inbound");
-const pausedRun = `${readFileSync(join(approvalDir, "transcripts", "approval-pause.sse"), "utf8")}\n`;
+const transcript = (name) =>
+  `${readFileSync(join(approvalDir, "transcripts", `${name}.sse`), "utf8")}\n`;
+const approve = { status: "resolved", payload: { approved: true } };
 const approvals = {
-  approve: { status: "resolved", payload: { approved: true } },
-  edit: { status: "resolved", payload: { approved: true, editedArgs: { book_id: 9 } } },
-  deny: { status: "cancelled" },
+  approve: { paused: "approval-pause", answer: approve },
+  edit: { paused: "approval-pause", answer: { status: "resolved", payload: { approved: true, editedArgs: { book_id: 9 } } } },
+  deny: { paused: "approval-pause", answer: { status: "cancelled" } },
+  // The same approval after a model that thought first: the history carries the
+  // reasoning messages, and their encrypted values, the client kept.
+  "reasoning-approve": { paused: "reasoning-approval-pause", answer: approve },
 };
 
-async function resumed(name, answer) {
+// twoRuns records the second of two requests: the first is answered with the Go
+// server's recorded transcript, and between runs `between` acts as the page does.
+async function twoRuns(name, firstRun, initialMessages, first, second, between = () => {}) {
   const bodies = [];
   const fetch = async (_url, init) => {
     bodies.push(init.body);
     if (bodies.length === 1) {
-      return new Response(pausedRun, { headers: { "Content-Type": "text/event-stream" } });
+      return new Response(firstRun, { headers: { "Content-Type": "text/event-stream" } });
     }
     const frames = [
       { type: "RUN_STARTED", threadId: "thread-1", runId: `run-${name}` },
@@ -243,14 +250,10 @@ async function resumed(name, answer) {
     const sse = frames.map((f) => `data: ${JSON.stringify(f)}\n\n`).join("");
     return new Response(sse, { headers: { "Content-Type": "text/event-stream" } });
   };
-  const agent = new HttpAgent({
-    url: "http://example.invalid/agui",
-    threadId: "thread-1",
-    initialMessages: [{ id: "u1", role: "user", content: "Discard book 7." }],
-    fetch,
-  });
-  await agent.runAgent({ runId: "run-pause" });
-  await agent.runAgent({ runId: `run-${name}`, resume: [{ interruptId: "int-c1", ...answer }] });
+  const agent = new HttpAgent({ url: "http://example.invalid/agui", threadId: "thread-1", initialMessages, fetch });
+  await agent.runAgent(first);
+  between(agent);
+  await agent.runAgent({ runId: `run-${name}`, ...second });
   if (bodies.length !== 2) {
     throw new Error(`${name}: the client sent ${bodies.length} requests, want 2`);
   }
@@ -259,9 +262,31 @@ async function resumed(name, answer) {
 
 rmSync(approvalInbound, { recursive: true, force: true });
 mkdirSync(approvalInbound, { recursive: true });
-for (const [name, answer] of Object.entries(approvals)) {
-  writeFileSync(join(approvalInbound, `${name}.json`), `${await resumed(name, answer)}\n`);
+for (const [name, { paused, answer }] of Object.entries(approvals)) {
+  const body = await twoRuns(name, transcript(paused),
+    [{ id: "u1", role: "user", content: "Discard book 7." }],
+    { runId: "run-pause" }, { resume: [{ interruptId: "int-c1", ...answer }] });
+  writeFileSync(join(approvalInbound, `${name}.json`), `${body}\n`);
 }
+
+// A browser tool answered after the model thought: the page adds the tool's
+// result to the history the client keeps, and runs again.
+const fillField = {
+  name: "fill_field",
+  description: "Fill a form field on the page.",
+  parameters: { type: "object", properties: { field: { type: "string" } }, required: ["field"] },
+};
+const toolResult = await twoRuns("reasoning-tool-result", transcript("reasoning-pending"),
+  [{ id: "user-Fill in my email.", role: "user", content: "Fill in my email." }],
+  { runId: "run-think", tools: [fillField] }, { tools: [fillField] },
+  (agent) => agent.addMessage({ id: "t1", role: "tool", toolCallId: "c1", content: '{"filled":true}' }));
+writeFileSync(join(approvalInbound, "reasoning-tool-result.json"), `${toolResult}\n`);
+
+const blocksResult = await twoRuns("reasoning-blocks-tool-result", transcript("reasoning-blocks"),
+  [{ id: "user-Fill in my email.", role: "user", content: "Fill in my email." }],
+  { runId: "run-think", tools: [fillField] }, { tools: [fillField] },
+  (agent) => agent.addMessage({ id: "t1", role: "tool", toolCallId: "toolu_01", content: '{"filled":true}' }));
+writeFileSync(join(approvalInbound, "reasoning-blocks-tool-result.json"), `${blocksResult}\n`);
 
 const call = { id: "c1", type: "function", function: { name: "borrow_book", arguments: '{"book_id":4}' } };
 

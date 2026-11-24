@@ -1,0 +1,19 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-inv"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"c1","toolCallName":"shelve_book"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"book_id\":7}","toolCallId":"c1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"c1"}
+
+data: {"type":"TOOL_CALL_RESULT","messageId":"run-inv-1","role":"tool","toolCallId":"c1","content":"{\"by\":\"\",\"loan\":7}"}
+
+data: {"type":"CUSTOM","name":"ag_ui.invalidate","value":{"keys":["books","books/7"],"reason":"shelve_book"}}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"run-inv-2","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-inv-2","delta":"Shelved."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"run-inv-2"}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-inv"}

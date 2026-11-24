@@ -342,6 +342,53 @@ floor rises to `v0.6.0`, so a failed run's `RUN_ERROR` now carries a `code`.
   two-call run's usage and an interrupt that is not destructive, and the wire
   script checks them.
 
+`aguiadk/v0.5.0` streams a model's thinking and lets a tool tell the page what
+it changed. It needs no new aguix type, so its floors stay where `v0.4.0` set
+them.
+
+- **Thinking streams as `REASONING_*` frames.** `Thought` parts are sent as
+  `REASONING_START`, `REASONING_MESSAGE_START`, the deltas, `REASONING_MESSAGE_END`
+  and `REASONING_END`; text and reasoning never interleave, each ending the
+  other, and a run that fails mid-thought still closes its span before
+  `RUN_ERROR`. The reasoning message is never a tool call's parent.
+- **Each reasoning message is sealed with the blocks it holds**, as its
+  `REASONING_ENCRYPTED_VALUE` of subtype `message`, after the span: a JSON
+  object listing every thinking block in order, each as the bytes of the text
+  it covers and its signature in base64. `anthropicmodel` streams a response's
+  thinking blocks with no boundary between them and signs them only in the
+  complete response, so they stream as one reasoning message, and its seal
+  lists them all, a redacted block as one that covers no text. Thought parts
+  that did not stream are each a span of their own, a redacted block an empty
+  one. A stream whose text is not the response's thought parts joined, which
+  `anthropicmodel` does not produce, is not sealed.
+- **The next run hands Claude its thinking back.** Claude requires the final
+  assistant turn of a thinking-enabled request to start with its thinking
+  blocks, which is the turn a tool result or an approval resume answers. A
+  `reasoning` message with an `encryptedValue` is split back into the blocks
+  its seal lists, each replayed as a signed `Thought` part, unchanged and in
+  order, on the model turn it sits in, ahead of that turn's text and calls;
+  the client files a block sealed after the text started behind the assistant
+  message, so the turn is found on either side. A `reasoning`
+  message with no `encryptedValue`, one whose seal does not split its text
+  exactly, or one with a user or tool message before the next model turn, is
+  still dropped.
+- **`PublishInvalidation(ctx, reason, keys...)`** queues a CUSTOM
+  `ag_ui.invalidate` event, `{keys, reason}` with an empty reason sent as
+  `null`, as django-ag-ui sends it. A spec's handler calls it with its
+  `Ctx.Context`. What is queued is sent after each event of the run: within one
+  agent that is the event carrying the call's result, so after a spec's
+  transaction has committed, but under a `ParallelAgent` a sibling branch's
+  event can send it before the commit. Whatever is still queued when a run
+  ends, a failed one included, is sent before it finishes. It returns
+  `false`, and queues nothing, outside a bridge run or with no keys.
+  `InvalidateEventName` names the event.
+- Five transcripts are added under `aguiadk/testdata/agui/transcripts`, and
+  `scripts/agui-wire/generate.mjs` writes three inbound fixtures from three of
+  them: the client's request after the page answers a browser tool the model
+  thought before, the same after a Claude response with two signed thinking
+  blocks and a redacted one, served to `anthropicmodel` as the Messages API
+  streams it, and the client's resume of an approval the model thought before.
+
 ## [Unreleased]
 
 ### Added
