@@ -118,13 +118,28 @@ func TestACatalogueDelegationShowsItsProgress(t *testing.T) {
 	}, newDB(t))
 
 	result := resultOf(t, frames, "d1")
+	starts, ends := ofType(frames, "SUBAGENT_STARTED"), ofType(frames, "SUBAGENT_FINISHED")
+	if len(starts) != 1 || len(ends) != 1 {
+		t.Fatalf("lifecycle: started at %v, finished at %v, want one of each", starts, ends)
+	}
+	start, end := starts[0], ends[0]
+	if got, want := encoded(frames[start]), `{"name":"catalogue","parentToolCallId":"d1",`+
+		`"subagentRunId":"subagent-d1","type":"SUBAGENT_STARTED"}`; got != want {
+		t.Errorf("started = %s, want %s", got, want)
+	}
+	if got, want := encoded(frames[end]), `{"subagentRunId":"subagent-d1","type":"SUBAGENT_FINISHED"}`; got != want {
+		t.Errorf("finished = %s, want %s", got, want)
+	}
+	if end > result {
+		t.Errorf("finished at %d after the delegating call's result at %d", end, result)
+	}
 	var steps []string
 	for _, i := range ofType(frames, "CUSTOM") {
 		if frames[i]["name"] != "ag_ui.subagent" {
 			continue
 		}
-		if i > result {
-			t.Errorf("progress at %d after the delegating call's result at %d", i, result)
+		if i < start || i > end {
+			t.Errorf("progress at %d outside the sub-agent's lifecycle, %d to %d", i, start, end)
 		}
 		v, _ := frames[i]["value"].(map[string]any)
 		if v["delegationId"] != "d1" || v["agent"] != "catalogue" {

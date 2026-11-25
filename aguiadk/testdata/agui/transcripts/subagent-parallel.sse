@@ -1,0 +1,39 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-subpar"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"p1","toolCallName":"researcher"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"request\":\"Go.\"}","toolCallId":"p1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"p1"}
+
+data: {"type":"SUBAGENT_STARTED","name":"researcher","subagentRunId":"subagent-p1","parentToolCallId":"p1"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"p2","toolCallName":"scribe"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"request\":\"Go.\"}","toolCallId":"p2"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"p2"}
+
+data: {"type":"SUBAGENT_STARTED","name":"scribe","subagentRunId":"subagent-p2","parentToolCallId":"p2"}
+
+data: {"type":"SUBAGENT_FINISHED","subagentRunId":"subagent-p1"}
+
+data: {"type":"TOOL_CALL_RESULT","messageId":"run-subpar-1","role":"tool","toolCallId":"p1","content":"{\"result\":\"Done.\"}"}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"run-subpar-2","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-subpar-2","delta":"Done."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"run-subpar-2"}
+
+data: {"type":"SUBAGENT_FINISHED","subagentRunId":"subagent-p2"}
+
+data: {"type":"TOOL_CALL_RESULT","messageId":"run-subpar-3","role":"tool","toolCallId":"p2","content":"{\"result\":\"Done.\"}"}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"run-subpar-4","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-subpar-4","delta":"Done."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"run-subpar-4"}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-subpar"}

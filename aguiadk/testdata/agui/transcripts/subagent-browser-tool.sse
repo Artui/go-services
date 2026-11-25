@@ -1,0 +1,21 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-subbrowser"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"d1","toolCallName":"researcher"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"request\":\"Go.\"}","toolCallId":"d1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"d1"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"f1","toolCallName":"fill_field"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"field\":\"email\"}","toolCallId":"f1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"f1"}
+
+data: {"type":"SUBAGENT_STARTED","name":"researcher","subagentRunId":"subagent-d1","parentToolCallId":"d1"}
+
+data: {"type":"SUBAGENT_FINISHED","subagentRunId":"subagent-d1"}
+
+data: {"type":"TOOL_CALL_RESULT","messageId":"run-subbrowser-1","role":"tool","toolCallId":"d1","content":"{\"result\":\"Done.\"}"}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-subbrowser","outcome":{"type":"success","pendingToolCallIds":["f1"]}}

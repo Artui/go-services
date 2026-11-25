@@ -1,0 +1,25 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-subinner"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"d1","toolCallName":"researcher"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"request\":\"Go.\"}","toolCallId":"d1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"d1"}
+
+data: {"type":"SUBAGENT_STARTED","name":"researcher","subagentRunId":"subagent-d1","parentToolCallId":"d1"}
+
+data: {"type":"CUSTOM","name":"ag_ui.subagent","value":{"delegationId":"d1","agent":"researcher","phase":"tool_call","status":"researcher: calling discard_book","tool":{"toolCallId":"c1","name":"discard_book","ok":null}}}
+
+data: {"type":"CUSTOM","name":"ag_ui.subagent","value":{"delegationId":"d1","agent":"researcher","phase":"tool_result","status":"researcher: discard_book failed","tool":{"toolCallId":"c1","name":"discard_book","ok":false}}}
+
+data: {"type":"SUBAGENT_ERROR","message":"researcher failed","subagentRunId":"subagent-d1"}
+
+data: {"type":"TOOL_CALL_RESULT","messageId":"run-subinner-1","role":"tool","toolCallId":"d1","content":"{\"error\":\"sub-agent \\\"researcher\\\" stopped waiting on unresolved long-running tool calls [adk-14], which AgentTool cannot resume\"}","outcome":"failed","metadata":{"outcome":"failed"}}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"run-subinner-2","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-subinner-2","delta":"Done."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"run-subinner-2"}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-subinner"}
