@@ -69,7 +69,7 @@ func TestTheWatchSendsAFrameWhenAStatusChanges(t *testing.T) {
 	if want := "id: " + poll.header.Get("ETag") + "\ndata: " + poll.body + "\n"; first != want {
 		t.Fatalf("the first frame is not the list:\n%s\nwant\n%s", first, want)
 	}
-	if _, err := s.StartRun(context.Background(), "alice", "th1", "r1", nil); err != nil {
+	if _, _, err := s.StartRun(context.Background(), "alice", "th1", "r1", nil); err != nil {
 		t.Fatal(err)
 	}
 	next := frame(t, body)

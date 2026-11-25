@@ -27,7 +27,9 @@ type RunStore interface {
 	// starts. With resumes, the interrupt ids a run answers, it is a claim: it
 	// starts only while the thread waits on every one of them, so the same
 	// answer sent twice runs once, and it returns false when the claim is lost.
-	StartRun(ctx context.Context, userID, threadID, runID string, resumes []string) (bool, error)
+	// A claim that wins returns the interrupts it took, so a run cut off before
+	// it ran a call can park them again.
+	StartRun(ctx context.Context, userID, threadID, runID string, resumes []string) (claimed json.RawMessage, won bool, err error)
 	// FinishRun records how runID ended: its status, the reason it failed,
 	// and the interrupts it parked on, kept as the bytes RUN_FINISHED carried.
 	// A run another has since replaced on the thread changes nothing.

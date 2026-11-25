@@ -44,7 +44,7 @@ func (r *parkedRow) Next(dest []driver.Value) error {
 
 func TestAClaimWhoseCountFailsIsAnError(t *testing.T) {
 	s := &SQL{db: sql.OpenDB(uncounted{})}
-	ok, err := s.StartRun(context.Background(), "alice", "th1", "r2", []string{"int-c1"})
+	_, ok, err := s.StartRun(context.Background(), "alice", "th1", "r2", []string{"int-c1"})
 	if ok || !errors.Is(err, io.ErrUnexpectedEOF) || !strings.HasPrefix(err.Error(), "aguistore: claiming the run:") {
 		t.Errorf("%v %v", ok, err)
 	}

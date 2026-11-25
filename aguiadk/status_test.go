@@ -27,6 +27,7 @@ type runMem struct {
 	ends     []runRow
 	startErr error
 	endErr   error
+	won      func()
 }
 
 type runRow struct {
@@ -36,22 +37,29 @@ type runRow struct {
 
 func newRunMem() *runMem { return &runMem{memStore: newMemStore(), status: map[string]runRow{}} }
 
-func (s *runMem) StartRun(_ context.Context, _, thread, run string, resumes []string) (bool, error) {
+func (s *runMem) StartRun(_ context.Context, _, thread, run string, resumes []string) (json.RawMessage, bool, error) {
 	s.runMu.Lock()
 	defer s.runMu.Unlock()
 	if s.startErr != nil {
-		return false, s.startErr
+		return nil, false, s.startErr
 	}
+	var claimed json.RawMessage
 	if len(resumes) > 0 {
 		row := s.status[thread]
 		var parked []aguix.Interrupt
 		_ = json.Unmarshal(row.interrupts, &parked)
-		if row.status != "waiting" || !slices.ContainsFunc(parked, func(i aguix.Interrupt) bool { return i.ID == resumes[0] }) {
-			return false, nil
+		for _, id := range resumes {
+			if row.status != "waiting" || !slices.ContainsFunc(parked, func(i aguix.Interrupt) bool { return i.ID == id }) {
+				return nil, false, nil
+			}
 		}
+		claimed = row.interrupts
 	}
 	s.status[thread] = runRow{run: run, status: "running"}
-	return true, nil
+	if s.won != nil {
+		s.won()
+	}
+	return claimed, true, nil
 }
 
 func (s *runMem) FinishRun(_ context.Context, _, thread, run, status, reason string, interrupts json.RawMessage) error {

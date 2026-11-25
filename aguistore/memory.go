@@ -116,15 +116,21 @@ func (s *Memory) DeleteThread(_ context.Context, userID, threadID string) error 
 }
 
 // StartRun marks the thread running, or claims it for a resume.
-func (s *Memory) StartRun(_ context.Context, userID, threadID, runID string, resumes []string) (bool, error) {
+func (s *Memory) StartRun(
+	_ context.Context, userID, threadID, runID string, resumes []string,
+) (json.RawMessage, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	run := s.run(userID, threadID)
-	if len(resumes) > 0 && !claimable(run.status, run.interrupts, resumes) {
-		return false, nil
+	var claimed json.RawMessage
+	if len(resumes) > 0 {
+		if !claimable(run.status, run.interrupts, resumes) {
+			return nil, false, nil
+		}
+		claimed = run.interrupts
 	}
 	run.runID, run.status, run.reason, run.interrupts = runID, StatusRunning, "", nil
-	return true, nil
+	return claimed, true, nil
 }
 
 // FinishRun records how runID ended, unless another run has replaced it.

@@ -178,7 +178,7 @@ func TestEveryDialectClaimsAParkOnce(t *testing.T) {
 	forEachDialect(t, func(t *testing.T, s *SQL) {
 		ctx := context.Background()
 		mustSave(t, s, "alice", "th1", msg("u1", "user", "Delete it."))
-		if ok, err := s.StartRun(ctx, "alice", "th1", "r1", nil); !ok || err != nil {
+		if _, ok, err := s.StartRun(ctx, "alice", "th1", "r1", nil); !ok || err != nil {
 			t.Fatalf("start: %v %v", ok, err)
 		}
 		if err := s.FinishRun(ctx, "alice", "th1", "r1", StatusWaiting, "approval",
@@ -193,7 +193,7 @@ func TestEveryDialectClaimsAParkOnce(t *testing.T) {
 			t.Errorf("parked %+v", th)
 		}
 		for i, want := range []bool{true, false} {
-			if ok, err := s.StartRun(ctx, "alice", "th1", "r2", []string{"i1"}); ok != want || err != nil {
+			if _, ok, err := s.StartRun(ctx, "alice", "th1", "r2", []string{"i1"}); ok != want || err != nil {
 				t.Errorf("claim %d: %v %v", i, ok, err)
 			}
 		}

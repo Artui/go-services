@@ -178,7 +178,9 @@ func (s *SQL) DeleteThread(ctx context.Context, userID, threadID string) error {
 
 // StartRun marks the thread running. A resume's claim is a conditional update
 // on the run it parked under, so of two resumes of one park only one wins.
-func (s *SQL) StartRun(ctx context.Context, userID, threadID, runID string, resumes []string) (bool, error) {
+func (s *SQL) StartRun(
+	ctx context.Context, userID, threadID, runID string, resumes []string,
+) (json.RawMessage, bool, error) {
 	if len(resumes) == 0 {
 		_, err := s.db.ExecContext(ctx, s.q(`INSERT INTO aguistore_runs
 			(user_id, thread_id, run_id, status, reason, interrupts) VALUES (?, ?, ?, ?, '', '')`+
@@ -186,23 +188,27 @@ func (s *SQL) StartRun(ctx context.Context, userID, threadID, runID string, resu
 			`run_id = excluded.run_id, status = excluded.status, reason = '', interrupts = ''`),
 			userID, threadID, runID, StatusRunning)
 		if err != nil {
-			return false, fmt.Errorf("aguistore: starting the run: %w", err)
+			return nil, false, fmt.Errorf("aguistore: starting the run: %w", err)
 		}
-		return true, nil
+		return nil, true, nil
 	}
 	var parkedRun, status, interrupts string
 	err := s.db.QueryRowContext(ctx, s.q(`SELECT run_id, status, interrupts FROM aguistore_runs
 		WHERE user_id = ? AND thread_id = ?`), userID, threadID).Scan(&parkedRun, &status, &interrupts)
 	if errors.Is(err, sql.ErrNoRows) {
-		return false, nil
+		return nil, false, nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("aguistore: claiming the run: %w", err)
+		return nil, false, fmt.Errorf("aguistore: claiming the run: %w", err)
 	}
 	if !claimable(status, []byte(interrupts), resumes) {
-		return false, nil
+		return nil, false, nil
 	}
-	return s.take(ctx, userID, threadID, runID, parkedRun)
+	won, err := s.take(ctx, userID, threadID, runID, parkedRun)
+	if !won {
+		return nil, false, err
+	}
+	return json.RawMessage(interrupts), true, nil
 }
 
 // take moves the park of parkedRun to runID, unless another run took it since.

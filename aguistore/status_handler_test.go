@@ -21,13 +21,13 @@ func (l listed) ListThreads(context.Context, string, int) ([]Thread, error) { re
 func TestTheListCarriesEachThreadsRunStatus(t *testing.T) {
 	s := seeded(t)
 	ctx := context.Background()
-	if _, err := s.StartRun(ctx, "alice", "th1", "r1", nil); err != nil {
+	if _, _, err := s.StartRun(ctx, "alice", "th1", "r1", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.FinishRun(ctx, "alice", "th1", "r1", StatusWaiting, "", json.RawMessage(parked)); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := s.StartRun(ctx, "alice", "th2", "r2", nil); err != nil {
+	if _, _, err := s.StartRun(ctx, "alice", "th2", "r2", nil); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.FinishRun(ctx, "alice", "th2", "r2", StatusFailed, "error", nil); err != nil {

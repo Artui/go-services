@@ -41,7 +41,7 @@ func row(t *testing.T, s Store, user, thread string) Thread {
 
 func start(t *testing.T, s RunStore, run string, resumes ...string) bool {
 	t.Helper()
-	ok, err := s.StartRun(context.Background(), "alice", "th1", run, resumes)
+	_, ok, err := s.StartRun(context.Background(), "alice", "th1", run, resumes)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -142,7 +142,7 @@ func claimOnce(t *testing.T, s RunStore) {
 	)
 	for i := range 8 {
 		wg.Go(func() {
-			ok, err := s.StartRun(context.Background(), "alice", "th1", "r2-"+string(rune('a'+i)), []string{"int-c1"})
+			_, ok, err := s.StartRun(context.Background(), "alice", "th1", "r2-"+string(rune('a'+i)), []string{"int-c1"})
 			if err != nil {
 				t.Error(err)
 			}
@@ -253,8 +253,8 @@ func TestSQLRunErrorsAreReported(t *testing.T) {
 		t.Fatal(err)
 	}
 	for name, err := range map[string]error{
-		"start":  func() error { _, err := s.StartRun(ctx, "a", "b", "r", nil); return err }(),
-		"claim":  func() error { _, err := s.StartRun(ctx, "a", "b", "r", []string{"i"}); return err }(),
+		"start":  func() error { _, _, err := s.StartRun(ctx, "a", "b", "r", nil); return err }(),
+		"claim":  func() error { _, _, err := s.StartRun(ctx, "a", "b", "r", []string{"i"}); return err }(),
 		"finish": s.FinishRun(ctx, "a", "b", "r", StatusIdle, "", nil),
 		"take":   func() error { _, err := s.take(ctx, "a", "b", "r", "p"); return err }(),
 		"read":   s.MarkRead(ctx, "a", "b"),

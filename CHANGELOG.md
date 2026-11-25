@@ -558,7 +558,8 @@ v0.2.0.
   interrupts its run parked on, stored as the bytes RUN_FINISHED carried. The
   list carries `status`, `reason`, `interrupts` and `last_read_at`, which
   `POST <id>/read/` stamps, so a parked approval survives a reload. A resume
-  claims the park, so the same answer sent twice runs once. The same `GET` with
+  claims the park, so the same answer sent twice runs once; a winning claim
+  returns the interrupts it took, so a run can park them again. The same `GET` with
   `Accept: text/event-stream` streams the list (`id: <etag>`, `data:
   {threads}`) each time it changes, with comment heartbeats, polling every 2s for
   at most 5 minutes (`WithWatch`). The status lives in a new `aguistore_runs`
@@ -566,10 +567,13 @@ v0.2.0.
 - **`aguiadk` records each run through a `RunStore` and stores activities.**
   A thread store that is also a `RunStore` is told each run's start and end,
   and a resume that loses the claim on its interrupts is refused with
-  RUN_ERROR, so two sent at once run the call once. Each ACTIVITY_SNAPSHOT's
-  last snapshot is stored in the thread where it was sent, replaced by message
-  id as the client's applier does, so charts, suggestions and compaction notes
-  come back with the thread.
+  RUN_ERROR, so two sent at once run the call once. A resume that ends before
+  it reaches a call it answers (a dropped connection, say) parks the thread on
+  its interrupts again, so the approval can be sent again; one that reached the
+  call does not. Each ACTIVITY_SNAPSHOT's last snapshot is stored in the thread
+  where it was sent, and put back into the history of each later run, since the
+  client sends none, so charts, suggestions and compaction notes come back with
+  the thread.
 - **`aguistore`'s SQL store speaks Postgres and MySQL as well as SQLite.**
   `OpenSQL(ctx, db, aguistore.WithDialect(aguistore.Postgres))` (or
   `aguistore.MySQL`) renders the same statements with the dialect's

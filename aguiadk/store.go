@@ -34,8 +34,9 @@ type ThreadStore interface {
 type RunStore interface {
 	// StartRun marks the thread running under runID. With resumes, the
 	// interrupt ids the run answers, it is a claim that starts only while the
-	// thread waits on every one of them, and it reports false when it is lost.
-	StartRun(ctx context.Context, userID, threadID, runID string, resumes []string) (bool, error)
+	// thread waits on every one of them, and it reports false when it is lost;
+	// one that wins returns the interrupts it took, the bytes FinishRun stored.
+	StartRun(ctx context.Context, userID, threadID, runID string, resumes []string) (claimed json.RawMessage, won bool, err error)
 	// FinishRun records how runID ended: its status, why it failed, and the
 	// interrupts it parked on, the bytes RUN_FINISHED carries.
 	FinishRun(ctx context.Context, userID, threadID, runID, status, reason string, interrupts json.RawMessage) error
@@ -58,7 +59,10 @@ type RunStore interface {
 // the same resume sent again once the first has finished. A store that is a
 // RunStore also records each run's status, and claims a resume before it runs,
 // so of two sent at once one is refused and the call runs once; with a store
-// that is not, two sent at once can still both run.
+// that is not, two sent at once can still both run. A resume that ends before
+// it reaches a tool parks the thread on the interrupts it claimed again, so
+// the approval can be sent again; one that reached a tool does not, since the
+// call may have taken effect.
 //
 // Every run loads the stored thread: the client sends its history without
 // activities, so a run puts each stored activity back after the message it
@@ -130,37 +134,42 @@ func withActivities(stored, client []aguix.Message) []aguix.Message {
 
 var (
 	errNoStoredThread = errors.New("aguiadk: the thread to resume is not stored")
-	errResumeTaken    = errors.New("aguiadk: the interrupts this run answers are not waiting; another run answered them")
+	errResumeTaken    = errors.New("aguiadk: the interrupts this run answers are no longer waiting")
 )
 
 // startRun records the run as running, claiming the interrupts it answers.
-func (b *bridge) startRun(ctx context.Context, userID string, in aguix.RunInput) error {
+func (b *bridge) startRun(ctx context.Context, userID string, in aguix.RunInput) (json.RawMessage, error) {
 	if b.runs == nil {
-		return nil
+		return nil, nil
 	}
 	var resumes []string
 	for _, entry := range in.Resume {
 		resumes = append(resumes, entry.InterruptID)
 	}
-	won, err := b.runs.StartRun(ctx, userID, in.ThreadID, in.RunID, resumes)
+	claimed, won, err := b.runs.StartRun(ctx, userID, in.ThreadID, in.RunID, resumes)
 	if err != nil {
-		return fmt.Errorf("aguiadk: recording the run's start: %w", err)
+		return nil, fmt.Errorf("aguiadk: recording the run's start: %w", err)
 	}
 	if !won {
-		return errResumeTaken
+		return nil, errResumeTaken
 	}
-	return nil
+	return claimed, nil
 }
 
 // endRun records how the run ended and returns its error, a failure to record
-// a run that succeeded among them. A cancelled run leaves the thread idle.
-func (b *bridge) endRun(ctx context.Context, userID string, in aguix.RunInput, interrupts []aguix.Interrupt, runErr error) error {
+// a run that succeeded among them. A cancelled run leaves the thread idle, and
+// a resume that ended before it ran a call it answers parks its claim again.
+func (b *bridge) endRun(
+	ctx context.Context, userID string, in aguix.RunInput, interrupts []aguix.Interrupt, runErr error, unrun json.RawMessage,
+) error {
 	if b.runs == nil {
 		return runErr
 	}
 	status, reason := "idle", ""
 	var parked json.RawMessage
 	switch {
+	case runErr != nil && unrun != nil:
+		status, parked = "waiting", unrun
 	case runErr != nil && ctx.Err() == nil:
 		status, reason = "failed", "error"
 	case runErr == nil && len(interrupts) > 0:

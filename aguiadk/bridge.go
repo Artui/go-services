@@ -75,7 +75,7 @@ func New(root agent.Agent, opts ...Option) (aguix.Agent, error) {
 		root:       root,
 		newService: session.InMemoryService,
 	}
-	plugins := runner.PluginConfig{Plugins: []*plugin.Plugin{sinkPlugin(), instructionsPlugin()}}
+	plugins := runner.PluginConfig{Plugins: []*plugin.Plugin{sinkPlugin(), instructionsPlugin(), toolReachPlugin()}}
 	b.newRunner = func(svc session.Service) (*runner.Runner, error) {
 		return runner.New(runner.Config{
 			AppName: appName, Agent: root, SessionService: svc, MemoryService: b.memory, PluginConfig: plugins,
@@ -148,11 +148,16 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 	if err != nil {
 		return err
 	}
-	if err := b.startRun(ctx, userID, in); err != nil {
+	claimed, err := b.startRun(ctx, userID, in)
+	if err != nil {
 		return err
 	}
+	ctx, answered := watchTools(ctx)
 	interrupts, err := b.serve(ctx, in, out, userID, messages, history, tail, tools, denied, seed)
-	return b.endRun(ctx, userID, in, interrupts, err)
+	if answered.reached() {
+		claimed = nil
+	}
+	return b.endRun(ctx, userID, in, interrupts, err, claimed)
 }
 
 // serve runs the agent on the rebuilt conversation and returns the interrupts
