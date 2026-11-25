@@ -466,6 +466,65 @@ neither writes the bytes it wrote before.
   sub-agents open under `aguix/testdata/agui/transcripts`, which
   `scripts/agui-wire/verify-transcripts.mjs` checks against the client.
 
+`aguiadk/v0.7.0` keeps each user's threads in a store, delivers the run's
+context and a picked skill to the model, and lets a server allow-list the
+browser's tools. It needs no new aguix type, so its floors stay where `v0.6.0`
+set them: kernel v0.7.1, aguix v0.6.0, adkx v0.2.0.
+
+- **`aguiadk.WithThreadStore` keeps each user's threads between runs.** A run
+  that finishes saves its thread, the messages it started from followed by what
+  it sent, filed as `@ag-ui/client` files them (checked against the client's own
+  reducer by `scripts/agui-wire`); a run that fails or has nothing to answer
+  saves nothing, and a save outlives a cancelled request. An ordinary run starts
+  from the client's messages, as django-ag-ui's does; a run that resumes
+  interrupts starts from the stored thread, followed by the client's answers to
+  the browser calls it left open, so a resume keeps to the calls and arguments
+  the thread holds (an approver's edited arguments aside), and a resume of a
+  thread the store does not hold is refused, as django-ag-ui refuses it. The
+  same resume sent again after the first finished is refused too. The store is
+  keyed by the `WithUserID` user, and a run that only answers a browser tool is
+  saved as a continuation of its thread.
+- **`aguiadk.WithRunContext` delivers the run input's context to the model**,
+  opt-in: the entries are fenced as `<untrusted-client-context>` (marker defused
+  inside values, 20000 characters, visible truncation) and appended to the
+  system instruction of every model call the run makes, a sub-agent's that
+  `agenttool` runs included, never to the messages.
+- **`aguiadk.WithSkills` and `aguiadk.SkillCatalog` serve server-resolved
+  skills**: a run whose latest user message opens with `/name` gets `# Skill:
+  <name>` and the body in its instructions, a delegated sub-agent's included,
+  `/name` left as sent; the catalog answers GET with the web component's
+  `data-skills-url` entries, never a body.
+- **`aguiadk.ClientToolset` takes an allow-list.** `AllowClientTools(names...)`
+  declares only those browser tools and `OnDroppedClientTool` is told each name
+  left out; with no option every tool the client lists is declared, as before.
+- **`aguiadk` documents running a resumed call once and reading cache usage.**
+  The tool-call id is stable across a repeated resume, so a spec can key
+  idempotency on it, as far as the client's history can be trusted, and a thread
+  store refuses a repeat once the first has finished; the doc also says what
+  `cachedInputTokens` and `cacheWriteInputTokens` show.
+
+`aguistore/v0.1.0` is a new module, floored on kernel v0.7.1 and aguix v0.6.0 at
+Go 1.26.0, the floor of the SQLite driver its tests run on. It does not import
+aguiadk: its stores satisfy `aguiadk.ThreadStore` by their method set, which the
+conformance module checks.
+
+- **A new module, `aguistore`, holds threads in memory or over `database/sql`,
+  and serves them to the web component.** `NewMemory` and `OpenSQL` (tested on
+  SQLite through `modernc.org/sqlite`) satisfy `aguiadk.ThreadStore`, adding
+  list, rename and delete. `Handler` answers the routes the web component's
+  `data-threads-url` reads, as django-ag-ui's `ThreadsView` does: the list with
+  a strong ETag that `If-None-Match` answers with 304, a thread's messages,
+  `PATCH` of its title and `DELETE`. A thread's title is its first user message
+  and is set once; another user's thread is 404.
+
+`adkx/v0.2.1` changes no code; it documents what a `Principal` can read.
+
+- **`adkx` documents what a `Principal` can read and where an Anthropic key
+  goes.** A compiled example reads a request-scoped value and the tool-call id
+  into Deps, and the package doc says to set `BaseURL` beside an explicit
+  `APIKey`, since ADK's `anthropicmodel` otherwise follows `ANTHROPIC_BASE_URL`.
+  The `example` and `published` programs now set it.
+
 ## [Unreleased]
 
 ### Added
