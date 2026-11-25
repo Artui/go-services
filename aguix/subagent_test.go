@@ -121,3 +121,19 @@ func TestAResultThatCannotBeEncodedIsAnError(t *testing.T) {
 		t.Error("encoding a channel result succeeded")
 	}
 }
+
+func TestFinishOutcomeReadsOnlyARunFinishedsOutcome(t *testing.T) {
+	got, ok := aguix.RunFinishedWith("t1", "r1", aguix.Cancelled()).FinishOutcome()
+	if !ok || got.Type != "cancelled" {
+		t.Errorf("FinishOutcome = %v, %v, want cancelled, true", got, ok)
+	}
+	for name, event := range map[string]aguix.Event{
+		"a bare finish":        aguix.RunFinished("t1", "r1"),
+		"a suspended subagent": aguix.SubagentSuspended("s1", "i1"),
+		"a custom event":       aguix.Custom("x", aguix.Success()),
+	} {
+		if _, ok := event.FinishOutcome(); ok {
+			t.Errorf("%s reported an outcome", name)
+		}
+	}
+}

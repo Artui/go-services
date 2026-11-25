@@ -448,6 +448,8 @@ aguix type, so its floors stay where `v0.5.0` set them.
   attributes any other event to the invocation. The fields are the ones
   `@ag-ui/core` 1.0.4 declares and the web component reads. Frames that set
   none of them are unchanged on the wire.
+- **aguix: `Event.FinishOutcome`** reads the outcome a `RUN_FINISHED` carries,
+  so an observer of a run can tell a success from an interrupt or a cancel.
 - **`make release` and `make release-verify` cut and check a module's tag.**
   `make release MODULE=<dir or kernel> VERSION=<version>` refuses a dirty tree,
   a checkout that is not `origin/main` (or `SHA`), a version already on the
