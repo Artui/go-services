@@ -448,6 +448,10 @@ aguix type, so its floors stay where `v0.5.0` set them.
   attributes any other event to the invocation. The fields are the ones
   `@ag-ui/core` 1.0.4 declares and the web component reads. Frames that set
   none of them are unchanged on the wire.
+  A run cut off by `WithRunTimeout` closes each sub-agent still open with
+  `SUBAGENT_ERROR` code `unfinished`, as django-ag-ui does, since the client's
+  verifier rejects a `RUN_FINISHED` over one; a span it closes keeps the
+  `subagentRunId` of the frame that opened it.
 - **aguix: `Event.FinishOutcome`** reads the outcome a `RUN_FINISHED` carries,
   so an observer of a run can tell a success from an interrupt or a cancel.
 - **`make release` and `make release-verify` cut and check a module's tag.**

@@ -1,0 +1,27 @@
+data: {"type":"RUN_STARTED","threadId":"t1","runId":"r1"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"c1","toolCallName":"research"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"c1"}
+
+data: {"type":"SUBAGENT_STARTED","name":"researcher","subagentRunId":"s1","parentToolCallId":"c1"}
+
+data: {"type":"SUBAGENT_STARTED","name":"done","subagentRunId":"s3"}
+
+data: {"type":"SUBAGENT_STARTED","name":"checker","subagentRunId":"s2","parentSubagentRunId":"s1"}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"m1","role":"assistant","subagentRunId":"s2"}
+
+data: {"type":"SUBAGENT_FINISHED","subagentRunId":"s3"}
+
+data: {"type":"SUBAGENT_STARTED","name":"failed","subagentRunId":"s4"}
+
+data: {"type":"SUBAGENT_ERROR","message":"It broke.","subagentRunId":"s4"}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"m1","subagentRunId":"s2"}
+
+data: {"type":"SUBAGENT_ERROR","message":"the sub-agent was still running when the run ended","code":"unfinished","subagentRunId":"s2"}
+
+data: {"type":"SUBAGENT_ERROR","message":"the sub-agent was still running when the run ended","code":"unfinished","subagentRunId":"s1"}
+
+data: {"type":"RUN_FINISHED","threadId":"t1","runId":"r1","usage":[{"inputTokens":5,"outputTokens":2,"totalTokens":7}],"outcome":{"type":"cancelled"}}

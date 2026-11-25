@@ -252,6 +252,15 @@ func TestARunPastItsTimeoutIsCancelled(t *testing.T) {
 			aguix.ToolCallStart("c2", "borrow_book", "m1"),
 			aguix.ToolCallEnd("c1"),
 		}},
+		{"timeout-mid-subagent", []aguix.Event{
+			aguix.ToolCallStart("c1", "research", ""), aguix.ToolCallEnd("c1"),
+			aguix.SubagentStarted("s1", "researcher", "c1"),
+			aguix.SubagentStarted("s3", "done", ""),
+			aguix.SubagentStarted("s2", "checker", "").WithParentSubagentRunID("s1"),
+			aguix.TextMessageStart("m1").WithSubagentRunID("s2"),
+			aguix.SubagentFinished("s3"),
+			aguix.SubagentStarted("s4", "failed", ""), aguix.SubagentError("s4", "It broke."),
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var reported error

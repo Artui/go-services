@@ -85,6 +85,21 @@ var spanEnds = map[EventType]EventType{
 	EventToolCallStart:         EventToolCallEnd,
 	EventReasoningStart:        EventReasoningEnd,
 	EventReasoningMessageStart: EventReasoningMessageEnd,
+	EventSubagentStarted:       EventSubagentError,
+}
+
+// unfinishedSubagent is the error a cut-off run closes an open sub-agent with,
+// in django-ag-ui's words and code: it did not fail, it was never let finish.
+const unfinishedSubagent = "the sub-agent was still running when the run ended"
+
+// closes reports whether event ends the span that open began. A sub-agent ends
+// on either SUBAGENT_FINISHED or SUBAGENT_ERROR.
+func closes(open, event Event) bool {
+	end := spanEnds[open.Type]
+	if open.Type == EventSubagentStarted && event.Type == EventSubagentFinished {
+		end = event.Type
+	}
+	return end == event.Type && spanID(open) == spanID(event)
 }
 
 // track keeps the spans still open, which the client's verifier refuses to see
@@ -95,7 +110,7 @@ func (s *Stream) track(event Event) {
 		return
 	}
 	for i := len(s.open) - 1; i >= 0; i-- {
-		if spanEnds[s.open[i].Type] == event.Type && spanID(s.open[i]) == spanID(event) {
+		if closes(s.open[i], event) {
 			s.open = append(s.open[:i], s.open[i+1:]...)
 			return
 		}
@@ -103,7 +118,11 @@ func (s *Stream) track(event Event) {
 }
 
 func spanID(event Event) string {
-	if event.ToolCallID != "" {
+	switch {
+	case event.Type == EventSubagentStarted || event.Type == EventSubagentFinished ||
+		event.Type == EventSubagentError:
+		return event.SubagentRunID
+	case event.ToolCallID != "":
 		return event.ToolCallID
 	}
 	return event.MessageID
@@ -115,10 +134,13 @@ func (s *Stream) closeOpen() error {
 	open := append([]Event(nil), s.open...)
 	s.mu.Unlock()
 	for i := len(open) - 1; i >= 0; i-- {
-		end := Event{Type: spanEnds[open[i].Type]}
-		if open[i].Type == EventToolCallStart {
+		end := Event{Type: spanEnds[open[i].Type], SubagentRunID: open[i].SubagentRunID}
+		switch open[i].Type {
+		case EventToolCallStart:
 			end.ToolCallID = open[i].ToolCallID
-		} else {
+		case EventSubagentStarted:
+			end = SubagentError(open[i].SubagentRunID, unfinishedSubagent).WithCode("unfinished")
+		default:
 			end.MessageID = open[i].MessageID
 		}
 		if err := s.Emit(end); err != nil {
