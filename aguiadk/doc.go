@@ -35,9 +35,9 @@
 // page of results included, is written to the cache once and read by later
 // rounds. At Anthropic's 5-minute prices (a write costs 1.25 times the input
 // price, a read 0.1 times) that beats no caching for all but the output no
-// later round reads. A consumer observed about 160k cache-write tokens in a
-// run that paged for five rounds; that is their observation, not reproduced
-// here.
+// later round reads. A consumer observed about 160k cache-write tokens, which
+// they put at $0.44, in a run that paged for five rounds; both figures are
+// their observation, not reproduced here.
 //
 // To check yours, compare cachedInputTokens with cacheWriteInputTokens in the
 // usage of RUN_FINISHED, which sums the run's model calls. Writes that stay

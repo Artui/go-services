@@ -3,12 +3,14 @@ package adkx_test
 import (
 	"context"
 	"fmt"
+	"iter"
 	"log"
 
 	services "github.com/Artui/go-services"
 	"github.com/Artui/go-services/adkx"
 	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/llmagent"
+	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
 	"google.golang.org/adk/v2/tool"
@@ -23,6 +25,26 @@ type caller struct{ user, tenant, callID string }
 
 type bookIn struct {
 	Room int `json:"room"`
+}
+
+// bookOnce stands in for a model: it calls book, then answers.
+type bookOnce struct{}
+
+func (bookOnce) Name() string { return "book-once" }
+
+func (bookOnce) GenerateContent(_ context.Context, req *model.LLMRequest, _ bool) iter.Seq2[*model.LLMResponse, error] {
+	return func(yield func(*model.LLMResponse, error) bool) {
+		reply := genai.NewPartFromFunctionCall("book", map[string]any{"room": 7})
+		reply.FunctionCall.ID = "toolu_abc"
+		for _, c := range req.Contents {
+			for _, p := range c.Parts {
+				if p.FunctionResponse != nil {
+					reply = genai.NewPartFromText("done")
+				}
+			}
+		}
+		yield(&model.LLMResponse{Content: &genai.Content{Role: genai.RoleModel, Parts: []*genai.Part{reply}}}, nil)
+	}
 }
 
 // A principal reads a request-scoped value and the tool-call id, and the
@@ -53,11 +75,7 @@ func Example_principal() {
 		log.Fatal(err)
 	}
 
-	// A stand-in for a model: it calls book once, then answers.
-	llm := &scriptedLLM{calls: []*genai.FunctionCall{
-		{ID: "toolu_abc", Name: "book", Args: map[string]any{"room": 7}},
-	}}
-	root, err := llmagent.New(llmagent.Config{Name: "desk", Model: llm, Toolsets: []tool.Toolset{specs}})
+	root, err := llmagent.New(llmagent.Config{Name: "desk", Model: bookOnce{}, Toolsets: []tool.Toolset{specs}})
 	if err != nil {
 		log.Fatal(err)
 	}
