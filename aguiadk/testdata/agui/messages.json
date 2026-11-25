@@ -1,0 +1,480 @@
+{
+  "activity": [
+    {
+      "id": "c1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "chart_loans",
+            "arguments": "{\"book_id\":3}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-act-1",
+      "role": "tool",
+      "content": "{\"by\":\"\",\"loan\":3}",
+      "toolCallId": "c1"
+    },
+    {
+      "id": "run-act-2",
+      "role": "assistant",
+      "content": "Charted."
+    }
+  ],
+  "approval-approve": [
+    {
+      "id": "run-approve-1",
+      "role": "tool",
+      "content": "{\"discarded\":7}",
+      "toolCallId": "c1"
+    },
+    {
+      "id": "run-approve-2",
+      "role": "assistant",
+      "content": "Discarded."
+    }
+  ],
+  "approval-deny": [
+    {
+      "id": "run-deny-1",
+      "role": "tool",
+      "content": "{\"error\":\"error tool \\\"discard_book\\\" call is rejected\"}",
+      "toolCallId": "c1",
+      "metadata": {
+        "outcome": "denied"
+      }
+    },
+    {
+      "id": "run-deny-2",
+      "role": "assistant",
+      "content": "I left it."
+    }
+  ],
+  "approval-edit": [
+    {
+      "id": "run-edit-1",
+      "role": "tool",
+      "content": "{\"discarded\":9}",
+      "toolCallId": "c1"
+    },
+    {
+      "id": "run-edit-2",
+      "role": "assistant",
+      "content": "Discarded."
+    }
+  ],
+  "approval-mixed": [
+    {
+      "id": "f1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "f1",
+          "type": "function",
+          "function": {
+            "name": "fill_field",
+            "arguments": "{\"field\":\"email\"}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "c1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "discard_book",
+            "arguments": "{\"book_id\":7}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "c2",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "c2",
+          "type": "function",
+          "function": {
+            "name": "shelve_book",
+            "arguments": "{\"book_id\":3}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-mixed-1",
+      "role": "tool",
+      "content": "{\"discarded\":3}",
+      "toolCallId": "c2"
+    }
+  ],
+  "approval-not-destructive": [
+    {
+      "id": "c1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "shelve_book",
+            "arguments": "{\"book_id\":3}"
+          }
+        }
+      ]
+    }
+  ],
+  "approval-pause": [
+    {
+      "id": "c1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "discard_book",
+            "arguments": "{\"book_id\":7}"
+          }
+        }
+      ]
+    }
+  ],
+  "browser-tool-answered": [
+    {
+      "id": "run-2-1",
+      "role": "assistant",
+      "content": "Done."
+    }
+  ],
+  "browser-tool-pending": [
+    {
+      "id": "run-1-1",
+      "role": "assistant",
+      "content": "Filling it in.",
+      "toolCalls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "fill_field",
+            "arguments": "{\"field\":\"email\"}"
+          }
+        }
+      ]
+    }
+  ],
+  "invalidate": [
+    {
+      "id": "c1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "shelve_book",
+            "arguments": "{\"book_id\":7}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-inv-1",
+      "role": "tool",
+      "content": "{\"by\":\"\",\"loan\":7}",
+      "toolCallId": "c1"
+    },
+    {
+      "id": "run-inv-2",
+      "role": "assistant",
+      "content": "Shelved."
+    }
+  ],
+  "invalidate-parallel": [
+    {
+      "id": "c1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "shelve_book",
+            "arguments": "{\"book_id\":7}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-par-2",
+      "role": "tool",
+      "content": "{\"by\":\"\",\"loan\":7}",
+      "toolCallId": "c1"
+    },
+    {
+      "id": "run-par-1",
+      "role": "assistant",
+      "content": "Meanwhile."
+    },
+    {
+      "id": "run-par-3",
+      "role": "assistant",
+      "content": "Shelved."
+    }
+  ],
+  "mixed-step": [
+    {
+      "id": "run-1-1",
+      "role": "assistant",
+      "content": "Both.",
+      "toolCalls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "borrow_book",
+            "arguments": "{\"book_id\":3}"
+          }
+        },
+        {
+          "id": "c2",
+          "type": "function",
+          "function": {
+            "name": "fill_field",
+            "arguments": "{\"field\":\"email\"}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-1-2",
+      "role": "tool",
+      "content": "{\"by\":\"\",\"loan\":30}",
+      "toolCallId": "c1"
+    }
+  ],
+  "model-error-mid-stream": [
+    {
+      "id": "run-1-1",
+      "role": "assistant",
+      "content": "Partly there"
+    }
+  ],
+  "reasoning-approval-pause": [
+    {
+      "id": "run-pause-1",
+      "role": "reasoning",
+      "content": "The email field is the one to fill.",
+      "encryptedValue": "{\"blocks\":[{\"length\":35,\"signature\":\"RXFRQkNrWUlCeGdDS2tEc2lnPT0=\"},{\"length\":0,\"signature\":\"RW13S0FoZ0JFZ3kzcmVkYWN0ZWQ9PQ==\"}]}"
+    },
+    {
+      "id": "c1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "discard_book",
+            "arguments": "{\"book_id\":7}"
+          }
+        }
+      ]
+    }
+  ],
+  "reasoning-blocks": [
+    {
+      "id": "run-think-1",
+      "role": "reasoning",
+      "content": "The email field is the one to fill. Its value is the account address.",
+      "encryptedValue": "{\"blocks\":[{\"length\":35,\"signature\":\"RXFRQkNrWUlCeGdDS2tEZmlyc3Q9PQ==\"},{\"length\":34,\"signature\":\"RXBZQkNrWUlCeGdDS2tEc2Vjb25kPT0=\"},{\"length\":0,\"signature\":\"RW13S0FoZ0JFZ3kzcmVkYWN0ZWQ9PQ==\"}]}"
+    },
+    {
+      "id": "run-think-2",
+      "role": "assistant",
+      "content": "Filling it in.",
+      "toolCalls": [
+        {
+          "id": "toolu_01",
+          "type": "function",
+          "function": {
+            "name": "fill_field",
+            "arguments": "{\"field\":\"email\"}"
+          }
+        }
+      ]
+    }
+  ],
+  "reasoning-model-error": [
+    {
+      "id": "run-1-1",
+      "role": "reasoning",
+      "content": "Let me see"
+    }
+  ],
+  "reasoning-pending": [
+    {
+      "id": "run-think-1",
+      "role": "reasoning",
+      "content": "The email field is the one to fill.",
+      "encryptedValue": "{\"blocks\":[{\"length\":35,\"signature\":\"RXFRQkNrWUlCeGdDS2tEc2lnPT0=\"},{\"length\":0,\"signature\":\"RW13S0FoZ0JFZ3kzcmVkYWN0ZWQ9PQ==\"}]}"
+    },
+    {
+      "id": "run-think-2",
+      "role": "assistant",
+      "content": "Filling it in.",
+      "toolCalls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "fill_field",
+            "arguments": "{\"field\":\"email\"}"
+          }
+        }
+      ]
+    }
+  ],
+  "server-tool": [
+    {
+      "id": "run-1-1",
+      "role": "assistant",
+      "content": "Let me check.",
+      "toolCalls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "borrow_book",
+            "arguments": "{\"book_id\":7}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-1-2",
+      "role": "tool",
+      "content": "{\"by\":\"\",\"loan\":70}",
+      "toolCallId": "c1"
+    },
+    {
+      "id": "run-1-3",
+      "role": "assistant",
+      "content": "Done."
+    }
+  ],
+  "state-delta-only": [
+    {
+      "id": "run-1-1",
+      "role": "assistant",
+      "content": "Hello."
+    }
+  ],
+  "state-next": [
+    {
+      "id": "run-2-1",
+      "role": "assistant",
+      "content": "Still sunset."
+    }
+  ],
+  "state-seeded": [
+    {
+      "id": "c1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "count_turn",
+            "arguments": "{}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-reasoning-1",
+      "role": "tool",
+      "content": "{\"turns\":3}",
+      "toolCallId": "c1"
+    },
+    {
+      "id": "run-reasoning-2",
+      "role": "assistant",
+      "content": "Noted."
+    }
+  ],
+  "state-temp": [
+    {
+      "id": "run-1-1",
+      "role": "assistant",
+      "content": "Hi."
+    }
+  ],
+  "subagent": [
+    {
+      "id": "d1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "d1",
+          "type": "function",
+          "function": {
+            "name": "researcher",
+            "arguments": "{\"request\":\"Shelve 7.\"}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-sub-1",
+      "role": "tool",
+      "content": "{\"result\":\"Shelved it.\"}",
+      "toolCallId": "d1"
+    },
+    {
+      "id": "run-sub-2",
+      "role": "assistant",
+      "content": "Done."
+    }
+  ],
+  "usage-two-calls": [
+    {
+      "id": "run-usage-1",
+      "role": "assistant",
+      "content": "Let me check.",
+      "toolCalls": [
+        {
+          "id": "c1",
+          "type": "function",
+          "function": {
+            "name": "borrow_book",
+            "arguments": "{\"book_id\":7}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-usage-2",
+      "role": "tool",
+      "content": "{\"by\":\"\",\"loan\":70}",
+      "toolCallId": "c1"
+    },
+    {
+      "id": "run-usage-3",
+      "role": "assistant",
+      "content": "Lent."
+    }
+  ]
+}

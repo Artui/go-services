@@ -29,4 +29,21 @@
 // package returns the kernel's taxonomy verbatim -- those words were written
 // for whoever made the call -- and replaces everything else with a fixed
 // sentence, sending the real error to WithErrorReporter instead.
+//
+// # What a principal can read
+//
+// A Principal is handed the invocation's agent.Context, so it is not limited to
+// the user. Value reads what the server put on the context it ran the agent
+// under, such as the tenant of the request, and FunctionCallID is the id of the
+// tool call being served. Return both, let the registry's resolver fold them
+// into Deps, and a spec has them; the package example does this.
+//
+// # Name the endpoint when you pass an Anthropic key
+//
+// With ADK's anthropicmodel (v2.8.0), a ClientConfig with an APIKey and no
+// BaseURL still takes ANTHROPIC_BASE_URL from the environment, so the explicit
+// key is sent to whatever proxy that variable names. ADK guards only the other
+// direction: it never sends an ambient credential to an explicit BaseURL. Unless
+// that proxy is intended, set BaseURL to "https://api.anthropic.com" beside
+// the key.
 package adkx

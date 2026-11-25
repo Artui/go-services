@@ -15,6 +15,11 @@
 // file is written by the Go test from the run's session, never by hand. Every
 // state-* transcript must have one.
 //
+// An aguiadk transcript must also have an entry in aguiadk/testdata/agui/messages.json,
+// the messages the bridge stores for the run, written by the Go test from the
+// frames. The client's own default applier, starting from no messages, must file
+// the same ones, activities aside: the bridge does not store those.
+//
 // A transcript is stored without the body's final blank line, which the
 // repository's end-of-file hook would strip; it is put back before splitting.
 //
@@ -68,20 +73,48 @@ async function verify(events) {
 }
 
 async function applied(events, sent) {
-  const input = {
+  const start = input([], structuredClone(sent ?? {}));
+  const agent = new HttpAgent({ url: "http://unused.invalid" });
+  const mutations = await lastValueFrom(
+    defaultApplyEvents(start, from(events), agent, []).pipe(toArray()),
+  );
+  return mutations.filter((m) => m.state !== undefined).at(-1)?.state ?? start.state;
+}
+
+const stored = JSON.parse(
+  readFileSync(join(here, "..", "..", "aguiadk", "testdata", "agui", "messages.json"), "utf8"),
+);
+
+async function checkMessages(name, events) {
+  const key = name.replace(/\.sse$/, "");
+  if (!(key in stored)) {
+    throw new Error("no entry in aguiadk/testdata/agui/messages.json");
+  }
+  const mutations = await lastValueFrom(
+    defaultApplyEvents(input([]), from(events), new HttpAgent({ url: "http://unused.invalid" }), []).pipe(
+      toArray(),
+    ),
+  );
+  const got = (mutations.filter((m) => m.messages !== undefined).at(-1)?.messages ?? []).filter(
+    (m) => m.role !== "activity",
+  );
+  if (!isDeepStrictEqual(JSON.parse(JSON.stringify(got)), stored[key])) {
+    throw new Error(
+      `the client files ${JSON.stringify(got)}, the bridge stores ${JSON.stringify(stored[key])}`,
+    );
+  }
+}
+
+function input(messages, state = {}) {
+  return {
     threadId: "thread",
     runId: "run",
-    state: structuredClone(sent ?? {}),
-    messages: [],
+    state,
+    messages,
     tools: [],
     context: [],
     forwardedProps: {},
   };
-  const agent = new HttpAgent({ url: "http://unused.invalid" });
-  const mutations = await lastValueFrom(
-    defaultApplyEvents(input, from(events), agent, []).pipe(toArray()),
-  );
-  return mutations.filter((m) => m.state !== undefined).at(-1)?.state ?? input.state;
 }
 
 async function checkState(dir, name, events) {
@@ -114,6 +147,9 @@ for (const dir of dirs) {
       const events = frames(readFileSync(join(dir, name), "utf8"));
       await verify(events);
       const state = await checkState(dir, name, events);
+      if (dir.includes("aguiadk")) {
+        await checkMessages(name, events);
+      }
       console.log(`ok   ${name}${state ? " (state applied)" : ""}`);
     } catch (err) {
       failed++;

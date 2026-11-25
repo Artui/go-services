@@ -74,7 +74,7 @@ func New(root agent.Agent, opts ...Option) (aguix.Agent, error) {
 		root:       root,
 		newService: session.InMemoryService,
 	}
-	plugins := runner.PluginConfig{Plugins: []*plugin.Plugin{sinkPlugin()}}
+	plugins := runner.PluginConfig{Plugins: []*plugin.Plugin{sinkPlugin(), instructionsPlugin()}}
 	b.newRunner = func(svc session.Service) (*runner.Runner, error) {
 		return runner.New(runner.Config{AppName: appName, Agent: root, SessionService: svc, PluginConfig: plugins})
 	}
@@ -102,7 +102,10 @@ type bridge struct {
 	newService func() session.Service
 	newRunner  func(session.Service) (*runner.Runner, error)
 	approval   *Approval
+	store      ThreadStore
 	optErr     error
+
+	instructions runInstructions
 
 	maxLLMCalls int
 }
@@ -112,13 +115,21 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 	if err != nil {
 		return err
 	}
-	history, tail, err := rebuild(in.Messages, b.root.Name())
+	userID, err := b.user(ctx)
+	if err != nil {
+		return err
+	}
+	messages, err := b.startingHistory(ctx, userID, in)
+	if err != nil {
+		return err
+	}
+	history, tail, err := rebuild(messages, b.root.Name())
 	if err != nil {
 		return err
 	}
 	var denied map[string]bool
 	if len(in.Resume) > 0 {
-		history, tail, denied, err = resumed(in.Messages, in.Resume, history, tail, b.root.Name(), b.approval)
+		history, tail, denied, err = resumed(messages, in.Resume, history, tail, b.root.Name(), b.approval)
 		if err != nil {
 			return err
 		}
@@ -132,7 +143,7 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 	if err != nil {
 		return err
 	}
-	r, userID, err := b.prepare(ctx, in.ThreadID, history, seed)
+	r, err := b.prepare(ctx, userID, in.ThreadID, history, seed)
 	if err != nil {
 		return err
 	}
@@ -144,8 +155,8 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 
 	tr := newTranslator(messageIDs(in.RunID))
 	tr.approval, tr.denied, tr.based = b.approval, denied, seed != nil
-	ctx, queued := withSink(withClientTools(ctx, tools))
-	w := &wire{out: out}
+	ctx, queued := withSink(withClientTools(withInstructions(ctx, b.instructions.of(in)), tools))
+	w := &wire{out: out, rec: &recorder{}}
 	queued.live = w.live
 	runErr := b.drive(ctx, r, userID, in.ThreadID, tail, tr, queued, w)
 	// Whatever the run opened is closed before it ends, so a failed run still
@@ -156,6 +167,9 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 	}
 	if runErr != nil {
 		return runErr
+	}
+	if err := b.saveThread(ctx, userID, in.ThreadID, messages, w.rec); err != nil {
+		return err
 	}
 	// A gated call outranks a browser call of the same step: the client answers
 	// the browser call as not finished when it resumes.
@@ -183,36 +197,41 @@ func seedState(raw json.RawMessage) (map[string]any, error) {
 	return state, nil
 }
 
+// user resolves the run's user, which owns its session and its stored thread.
+func (b *bridge) user(ctx context.Context) (string, error) {
+	userID, err := b.userID(ctx)
+	if err != nil {
+		return "", fmt.Errorf("aguiadk: the run's user: %w", err)
+	}
+	if userID == "" {
+		return "", errors.New("aguiadk: the run names no user")
+	}
+	return userID, nil
+}
+
 // prepare stores the replayed history in a session of its own, seeded with the
 // client's state, and returns a runner over it. The session id is the thread's,
 // so ADK and its telemetry name the conversation the client does.
 func (b *bridge) prepare(
-	ctx context.Context, threadID string, history []*session.Event, state map[string]any,
-) (*runner.Runner, string, error) {
-	userID, err := b.userID(ctx)
-	if err != nil {
-		return nil, "", fmt.Errorf("aguiadk: the run's user: %w", err)
-	}
-	if userID == "" {
-		return nil, "", errors.New("aguiadk: the run names no user")
-	}
+	ctx context.Context, userID, threadID string, history []*session.Event, state map[string]any,
+) (*runner.Runner, error) {
 	svc := b.newService()
 	created, err := svc.Create(ctx, &session.CreateRequest{
 		AppName: appName, UserID: userID, SessionID: threadID, State: state,
 	})
 	if err != nil {
-		return nil, "", fmt.Errorf("aguiadk: creating the run's session: %w", err)
+		return nil, fmt.Errorf("aguiadk: creating the run's session: %w", err)
 	}
 	for _, ev := range history {
 		if err := svc.AppendEvent(ctx, created.Session, ev); err != nil {
-			return nil, "", fmt.Errorf("aguiadk: replaying the conversation: %w", err)
+			return nil, fmt.Errorf("aguiadk: replaying the conversation: %w", err)
 		}
 	}
 	r, err := b.newRunner(svc)
 	if err != nil {
-		return nil, "", fmt.Errorf("aguiadk: %w", err)
+		return nil, fmt.Errorf("aguiadk: %w", err)
 	}
-	return r, userID, nil
+	return r, nil
 }
 
 // drive runs the agent and streams what it yields.
@@ -290,6 +309,7 @@ func answered(ev *session.Event) []string {
 type wire struct {
 	mu   sync.Mutex
 	out  *aguix.Stream
+	rec  *recorder
 	done bool
 }
 
@@ -304,6 +324,7 @@ func (w *wire) send(frames []aguix.Event) error {
 		if err := w.out.Emit(f); err != nil {
 			return err
 		}
+		w.rec.observe(f)
 	}
 	return nil
 }
