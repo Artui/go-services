@@ -34,6 +34,7 @@ func WithOnFinish(fn func(ctx context.Context, in RunInput, end Event, messages 
 // watcher is one run's view of its own stream, for the two options above.
 type watcher struct {
 	h          *handler
+	stream     *Stream
 	r          *http.Request
 	in         RunInput
 	ctx        context.Context
@@ -48,7 +49,7 @@ func (h *handler) watch(r *http.Request, in RunInput, stream *Stream) *watcher {
 	if h.observer == nil && h.onFinish == nil {
 		return nil
 	}
-	w := &watcher{h: h, r: r, in: in, ctx: context.WithoutCancel(r.Context()), observer: h.observer}
+	w := &watcher{h: h, stream: stream, r: r, in: in, ctx: context.WithoutCancel(r.Context()), observer: h.observer}
 	if h.onFinish != nil {
 		w.transcript = newTranscript()
 	}
@@ -77,8 +78,11 @@ func (w *watcher) finish() {
 	if w == nil || w.h.onFinish == nil {
 		return
 	}
+	w.stream.mu.Lock()
+	end, messages := w.end, w.transcript.messages()
+	w.stream.mu.Unlock()
 	defer w.guard("finish hook", func() {})
-	w.h.onFinish(w.ctx, w.in, w.end, w.transcript.messages())
+	w.h.onFinish(w.ctx, w.in, end, messages)
 }
 
 func (w *watcher) guard(what string, then func()) {

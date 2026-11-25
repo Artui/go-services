@@ -119,6 +119,22 @@ func TestTheTranscriptFoldsTheWire(t *testing.T) {
 			aguix.ActivitySnapshot("a1", "plan", map[string]any{"step": 1}),
 			aguix.Custom("x", 1),
 		}, `null`},
+		{"a sub-agent's text is attributed and its tool frames are not the parent's", []aguix.Event{
+			aguix.ToolCallStart("c1", "research", "m1"), aguix.ToolCallEnd("c1"),
+			aguix.SubagentStarted("s1", "researcher", "c1"),
+			aguix.TextMessageStart("m2").WithSubagentRunID("s1"),
+			aguix.TextMessageContent("m2", "Searching.").WithSubagentRunID("s1"),
+			aguix.TextMessageEnd("m2").WithSubagentRunID("s1"),
+			aguix.ToolCallStart("c2", "search", "m2").WithSubagentRunID("s1"),
+			aguix.ToolCallArgs("c2", []byte(`{}`)).WithSubagentRunID("s1"),
+			aguix.ToolCallEnd("c2").WithSubagentRunID("s1"),
+			aguix.ToolCallResult("t2", "c2", "hits", aguix.OutcomeSuccess).WithSubagentRunID("s1"),
+			aguix.SubagentFinished("s1"),
+			aguix.ToolCallResult("t1", "c1", "tides", aguix.OutcomeSuccess),
+		}, `[{"id":"m1","role":"assistant","toolCalls":[` +
+			`{"id":"c1","type":"function","function":{"name":"research","arguments":""}}]},` +
+			`{"id":"m2","role":"assistant","content":"Searching.","subagentRunId":"s1"},` +
+			`{"id":"t1","role":"tool","content":"tides","toolCallId":"c1"}]`},
 		{"frames for a call never started are ignored", []aguix.Event{
 			aguix.ToolCallArgs("c9", []byte(`{}`)), aguix.ToolCallEnd("c9"),
 		}, `null`},

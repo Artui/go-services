@@ -23,7 +23,7 @@ import (
 // where the assistant's output is read back by anything, to that too.
 //
 // The family's Python transport learned this the harder way: it redacts the
-// same event, and the half that makes redaction affordable is the observer.
+// same event, and the half that makes redaction affordable is WithOnError.
 // Redacting with nowhere to send it means nobody ever sees the failure.
 const RunErrorText = "The assistant could not complete that. " +
 	"The reason was recorded on the server."
