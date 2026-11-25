@@ -33,6 +33,18 @@
 // trustworthy as the client, and a client that changes it gets a new key. This
 // guards against a repeated request, not against a hostile client.
 //
+// # Long-term memory
+//
+// WithMemory gives the agent an ADK memory.Service, so its load_memory and
+// preload_memory tools recall the user's earlier threads. The search is scoped
+// to the run's user, the one WithUserID names, so one user never recalls
+// another's conversation. Each finished run adds the thread's conversation so
+// far, once: a run that fails, or stops on an interrupt or a browser call, adds
+// nothing, and the run that resumes it adds the thread when it finishes. ADK's
+// memory.InMemoryService keeps memory for the life of the process;
+// aguistore.OpenADKMemory keeps it in the same databases as aguistore's SQL
+// store. Both replace a thread added again, keeping only its latest version.
+//
 // # Prompt caching and large results
 //
 // ADK's anthropicmodel (v2.8.0) caches only when ClientConfig.PromptCache is
