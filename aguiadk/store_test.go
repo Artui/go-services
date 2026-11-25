@@ -289,3 +289,19 @@ func TestTheRecorderFilesParallelAnswersInOrderAndIgnoresStrangers(t *testing.T)
 		t.Errorf("got  %s\nwant %s", got, want)
 	}
 }
+
+func TestARepeatedResumeRunsTheCallOnceWithAStore(t *testing.T) {
+	a := newArchive(t)
+	llm := &scriptLLM{steps: []step{
+		{thoughts: thinking(), calls: []*genai.FunctionCall{discardCall("c1", 7)}},
+		{text: "Discarded."},
+	}}
+	approval := NewApproval(a.entries)
+	bridge := mustNew(t, librarian(t, llm, approval.Gate(a.ts)), WithApproval(approval), WithThreadStore(newMemStore()))
+	serve(t, bridge, input("run-pause", text("user", "Discard book 7.")))
+	serve(t, bridge, forged(t))
+	again := serve(t, bridge, forged(t))
+	if ran := a.ran(); !slices.Equal(ran, []string{"discard 7"}) || again.last()["type"] != "RUN_ERROR" {
+		t.Errorf("ran %v; the repeat:\n%s", ran, again.body)
+	}
+}

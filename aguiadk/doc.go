@@ -18,7 +18,9 @@
 // # Running a resumed call once
 //
 // The bridge on its own keeps no state, so an identical resume sent twice runs the call
-// twice, under the same tool-call id both times. A spec that must not repeat
+// twice, under the same tool-call id both times. WithThreadStore refuses the
+// second once the first has finished, since the stored thread then answers
+// the call, but two sent at once can still both run. A spec that must not repeat
 // its effect keys idempotency on that id: an adkx.Principal returns
 // agent.Context's FunctionCallID with the user, the registry's resolver puts
 // them in Deps, and the spec records the pair under a unique constraint in the

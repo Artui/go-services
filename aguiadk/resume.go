@@ -24,10 +24,10 @@ type openCall struct {
 //
 // Every entry must name, through its interrupt id, a call of the conversation
 // that is still unanswered, that no user message follows, and that gated names
-// when it is non-nil; anything else is refused. The bridge keeps no state, so a
-// conversation that already answers the call is refused, but an identical
-// request sent twice runs the call twice, under one call id (the package
-// documentation says how a spec keys on it). It returns the calls the person
+// when it is non-nil; anything else is refused. A conversation that already
+// answers the call is refused, but without a thread store the bridge keeps no
+// state, so an identical request sent twice runs the call twice, under one
+// call id (the package documentation says how a spec keys on it). It returns the calls the person
 // denied, whose results are then reported as denied.
 func resumed(
 	messages []aguix.Message, entries []aguix.ResumeEntry,
