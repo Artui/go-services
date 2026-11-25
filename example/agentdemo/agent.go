@@ -124,6 +124,8 @@ func main() {
 
 	llm, err := anthropicmodel.NewModel(ctx, modelName, anthropicmodel.ClientConfig{
 		Backend: anthropicmodel.BackendAnthropic, APIKey: key,
+		// Named, or ANTHROPIC_BASE_URL could redirect the key; see adkx's doc.
+		BaseURL: "https://api.anthropic.com",
 	})
 	if err != nil {
 		log.Fatalf("model: %v", err)

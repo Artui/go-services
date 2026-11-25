@@ -26,7 +26,8 @@ type openCall struct {
 // that is still unanswered, that no user message follows, and that gated names
 // when it is non-nil; anything else is refused. The bridge keeps no state, so a
 // conversation that already answers the call is refused, but an identical
-// request sent twice runs the call twice. It returns the calls the person
+// request sent twice runs the call twice, under one call id (the package
+// documentation says how a spec keys on it). It returns the calls the person
 // denied, whose results are then reported as denied.
 func resumed(
 	messages []aguix.Message, entries []aguix.ResumeEntry,
