@@ -119,7 +119,7 @@ func TestTheTranscriptFoldsTheWire(t *testing.T) {
 			aguix.ActivitySnapshot("a1", "plan", map[string]any{"step": 1}),
 			aguix.Custom("x", 1),
 		}, `null`},
-		{"a sub-agent's frames are not the parent's messages", []aguix.Event{
+		{"a sub-agent's text is attributed and its tool frames are not the parent's", []aguix.Event{
 			aguix.ToolCallStart("c1", "research", "m1"), aguix.ToolCallEnd("c1"),
 			aguix.SubagentStarted("s1", "researcher", "c1"),
 			aguix.TextMessageStart("m2").WithSubagentRunID("s1"),
@@ -133,6 +133,7 @@ func TestTheTranscriptFoldsTheWire(t *testing.T) {
 			aguix.ToolCallResult("t1", "c1", "tides", aguix.OutcomeSuccess),
 		}, `[{"id":"m1","role":"assistant","toolCalls":[` +
 			`{"id":"c1","type":"function","function":{"name":"research","arguments":""}}]},` +
+			`{"id":"m2","role":"assistant","content":"Searching.","subagentRunId":"s1"},` +
 			`{"id":"t1","role":"tool","content":"tides","toolCallId":"c1"}]`},
 		{"frames for a call never started are ignored", []aguix.Event{
 			aguix.ToolCallArgs("c9", []byte(`{}`)), aguix.ToolCallEnd("c9"),
@@ -174,6 +175,9 @@ func TestTheFinishHookSeesHowTheRunEnded(t *testing.T) {
 			aguix.WithOnFinish(got.hook), aguix.WithOnError(func(*http.Request, error) {}))
 		if got.end.Type != aguix.EventRunFinished || got.end.Usage == nil {
 			t.Errorf("end = %+v, want the cancelled RUN_FINISHED with usage", got.end)
+		}
+		if outcome, ok := got.end.FinishOutcome(); !ok || outcome.Type != "cancelled" {
+			t.Errorf("end's outcome = %+v, %v, want cancelled", outcome, ok)
 		}
 		if got.ctxErr != nil {
 			t.Errorf("hook context is done: %v", got.ctxErr)

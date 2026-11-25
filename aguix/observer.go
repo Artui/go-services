@@ -21,7 +21,8 @@ func WithObserver(fn func(ctx context.Context, in RunInput, ev Event)) Option {
 
 // WithOnFinish hands fn the messages the run streamed, rebuilt from its frames,
 // once the run is over: after RUN_FINISHED or RUN_ERROR, which it gets as end,
-// or after the client hung up, when end is the zero Event. A run refused before
+// or after the client hung up, when end is the zero Event. end.FinishOutcome
+// reads how a finished run ended. A run refused before
 // its stream opened has no finish.
 //
 // The messages are this run's alone; the conversation before it is
