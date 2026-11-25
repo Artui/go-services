@@ -7,7 +7,7 @@ require (
 	github.com/Artui/go-services/adkx v0.2.0
 	github.com/Artui/go-services/aguix v0.7.0
 	google.golang.org/adk/v2 v2.8.0
-	google.golang.org/genai v1.77.0
+	google.golang.org/genai v1.79.0
 )
 
 require (
