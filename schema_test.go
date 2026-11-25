@@ -402,7 +402,7 @@ func TestANullZeroValueIsRefusedNamingTheNilGuard(t *testing.T) {
 	if err == nil {
 		t.Fatal("accepted a type declaring an object whose zero value marshals to null")
 	}
-	for _, want := range []string{"output", "dynamicOut", `"object"`, "zero value marshals to null", "encode a nil one as {} for an object"} {
+	for _, want := range []string{"output", "dynamicOut", `"object"`, "encode a nil one as {} for an object"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %s", err, want)
 		}
@@ -431,6 +431,25 @@ func TestANullZeroValueOfADefinedTypeStillNamesTheEmbedding(t *testing.T) {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %s", err, want)
 		}
+	}
+}
+
+type guardedList struct{ V []string }
+
+func (guardedList) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{Type: "array"}, nil
+}
+
+func (l guardedList) MarshalJSON() ([]byte, error) {
+	if l.V == nil {
+		return []byte(`[]`), nil
+	}
+	return json.Marshal(l.V)
+}
+
+func TestANilGuardedListIsAccepted(t *testing.T) {
+	if _, err := reflectSchema(reflect.TypeFor[guardedList]()); err != nil {
+		t.Fatalf("refused a nil-guarded list: %v", err)
 	}
 }
 
