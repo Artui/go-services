@@ -56,13 +56,26 @@ func TestRecorderMatchesTranscripts(t *testing.T) {
 	}
 }
 
-// decodeFrame reads one frame's flat fields; a payload-carrying frame keeps its
-// type only, which is all the recorder reads of it.
+// decodeFrame reads one frame's flat fields, and an activity's content; any
+// other payload-carrying frame keeps its type only, all the recorder reads.
 func decodeFrame(t *testing.T, path, chunk string) aguix.Event {
 	t.Helper()
 	raw := []byte(strings.TrimPrefix(strings.TrimSpace(chunk), "data: "))
 	var e aguix.Event
 	if err := json.Unmarshal(raw, &e); err == nil {
+		return e
+	}
+	var activity struct {
+		Type          aguix.EventType `json:"type"`
+		MessageID     string          `json:"messageId"`
+		ActivityType  string          `json:"activityType"`
+		Replace       *bool           `json:"replace"`
+		SubagentRunID string          `json:"subagentRunId"`
+		Content       json.RawMessage `json:"content"`
+	}
+	if json.Unmarshal(raw, &activity) == nil && activity.Type == aguix.EventActivitySnapshot {
+		e = aguix.ActivitySnapshot(activity.MessageID, activity.ActivityType, activity.Content)
+		e.Replace, e.SubagentRunID = activity.Replace, activity.SubagentRunID
 		return e
 	}
 	if err := json.Unmarshal(raw, &struct {

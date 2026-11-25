@@ -1,11 +1,13 @@
 package aguistore
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -31,33 +33,63 @@ func WithListLimit(n int) HandlerOption {
 //
 //   - GET  / lists the threads, {"threads": [{thread_id, title, updated_at,
 //     preview, parent}]}, with an ETag that If-None-Match answers with 304;
+//   - GET  / with Accept: text/event-stream is the threads watch: an SSE frame,
+//     id: the list's ETag and data: the list, each time the list changes
+//     (none for the ETag a Last-Event-ID names), comment heartbeats between,
+//     until WithWatch's duration ends it for the client to reconnect;
 //   - GET  /<id>/ returns {"thread_id", "messages"};
 //   - PATCH /<id>/ takes {"title"} and answers {"thread_id", "title"};
 //   - DELETE /<id>/ answers 204.
+//
+// A store that is a RunStore adds each row's status, last_read_at, reason
+// when failed and interrupts when waiting, as RUN_FINISHED sent them, which
+// is what tells the web component a run store is there; and
+// POST /<id>/read/ marks the thread read, answering 204.
 //
 // userID resolves the caller as aguiadk.WithUserID does, and should be the
 // same function: an error or an empty id is refused with 401, or 403 for an
 // error wrapping services.ErrPermission. Another user's thread is 404.
 func Handler(store Store, userID func(context.Context) (string, error), opts ...HandlerOption) http.Handler {
-	h := &handler{store: store, userID: userID, limit: 100}
+	h := &handler{
+		store: store, userID: userID, limit: 100,
+		poll: 2 * time.Second, heartbeat: 15 * time.Second, watchFor: 5 * time.Minute,
+	}
+	h.runs, _ = store.(RunStore)
 	for _, opt := range opts {
 		opt(h)
 	}
 	return h
 }
 
-type handler struct {
-	store  Store
-	userID func(context.Context) (string, error)
-	limit  int
+// WithWatch sets how often the threads watch reads the list, every 2s by
+// default; how long it stays quiet before a heartbeat comment, 15s (zero sends
+// none); and how long one watch lasts before it ends, 5 minutes, so a client
+// reconnects and is authenticated again. django-ag-ui's are the same.
+func WithWatch(poll, heartbeat, duration time.Duration) HandlerOption {
+	return func(h *handler) { h.poll, h.heartbeat, h.watchFor = poll, heartbeat, duration }
 }
 
+type handler struct {
+	store  Store
+	runs   RunStore
+	userID func(context.Context) (string, error)
+	limit  int
+
+	poll, heartbeat, watchFor time.Duration
+}
+
+// threadRow's run keys are raw so a served status can say null, as
+// django-ag-ui's does, and the interrupts keep the bytes they were stored as.
 type threadRow struct {
-	ThreadID  string `json:"thread_id"`
-	Title     string `json:"title"`
-	UpdatedAt string `json:"updated_at"`
-	Preview   string `json:"preview"`
-	Parent    any    `json:"parent"`
+	ThreadID   string          `json:"thread_id"`
+	Title      string          `json:"title"`
+	UpdatedAt  string          `json:"updated_at"`
+	Preview    string          `json:"preview"`
+	Parent     any             `json:"parent"`
+	Status     string          `json:"status,omitempty"`
+	LastReadAt json.RawMessage `json:"last_read_at,omitempty"`
+	Reason     json.RawMessage `json:"reason,omitempty"`
+	Interrupts json.RawMessage `json:"interrupts,omitempty"`
 }
 
 const maxTitle = 255
@@ -76,6 +108,8 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case id == "":
 		h.list(w, r, user)
+	case h.runs != nil && strings.Count(id, "/") == 1 && strings.HasSuffix(id, "/read"):
+		h.read(w, r, user, strings.TrimSuffix(id, "/read"))
 	case strings.Contains(id, "/"):
 		writeError(w, http.StatusNotFound, "not found")
 	default:
@@ -92,22 +126,17 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request, user string) {
 	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 && n < limit {
 		limit = n
 	}
-	threads, err := h.store.ListThreads(r.Context(), user, limit)
+	body, etag, err := h.listing(r.Context(), user, limit)
 	if err != nil {
 		storeError(w, err)
 		return
 	}
-	rows := make([]threadRow, 0, len(threads))
-	for _, t := range threads {
-		rows = append(rows, threadRow{
-			ThreadID: t.ID, Title: t.Title, Preview: t.Preview,
-			UpdatedAt: t.UpdatedAt.UTC().Format(time.RFC3339Nano),
-		})
+	if strings.Contains(r.Header.Get("Accept"), "text/event-stream") {
+		if f, ok := w.(http.Flusher); ok {
+			h.watch(w, f, r, user, limit, body, etag)
+			return
+		}
 	}
-	// Strings only, which always encode.
-	body, _ := json.Marshal(map[string]any{"threads": rows})
-	sum := sha256.Sum256(body)
-	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "private, no-cache")
 	w.Header().Add("Vary", "Accept")
@@ -117,6 +146,63 @@ func (h *handler) list(w http.ResponseWriter, r *http.Request, user string) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_, _ = w.Write(body)
+}
+
+// listing is the list body and its ETag.
+func (h *handler) listing(ctx context.Context, user string, limit int) ([]byte, string, error) {
+	threads, err := h.store.ListThreads(ctx, user, limit)
+	if err != nil {
+		return nil, "", err
+	}
+	rows := make([]threadRow, 0, len(threads))
+	for _, t := range threads {
+		row := threadRow{
+			ThreadID: t.ID, Title: t.Title, Preview: t.Preview,
+			UpdatedAt: t.UpdatedAt.UTC().Format(time.RFC3339Nano),
+		}
+		if h.runs != nil {
+			h.status(&row, t)
+		}
+		rows = append(rows, row)
+	}
+	body, err := json.Marshal(map[string]any{"threads": rows})
+	if err != nil {
+		return nil, "", fmt.Errorf("aguistore: a stored thread's interrupts do not encode: %w", err)
+	}
+	sum := sha256.Sum256(body)
+	return body, `"` + hex.EncodeToString(sum[:16]) + `"`, nil
+}
+
+// status fills a row's run keys as django-ag-ui's thread_status_fields does.
+func (h *handler) status(row *threadRow, t Thread) {
+	row.Status, row.LastReadAt = cmp.Or(t.Status, StatusIdle), json.RawMessage("null")
+	if !t.LastReadAt.IsZero() {
+		row.LastReadAt, _ = json.Marshal(t.LastReadAt.UTC().Format(time.RFC3339Nano))
+	}
+	switch row.Status {
+	case StatusFailed:
+		row.Reason = json.RawMessage("null")
+		if t.Reason != "" {
+			row.Reason, _ = json.Marshal(t.Reason)
+		}
+	case StatusWaiting:
+		row.Interrupts = t.Interrupts
+		if len(row.Interrupts) == 0 {
+			row.Interrupts = json.RawMessage("[]")
+		}
+	}
+}
+
+func (h *handler) read(w http.ResponseWriter, r *http.Request, user, id string) {
+	if r.Method != http.MethodPost {
+		notAllowed(w, "POST")
+		return
+	}
+	if err := h.runs.MarkRead(r.Context(), user, id); err != nil {
+		storeError(w, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // matches reports whether an If-None-Match value names etag: in a list, as *,

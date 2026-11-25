@@ -551,6 +551,25 @@ v0.2.0.
   and the sum database all serve the version. A `release` workflow tags on
   merge when the merge adds a kernel heading or a new module token to the
   Adapters section, through the same script.
+
+- **`aguistore` records each thread's run status, and its list is also a
+  watch.** `Memory` and `SQL` are a `RunStore`: the bridge marks a thread
+  `running`, then `idle`, `failed` (with `reason`) or `waiting` on the
+  interrupts its run parked on, stored as the bytes RUN_FINISHED carried. The
+  list carries `status`, `reason`, `interrupts` and `last_read_at`, which
+  `POST <id>/read/` stamps, so a parked approval survives a reload. A resume
+  claims the park, so the same answer sent twice runs once. The same `GET` with
+  `Accept: text/event-stream` streams the list (`id: <etag>`, `data:
+  {threads}`) each time it changes, with comment heartbeats, polling every 2s for
+  at most 5 minutes (`WithWatch`). The status lives in a new `aguistore_runs`
+  table, which `OpenSQL` adds to a v0.1.0 database.
+- **`aguiadk` records each run through a `RunStore` and stores activities.**
+  A thread store that is also a `RunStore` is told each run's start and end,
+  and a resume that loses the claim on its interrupts is refused with
+  RUN_ERROR, so two sent at once run the call once. Each ACTIVITY_SNAPSHOT's
+  last snapshot is stored in the thread where it was sent, replaced by message
+  id as the client's applier does, so charts, suggestions and compaction notes
+  come back with the thread.
 - **`aguistore`'s SQL store speaks Postgres and MySQL as well as SQLite.**
   `OpenSQL(ctx, db, aguistore.WithDialect(aguistore.Postgres))` (or
   `aguistore.MySQL`) renders the same statements with the dialect's

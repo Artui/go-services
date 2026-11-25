@@ -10,8 +10,8 @@ import (
 
 // recorder rebuilds the messages a run sent from its frames, as the client's
 // own reducer files them, so a stored thread reads back as the page showed it:
-// under the wire's message and call ids, with each reasoning span's signature.
-// Activities, state and custom events are not messages and are not kept.
+// under the wire's message and call ids, with each reasoning span's signature
+// and each activity's last snapshot. State and custom events are not messages.
 type recorder struct {
 	msgs []*draft
 }
@@ -47,6 +47,28 @@ func (r *recorder) observe(e aguix.Event) {
 		}
 	case aguix.EventToolCallResult:
 		r.result(e)
+	case aguix.EventActivitySnapshot:
+		r.activity(e)
+	}
+}
+
+// activity files a snapshot as the client does: a new id goes last, and a
+// message the id already names is replaced in place unless replace is false.
+func (r *recorder) activity(e aguix.Event) {
+	encoded, _ := json.Marshal(e)
+	var frame struct {
+		Content json.RawMessage `json:"content"`
+	}
+	_ = json.Unmarshal(encoded, &frame)
+	m := aguix.Message{
+		ID: e.MessageID, Role: "activity", ActivityType: e.ActivityType, Content: frame.Content, SubagentRunID: e.SubagentRunID,
+	}
+	i := slices.IndexFunc(r.msgs, func(d *draft) bool { return d.msg.ID == e.MessageID })
+	switch {
+	case i < 0:
+		r.msgs = append(r.msgs, &draft{msg: m})
+	case e.Replace == nil || *e.Replace:
+		r.msgs[i] = &draft{msg: m}
 	}
 }
 
