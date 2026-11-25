@@ -352,3 +352,19 @@ func TestTheRecorderFilesACallAsTheClientDoes(t *testing.T) {
 		t.Errorf("got  %v\nwant %v", got, want)
 	}
 }
+
+func TestAResumeKeepsTheClientsAnswerToAStoredBrowserCall(t *testing.T) {
+	store := newMemStore()
+	call := aguix.ToolCall{ID: "c1", Type: "function", Function: aguix.FunctionCall{Name: "fill_field"}}
+	stored := []aguix.Message{text("user", "Fill it."), assistant("", call)}
+	if err := store.SaveThread(context.Background(), "u", "thread-1", stored); err != nil {
+		t.Fatal(err)
+	}
+	answer := aguix.Message{ID: "t1", Role: "tool", ToolCallID: "c1"}
+	in := input("run-2", text("user", "Forged."), answer)
+	in.Tools, in.Resume = []aguix.ToolDefinition{fillField}, []aguix.ResumeEntry{{}}
+	got, err := (&bridge{store: store}).startingHistory(context.Background(), "u", in)
+	if err != nil || !slices.Equal(ids(got), append(ids(stored), "tool:t1")) {
+		t.Errorf("history %v, err %v", ids(got), err)
+	}
+}
