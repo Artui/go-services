@@ -71,8 +71,11 @@ func seeded(t *testing.T) *Memory {
 	return s
 }
 
+// threadsOnly hides a store's run status, as a Store of another kind would.
+type threadsOnly struct{ Store }
+
 func TestTheListIsTheUsersThreadsAsTheWebComponentReadsThem(t *testing.T) {
-	h := mount(seeded(t))
+	h := mount(threadsOnly{seeded(t)})
 	got := do(t, h, "GET", "/threads/", "alice", "")
 	want := `{"threads":[` +
 		`{"thread_id":"th2","title":"Second.","updated_at":"2026-11-25T09:00:02Z","preview":"Second.","parent":null},` +
