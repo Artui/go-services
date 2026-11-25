@@ -261,3 +261,31 @@ func TestTheRecorderKeepsAFailedCallsOutcome(t *testing.T) {
 		t.Errorf("got %s\nwant %s", got, want)
 	}
 }
+
+func TestTheRecorderFilesParallelAnswersInOrderAndIgnoresStrangers(t *testing.T) {
+	var r recorder
+	for _, e := range []aguix.Event{
+		{Type: aguix.EventTextMessageStart, MessageID: "m1"},
+		aguix.TextMessageContent("m1", "Two calls."),
+		aguix.TextMessageContent("ghost", "lost"),
+		aguix.ToolCallStart("c1", "fill_field", "m1"),
+		aguix.ToolCallStart("c2", "fill_field", "m1"),
+		aguix.ToolCallArgs("ghost", json.RawMessage(`{}`)),
+		aguix.ReasoningEncryptedValue("tool-call", "c2", "sig-c2"),
+		aguix.ReasoningEncryptedValue("tool-call", "ghost", "lost"),
+		aguix.ReasoningEncryptedValue("message", "ghost", "lost"),
+		aguix.ToolCallResult("t1", "c1", "one", aguix.OutcomeSuccess),
+		aguix.ToolCallResult("t2", "c2", "two", aguix.OutcomeSuccess),
+	} {
+		r.observe(e)
+	}
+	got, _ := json.Marshal(r.messages())
+	want := `[{"id":"m1","role":"assistant","content":"Two calls.","toolCalls":[` +
+		`{"id":"c1","type":"function","function":{"name":"fill_field","arguments":""}},` +
+		`{"id":"c2","type":"function","function":{"name":"fill_field","arguments":""},"encryptedValue":"sig-c2"}]},` +
+		`{"id":"t1","role":"tool","content":"one","toolCallId":"c1"},` +
+		`{"id":"t2","role":"tool","content":"two","toolCallId":"c2"}]`
+	if string(got) != want {
+		t.Errorf("got  %s\nwant %s", got, want)
+	}
+}

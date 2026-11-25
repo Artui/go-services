@@ -451,6 +451,24 @@ aguix type, so its floors stay where `v0.5.0` set them.
   and the sum database all serve the version. A `release` workflow tags on
   merge when the merge adds a kernel heading or a new module token to the
   Adapters section, through the same script.
+- **`aguiadk.WithThreadStore` keeps each user's threads between runs.** A run
+  that finishes saves its thread, the messages it started from followed by what
+  it sent, filed as `@ag-ui/client` files them (checked against the client's
+  own reducer by `scripts/agui-wire`); a run that fails or has nothing to
+  answer saves nothing, and a save outlives a cancelled request. An ordinary
+  run starts from the client's messages, as django-ag-ui's does; a run that
+  resumes interrupts starts from the stored thread, followed by the client's
+  answers to the calls it left open, so a resume body cannot rewrite what the
+  model asked for. The store is keyed by the `WithUserID` user, and a run that
+  only answers a browser tool is saved as a continuation of its thread.
+- **A new module, `aguistore`, holds threads in memory or over `database/sql`,
+  and serves them to the web component.** `NewMemory` and `OpenSQL` (tested on
+  SQLite through `modernc.org/sqlite`) satisfy `aguiadk.ThreadStore`, adding
+  list, rename and delete. `Handler` answers the routes the web component's
+  `data-threads-url` reads, as django-ag-ui's `ThreadsView` does: the list with
+  a strong ETag that `If-None-Match` answers with 304, a thread's messages,
+  `PATCH` of its title and `DELETE`. A thread's title is its first user message
+  and is set once; another user's thread is 404.
 
 ### Changed
 

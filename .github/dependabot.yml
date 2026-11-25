@@ -39,6 +39,7 @@ updates:
       - "/adkx"
       - "/aguix"
       - "/aguiadk"
+      - "/aguistore"
       - "/conformance"
       - "/example"
     schedule: { interval: "weekly" }

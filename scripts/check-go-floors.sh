@@ -21,6 +21,7 @@ EXPECTED=(
   "adkx:1.26.10" # ADK v2.8.0's own go.mod, the highest floor in the repo
   "aguix:1.24"  # the kernel's floor; it depends on nothing else
   "aguiadk:1.26.10" # adkx's floor, which it builds on
+  "aguistore:1.26.0" # modernc.org/sqlite, the driver its SQL store is tested on
   "conformance:1.26.10" # the highest of the modules it drives, which is adkx
   "example:1.26.10"     # the same: it mounts all four adapters at once
   "published:1.26.10"   # the highest tag it builds, adkx
