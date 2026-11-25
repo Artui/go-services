@@ -174,6 +174,7 @@ func (b *bridge) serve(
 	tr := newTranslator(messageIDs(in.RunID))
 	tr.approval, tr.denied, tr.based = b.approval, denied, seed != nil
 	ctx, queued := withSink(withClientTools(withInstructions(ctx, b.instructions.of(in)), tools))
+	tr.sink = queued
 	w := &wire{out: out, rec: &recorder{}}
 	queued.live = w.live
 	runErr := b.drive(ctx, r, userID, in.ThreadID, tail, tr, queued, w)

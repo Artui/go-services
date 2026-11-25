@@ -36,6 +36,9 @@ type sink struct {
 	// issued holds the sub-agent ids handed out, so none repeats.
 	issued map[string]bool
 
+	// failures holds each failed top-level delegation until its result is sent.
+	failures map[string]failure
+
 	// live sends a frame now, for what is only worth seeing while it happens.
 	live func(aguix.Event)
 }
@@ -44,7 +47,8 @@ type sinkKey struct{}
 
 func withSink(ctx context.Context) (context.Context, *sink) {
 	s := &sink{
-		byCall: map[string][]aguix.Event{}, issued: map[string]bool{}, live: func(aguix.Event) {},
+		byCall: map[string][]aguix.Event{}, issued: map[string]bool{}, failures: map[string]failure{},
+		live: func(aguix.Event) {},
 	}
 	ctx = context.WithValue(ctx, sinkKey{}, s)
 	return platform.WithTaskRunner(ctx, s.perCall), s
@@ -222,6 +226,12 @@ func returned(ctx agent.Context, ok bool) {
 	c.reported = true
 	c.mu.Unlock()
 	if !again {
+		if name, run := c.delegated(); !ok && run != "" && c.parent == nil {
+			id, _ := c.named()
+			c.sink.mu.Lock()
+			c.sink.failures[id] = failure{agent: name, cancelled: ctx.Err() != nil}
+			c.sink.mu.Unlock()
+		}
 		finished(ctx, c, ok)
 		progress(ctx, c, phaseToolResult, &ok)
 	}
