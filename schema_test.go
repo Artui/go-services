@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"encoding/json"
 	"reflect"
 	"strings"
@@ -366,5 +367,113 @@ func TestADeclaringTypeThatMarshalsNonJSONIsRefused(t *testing.T) {
 	if !strings.Contains(err.Error(), "cannot be marshalled") {
 		t.Errorf("err = %v, want the marshal arm -- if this moves, the exclusion "+
 			"for the unmarshal arm has stopped being true", err)
+	}
+}
+
+// An output that wraps any value, as a bridge from another schema source does:
+// its zero value holds nothing, which encodes as null rather than an object.
+type dynamicOut struct{ V any }
+
+func (dynamicOut) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{Type: "object"}, nil
+}
+
+func (o dynamicOut) MarshalJSON() ([]byte, error) { return json.Marshal(o.V) }
+
+type guardedDynamicOut struct{ V any }
+
+func (guardedDynamicOut) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{Type: "object"}, nil
+}
+
+func (o guardedDynamicOut) MarshalJSON() ([]byte, error) {
+	if o.V == nil {
+		return []byte(`{}`), nil
+	}
+	return json.Marshal(o.V)
+}
+
+func TestANullZeroValueIsRefusedNamingTheNilGuard(t *testing.T) {
+	err := Register(newTestRegistry(t), Spec[testDeps, greetIn, dynamicOut]{
+		Name: "dyn", Kind: Query,
+		Run: func(Ctx[testDeps], greetIn) (dynamicOut, error) { return dynamicOut{}, nil },
+	})
+
+	if err == nil {
+		t.Fatal("accepted a type declaring an object whose zero value marshals to null")
+	}
+	for _, want := range []string{"output", "dynamicOut", `"object"`, "encode a nil one as {} for an object"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %s", err, want)
+		}
+	}
+}
+
+// A defined type over a slice loses MarshalJSON too, and its zero value is nil,
+// so the null refusal still has to name that cause.
+type emptyListBase []string
+
+func (emptyListBase) MarshalJSON() ([]byte, error) { return []byte(`[]`), nil }
+
+type definedList emptyListBase
+
+func (definedList) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{Type: "array"}, nil
+}
+
+func TestANullZeroValueOfADefinedTypeStillNamesTheEmbedding(t *testing.T) {
+	_, err := reflectSchema(reflect.TypeFor[definedList]())
+
+	if err == nil {
+		t.Fatal("accepted a type declaring an array whose zero value marshals to null")
+	}
+	for _, want := range []string{"definedList", "[] for an array", "embed the type"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %s", err, want)
+		}
+	}
+}
+
+type guardedList struct{ V []string }
+
+func (guardedList) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{Type: "array"}, nil
+}
+
+func (l guardedList) MarshalJSON() ([]byte, error) {
+	if l.V == nil {
+		return []byte(`[]`), nil
+	}
+	return json.Marshal(l.V)
+}
+
+func TestANilGuardedListIsAccepted(t *testing.T) {
+	if _, err := reflectSchema(reflect.TypeFor[guardedList]()); err != nil {
+		t.Fatalf("refused a nil-guarded list: %v", err)
+	}
+}
+
+func TestANilGuardedDynamicOutputRegistersAndServesItsValue(t *testing.T) {
+	r := newTestRegistry(t)
+	err := Register(r, Spec[testDeps, greetIn, guardedDynamicOut]{
+		Name: "dyn", Kind: Query,
+		Run: func(_ Ctx[testDeps], in greetIn) (guardedDynamicOut, error) {
+			return guardedDynamicOut{V: map[string]string{"hello": in.Name}}, nil
+		},
+	})
+	if err != nil {
+		t.Fatalf("refused a nil-guarded dynamic output: %v", err)
+	}
+
+	res, err := r.Dispatch(context.Background(), nil, "dyn", []byte(`{"name":"ada"}`))
+	if err != nil {
+		t.Fatalf("dispatch: %v", err)
+	}
+	got, err := json.Marshal(res.Value)
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if want := `{"hello":"ada"}`; string(got) != want {
+		t.Errorf("served %s, want %s", got, want)
 	}
 }
