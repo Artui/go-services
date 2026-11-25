@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
 
 	"github.com/Artui/go-services/aguix"
 	"google.golang.org/adk/v2/agent"
@@ -25,19 +26,79 @@ import (
 // A browser tool named like a server tool is dropped, so the server's tool is
 // the one the model sees and the one a call runs, whichever order the agent
 // lists its toolsets in.
-func ClientToolset() tool.Toolset {
-	return clientToolset{}
+//
+// With no AllowClientTools option every browser tool the run lists is declared,
+// so the page, or any script on it, chooses what the model can call.
+func ClientToolset(opts ...ClientToolOption) tool.Toolset {
+	s := &clientToolset{}
+	for _, opt := range opts {
+		opt(s)
+	}
+	return s
+}
+
+// ClientToolOption configures ClientToolset.
+type ClientToolOption func(*clientToolset)
+
+// AllowClientTools limits the toolset to the browser tools with these names: any
+// other tool a run's input lists is neither declared to the model nor callable.
+// Given more than once the names add up, and given no names it allows none.
+//
+// It bounds names only. The description and parameters of an allowed tool are
+// still the ones the client sent.
+func AllowClientTools(names ...string) ClientToolOption {
+	return func(s *clientToolset) {
+		if s.allowed == nil {
+			s.allowed = map[string]bool{}
+		}
+		for _, name := range names {
+			s.allowed[name] = true
+		}
+	}
+}
+
+// OnDroppedClientTool calls fn for each browser tool AllowClientTools leaves out,
+// once per name in a run that reaches the model, with the run's context. The
+// name is the client's own text. A tool dropped because a server tool has its
+// name is not reported.
+func OnDroppedClientTool(fn func(ctx context.Context, name string)) ClientToolOption {
+	return func(s *clientToolset) { s.onDropped = fn }
 }
 
 type clientToolsKey struct{}
 
-func withClientTools(ctx context.Context, tools []*clientTool) context.Context {
-	return context.WithValue(ctx, clientToolsKey{}, tools)
+// clientRun is one run's browser tools, and the drops already reported in it.
+type clientRun struct {
+	tools    []*clientTool
+	mu       sync.Mutex
+	reported map[droppedTool]bool
 }
 
-func clientToolsFrom(ctx context.Context) []*clientTool {
-	tools, _ := ctx.Value(clientToolsKey{}).([]*clientTool)
-	return tools
+// droppedTool names the toolset as well, since each has its own allow-list.
+type droppedTool struct {
+	set  *clientToolset
+	name string
+}
+
+// first reports whether this is the run's first sight of the drop.
+func (r *clientRun) first(d droppedTool) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	seen := r.reported[d]
+	r.reported[d] = true
+	return !seen
+}
+
+func withClientTools(ctx context.Context, tools []*clientTool) context.Context {
+	return context.WithValue(ctx, clientToolsKey{}, &clientRun{tools: tools, reported: map[droppedTool]bool{}})
+}
+
+// clientRunFrom is empty outside a run served by this package.
+func clientRunFrom(ctx context.Context) *clientRun {
+	if run, ok := ctx.Value(clientToolsKey{}).(*clientRun); ok {
+		return run
+	}
+	return &clientRun{}
 }
 
 // clientTools turns a run's tool definitions into tools, keeping the first of
@@ -63,22 +124,37 @@ func clientTools(defs []aguix.ToolDefinition) ([]*clientTool, error) {
 	return tools, nil
 }
 
-type clientToolset struct{}
+type clientToolset struct {
+	allowed   map[string]bool // nil allows every name
+	onDropped func(ctx context.Context, name string)
+}
 
-func (clientToolset) Name() string { return "client" }
+func (*clientToolset) Name() string { return "client" }
 
-func (clientToolset) Tools(ctx agent.ReadonlyContext) ([]tool.Tool, error) {
+func (s *clientToolset) allows(name string) bool { return s.allowed == nil || s.allowed[name] }
+
+func (s *clientToolset) Tools(ctx agent.ReadonlyContext) ([]tool.Tool, error) {
 	var tools []tool.Tool
-	for _, t := range clientToolsFrom(ctx) {
-		tools = append(tools, t)
+	for _, t := range clientRunFrom(ctx).tools {
+		if s.allows(t.Name()) {
+			tools = append(tools, t)
+		}
 	}
 	return tools, nil
 }
 
 // ProcessRequest declares the client tools. ADK runs it after every tool's own
 // ProcessRequest, so a name already taken belongs to a server tool and is kept.
-func (clientToolset) ProcessRequest(ctx agent.Context, req *model.LLMRequest) error {
-	for _, t := range clientToolsFrom(ctx) {
+// It runs before every model call, so a drop is reported only the first time.
+func (s *clientToolset) ProcessRequest(ctx agent.Context, req *model.LLMRequest) error {
+	run := clientRunFrom(ctx)
+	for _, t := range run.tools {
+		if !s.allows(t.Name()) {
+			if s.onDropped != nil && run.first(droppedTool{s, t.Name()}) {
+				s.onDropped(ctx, t.Name())
+			}
+			continue
+		}
 		if _, taken := req.Tools[t.Name()]; taken {
 			continue
 		}

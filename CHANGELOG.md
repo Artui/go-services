@@ -441,6 +441,9 @@ aguix type, so its floors stay where `v0.5.0` set them.
 
 ### Added
 
+- **`aguiadk.ClientToolset` takes an allow-list.** `AllowClientTools(names...)`
+  declares only those browser tools and `OnDroppedClientTool` is told each name
+  left out; with no option every tool the client lists is declared, as before.
 - **`make release` and `make release-verify` cut and check a module's tag.**
   `make release MODULE=<dir or kernel> VERSION=<version>` refuses a dirty tree,
   a checkout that is not `origin/main` (or `SHA`), a version already on the
