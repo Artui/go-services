@@ -1,0 +1,21 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-subskip"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"d1","toolCallName":"researcher"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"request\":\"Go.\"}","toolCallId":"d1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"d1"}
+
+data: {"type":"SUBAGENT_STARTED","name":"researcher","subagentRunId":"subagent-d1","parentToolCallId":"d1"}
+
+data: {"type":"SUBAGENT_FINISHED","subagentRunId":"subagent-d1"}
+
+data: {"type":"TOOL_CALL_RESULT","messageId":"run-subskip-1","role":"tool","toolCallId":"d1","content":"{\"result\":\"Skipped.\"}"}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"run-subskip-2","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"run-subskip-2","delta":"Done."}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"run-subskip-2"}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-subskip"}
