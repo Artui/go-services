@@ -59,3 +59,59 @@ func progress(ctx agent.Context, c *slot, phase string, ok *bool) {
 		Tool: subagentTool{ToolCallID: id, Name: name, OK: ok},
 	}))
 }
+
+// started opens the lifecycle of the sub-agent agenttool runs for ctx's call:
+// the first agent to run under a call is the delegated one, and any it hands on
+// to belongs to the same invocation. A run's own agents run under no call.
+func started(ctx agent.Context) {
+	c := slotOf(ctx)
+	if c == nil {
+		return
+	}
+	call, _ := c.named()
+	c.mu.Lock()
+	if c.subagent != "" {
+		c.mu.Unlock()
+		return
+	}
+	c.agent, c.subagent = ctx.AgentName(), c.sink.subagentRunID(call)
+	name, id := c.agent, c.subagent
+	c.mu.Unlock()
+
+	ev := aguix.SubagentStarted(id, name, call)
+	if c.parent != nil {
+		_, parent := c.parent.delegated()
+		ev = ev.WithParentSubagentRunID(parent)
+	}
+	c.sink.live(ev)
+}
+
+// finished closes the lifecycle ctx's call opened, if it opened one. A failure
+// carries none of the error's words, which are written for an operator.
+func finished(ctx agent.Context, c *slot, ok bool) {
+	name, id := c.delegated()
+	switch {
+	case id == "":
+	case ok:
+		c.sink.live(aguix.SubagentFinished(id))
+	case ctx.Err() != nil:
+		c.sink.live(aguix.SubagentError(id, name+" was cancelled").WithCode("cancelled"))
+	default:
+		c.sink.live(aguix.SubagentError(id, name+" failed"))
+	}
+}
+
+// subagentRunID names the invocation call makes, "subagent-<call>" as
+// django-ag-ui does. A call id the model reuses is numbered, since the client
+// refuses a run that starts one sub-agent id twice.
+func (s *sink) subagentRunID(call string) string {
+	base := "subagent-" + call
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	id := base
+	for n := 2; s.issued[id]; n++ {
+		id = fmt.Sprintf("%s-%d", base, n)
+	}
+	s.issued[id] = true
+	return id
+}

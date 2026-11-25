@@ -197,8 +197,8 @@ func TestActivitiesStreamWhereTheyWerePublished(t *testing.T) {
 	golden(t, "activity", s)
 }
 
-// A sub-agent agenttool runs reports each call it makes on the delegating
-// call's card while that call runs, and its writes wait for that call's result.
+// A sub-agent agenttool runs is opened and closed around the calls it reports
+// on the delegating call's card, and its writes wait for that call's result.
 func TestADelegatedSubAgentsCallsStreamAsProgress(t *testing.T) {
 	sh := &shelf{}
 	researcher, err := llmagent.New(llmagent.Config{
@@ -224,7 +224,8 @@ func TestADelegatedSubAgentsCallsStreamAsProgress(t *testing.T) {
 	}
 	s := serve(t, mustNew(t, root), input("run-sub", text("user", "Have the researcher shelve 7.")))
 	wantTypes(t, s, "RUN_STARTED", "TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_END",
-		"CUSTOM", "CUSTOM", "CUSTOM", "CUSTOM", "TOOL_CALL_RESULT", "CUSTOM",
+		"SUBAGENT_STARTED", "CUSTOM", "CUSTOM", "CUSTOM", "CUSTOM", "SUBAGENT_FINISHED",
+		"TOOL_CALL_RESULT", "CUSTOM",
 		"TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED")
 	got := customs(s)
 	at := func(fragment string) int {

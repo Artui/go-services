@@ -32,7 +32,7 @@ require (
 	github.com/Artui/go-services v0.7.1
 	github.com/Artui/go-services/adkx v0.2.0
 	github.com/Artui/go-services/aguiadk v0.0.0-00010101000000-000000000000
-	github.com/Artui/go-services/aguix v0.6.0
+	github.com/Artui/go-services/aguix v0.7.0
 	github.com/Artui/go-services/ginx v0.0.0-00010101000000-000000000000
 	github.com/Artui/go-services/httpx v0.0.0-00010101000000-000000000000
 	github.com/Artui/go-services/mcpx v0.0.0-00010101000000-000000000000

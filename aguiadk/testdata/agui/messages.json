@@ -449,6 +449,79 @@
       "content": "Done."
     }
   ],
+  "subagent-cancelled": [
+    {
+      "id": "d1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "d1",
+          "type": "function",
+          "function": {
+            "name": "researcher",
+            "arguments": "{\"request\":\"Go.\"}"
+          }
+        }
+      ]
+    }
+  ],
+  "subagent-failed": [
+    {
+      "id": "d1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "d1",
+          "type": "function",
+          "function": {
+            "name": "researcher",
+            "arguments": "{\"request\":\"Go.\"}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-subfail-1",
+      "role": "tool",
+      "content": "{\"error\":\"error from sub-agent \\\"researcher\\\" (code: \\\"500\\\", message: \\\"provider detail\\\")\"}",
+      "toolCallId": "d1",
+      "metadata": {
+        "outcome": "failed"
+      }
+    },
+    {
+      "id": "run-subfail-2",
+      "role": "assistant",
+      "content": "Sorry."
+    }
+  ],
+  "subagent-nested": [
+    {
+      "id": "d1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "d1",
+          "type": "function",
+          "function": {
+            "name": "researcher",
+            "arguments": "{\"request\":\"Go.\"}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-subnest-1",
+      "role": "tool",
+      "content": "{\"result\":\"Found.\"}",
+      "toolCallId": "d1"
+    },
+    {
+      "id": "run-subnest-2",
+      "role": "assistant",
+      "content": "Done."
+    }
+  ],
   "usage-two-calls": [
     {
       "id": "run-usage-1",
