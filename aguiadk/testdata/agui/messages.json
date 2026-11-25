@@ -588,7 +588,7 @@
     {
       "id": "run-subinner-1",
       "role": "tool",
-      "content": "{\"error\":\"sub-agent \\\"researcher\\\" stopped waiting on unresolved long-running tool calls [adk-14], which AgentTool cannot resume\"}",
+      "content": "{\"error\":\"researcher failed\"}",
       "toolCallId": "d1",
       "metadata": {
         "outcome": "failed"
