@@ -261,7 +261,7 @@ func TestASaveOutlivesACancelledRequest(t *testing.T) {
 	b := &bridge{store: store}
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
-	if err := b.saveThread(ctx, "u", "t", nil, &recorder{}); err != nil || store.saves != 1 || store.saveCtx != nil {
+	if err := b.saveThread(ctx, "u", "t", &recorder{}); err != nil || store.saves != 1 || store.saveCtx != nil {
 		t.Errorf("err %v, saves %d, the store saw %v", err, store.saves, store.saveCtx)
 	}
 }

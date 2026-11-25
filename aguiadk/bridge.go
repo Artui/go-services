@@ -175,7 +175,7 @@ func (b *bridge) serve(
 	tr.approval, tr.denied, tr.based = b.approval, denied, seed != nil
 	ctx, queued := withSink(withClientTools(withInstructions(ctx, b.instructions.of(in)), tools))
 	tr.sink = queued
-	w := &wire{out: out, rec: &recorder{}}
+	w := &wire{out: out, rec: &recorder{prior: slices.Clone(messages)}}
 	queued.live = w.live
 	runErr := b.drive(ctx, r, userID, in.ThreadID, tail, tr, queued, w)
 	// Whatever the run opened is closed before it ends, so a failed run still
@@ -187,7 +187,7 @@ func (b *bridge) serve(
 	if runErr != nil {
 		return nil, runErr
 	}
-	if err := b.saveThread(ctx, userID, in.ThreadID, messages, w.rec); err != nil {
+	if err := b.saveThread(ctx, userID, in.ThreadID, w.rec); err != nil {
 		return nil, err
 	}
 	// A gated call outranks a browser call of the same step: the client answers

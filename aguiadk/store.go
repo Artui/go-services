@@ -60,6 +60,10 @@ type RunStore interface {
 // so of two sent at once one is refused and the call runs once; with a store
 // that is not, two sent at once can still both run.
 //
+// Every run loads the stored thread: the client sends its history without
+// activities, so a run puts each stored activity back after the message it
+// followed, and a snapshot of a stored activity replaces it in place.
+//
 // The thread is saved when the run finishes, waiting on the browser or on an
 // approval included, and not when it fails or has nothing to answer. The save
 // does not stop when the request is cancelled, so a run that reached its end
@@ -77,12 +81,15 @@ func WithThreadStore(store ThreadStore) Option {
 
 // startingHistory returns the messages a run is rebuilt from.
 func (b *bridge) startingHistory(ctx context.Context, userID string, in aguix.RunInput) ([]aguix.Message, error) {
-	if b.store == nil || len(in.Resume) == 0 {
+	if b.store == nil {
 		return in.Messages, nil
 	}
 	stored, ok, err := b.store.LoadThread(ctx, userID, in.ThreadID)
 	if err != nil {
 		return nil, fmt.Errorf("aguiadk: loading the thread: %w", err)
+	}
+	if len(in.Resume) == 0 {
+		return withActivities(stored, in.Messages), nil
 	}
 	if !ok {
 		return nil, errNoStoredThread
@@ -92,6 +99,33 @@ func (b *bridge) startingHistory(ctx context.Context, userID string, in aguix.Ru
 		browser[t.Name] = true
 	}
 	return slices.Concat(stored, openAnswers(stored, in.Messages, browser)), nil
+}
+
+// withActivities puts the stored thread's activities back into the client's
+// messages, each after the message it followed, since the client sends none.
+func withActivities(stored, client []aguix.Message) []aguix.Message {
+	sent := map[string]bool{}
+	for _, m := range client {
+		sent[m.ID] = true
+	}
+	after := map[string][]aguix.Message{}
+	anchor := ""
+	for _, m := range stored {
+		switch {
+		case m.Role != "activity":
+			anchor = m.ID
+		case !sent[m.ID]:
+			after[anchor] = append(after[anchor], m)
+		}
+	}
+	if len(after) == 0 {
+		return client
+	}
+	out := slices.Clone(after[""])
+	for _, m := range client {
+		out = append(append(out, m), after[m.ID]...)
+	}
+	return out
 }
 
 var (
@@ -168,11 +202,11 @@ func openAnswers(stored, client []aguix.Message, browser map[string]bool) []agui
 }
 
 // saveThread stores the run's starting history followed by what it sent.
-func (b *bridge) saveThread(ctx context.Context, userID, threadID string, prior []aguix.Message, run *recorder) error {
+func (b *bridge) saveThread(ctx context.Context, userID, threadID string, run *recorder) error {
 	if b.store == nil {
 		return nil
 	}
-	messages := slices.Concat(prior, run.messages())
+	messages := slices.Concat(run.prior, run.messages())
 	if err := b.store.SaveThread(context.WithoutCancel(ctx), userID, threadID, messages); err != nil {
 		return fmt.Errorf("aguiadk: saving the thread: %w", err)
 	}
