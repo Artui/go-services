@@ -441,6 +441,13 @@ aguix type, so its floors stay where `v0.5.0` set them.
 
 ### Added
 
+- **aguix: `SUBAGENT_STARTED`, `SUBAGENT_FINISHED` and `SUBAGENT_ERROR`.**
+  `SubagentStarted(subagentRunID, name, parentToolCallID)`, `SubagentFinished`,
+  `SubagentSuspended` and `SubagentError` build them, with `WithDescription`,
+  `WithParentSubagentRunID` and `WithResult`; `Event.WithSubagentRunID`
+  attributes any other event to the invocation. The fields are the ones
+  `@ag-ui/core` 1.0.4 declares and the web component reads. Frames that set
+  none of them are unchanged on the wire.
 - **`make release` and `make release-verify` cut and check a module's tag.**
   `make release MODULE=<dir or kernel> VERSION=<version>` refuses a dirty tree,
   a checkout that is not `origin/main` (or `SHA`), a version already on the
