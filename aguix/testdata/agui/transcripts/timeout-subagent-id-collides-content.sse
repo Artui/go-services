@@ -1,0 +1,13 @@
+data: {"type":"RUN_STARTED","threadId":"t1","runId":"r1"}
+
+data: {"type":"SUBAGENT_STARTED","name":"a","subagentRunId":"x"}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"x","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"x","delta":"a"}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"x"}
+
+data: {"type":"SUBAGENT_ERROR","message":"the sub-agent was still running when the run ended","code":"unfinished","subagentRunId":"x"}
+
+data: {"type":"RUN_FINISHED","threadId":"t1","runId":"r1","usage":[{"inputTokens":5,"outputTokens":2,"totalTokens":7}],"outcome":{"type":"cancelled"}}

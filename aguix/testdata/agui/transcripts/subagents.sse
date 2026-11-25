@@ -1,0 +1,45 @@
+data: {"type":"RUN_STARTED","threadId":"t1","runId":"r1"}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"m1","role":"assistant"}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"m1"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"c1","toolCallName":"research","parentMessageId":"m1"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"topic\":\"tides\"}","toolCallId":"c1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"c1"}
+
+data: {"type":"SUBAGENT_STARTED","name":"researcher","subagentRunId":"s1","parentToolCallId":"c1","description":"Looks things up."}
+
+data: {"type":"TEXT_MESSAGE_START","messageId":"m2","role":"assistant","subagentRunId":"s1"}
+
+data: {"type":"TEXT_MESSAGE_CONTENT","messageId":"m2","delta":"Searching.","subagentRunId":"s1"}
+
+data: {"type":"TEXT_MESSAGE_END","messageId":"m2","subagentRunId":"s1"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"c2","toolCallName":"search","parentMessageId":"m2","subagentRunId":"s1"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"q\":\"tides\"}","toolCallId":"c2","subagentRunId":"s1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"c2","subagentRunId":"s1"}
+
+data: {"type":"TOOL_CALL_RESULT","messageId":"m3","role":"tool","toolCallId":"c2","content":"two a day","subagentRunId":"s1"}
+
+data: {"type":"SUBAGENT_STARTED","name":"checker","subagentRunId":"s2","parentSubagentRunId":"s1"}
+
+data: {"type":"SUBAGENT_ERROR","message":"The checker could not finish.","code":"error","subagentRunId":"s2"}
+
+data: {"type":"SUBAGENT_FINISHED","subagentRunId":"s1","result":{"answer":"two a day"}}
+
+data: {"type":"TOOL_CALL_RESULT","messageId":"m4","role":"tool","toolCallId":"c1","content":"two a day"}
+
+data: {"type":"SUBAGENT_STARTED","name":"approver","subagentRunId":"s3","parentToolCallId":"c1"}
+
+data: {"type":"SUBAGENT_FINISHED","subagentRunId":"s3","outcome":{"type":"suspended","interruptIds":["i1"]}}
+
+data: {"type":"SUBAGENT_STARTED","name":"noop","subagentRunId":"s4"}
+
+data: {"type":"SUBAGENT_FINISHED","subagentRunId":"s4"}
+
+data: {"type":"RUN_FINISHED","threadId":"t1","runId":"r1"}

@@ -23,7 +23,7 @@ import (
 // where the assistant's output is read back by anything, to that too.
 //
 // The family's Python transport learned this the harder way: it redacts the
-// same event, and the half that makes redaction affordable is the observer.
+// same event, and the half that makes redaction affordable is WithOnError.
 // Redacting with nowhere to send it means nobody ever sees the failure.
 const RunErrorText = "The assistant could not complete that. " +
 	"The reason was recorded on the server."
@@ -36,6 +36,9 @@ type Option func(*handler)
 // It exists for the redaction above all: without it the run reports a fixed
 // sentence to the client and drops the real failure, which is worth knowing
 // before the first incident rather than during it.
+//
+// A panic in a WithObserver function is reported from inside Emit, so fn may
+// be called from whichever goroutine emitted, beside the handler's own calls.
 func WithOnError(fn func(r *http.Request, err error)) Option {
 	return func(h *handler) { h.onError = fn }
 }
@@ -89,6 +92,8 @@ type handler struct {
 	maxBody    int64
 	runTimeout time.Duration
 	onError    func(*http.Request, error)
+	observer   func(context.Context, RunInput, Event)
+	onFinish   func(context.Context, RunInput, Event, []Message)
 }
 
 func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -103,23 +108,25 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	input, err := h.decode(w, r)
 	if err != nil {
-		h.observe(r, err)
+		h.report(r, err)
 		http.Error(w, "the run input could not be read", http.StatusBadRequest)
 		return
 	}
 
 	stream, err := NewStream(w)
 	if err != nil {
-		h.observe(r, err)
+		h.report(r, err)
 		http.Error(w, "this server cannot stream", http.StatusInternalServerError)
 		return
 	}
+
+	defer h.watch(r, input, stream).finish()
 
 	// From here the status line is committed, so every remaining outcome is an
 	// event rather than a status. A write failure means the client hung up and
 	// there is nobody left to tell.
 	if err := stream.Emit(RunStarted(input.ThreadID, input.RunID)); err != nil {
-		h.observe(r, err)
+		h.report(r, err)
 		return
 	}
 
@@ -135,16 +142,16 @@ func (h *handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case err == nil:
 		h.finish(stream, input)
 	case errors.Is(context.Cause(ctx), errRunTimeout):
-		h.observe(r, err)
+		h.report(r, err)
 		if stream.closeOpen() == nil {
 			_ = stream.Finish(Cancelled())
 			h.finish(stream, input)
 		}
 	case errors.Is(r.Context().Err(), context.Canceled):
 		// The client hung up, so there is nobody to write a terminal event to.
-		h.observe(r, err)
+		h.report(r, err)
 	default:
-		h.observe(r, err)
+		h.report(r, err)
 		_ = stream.Emit(RunError(h.explain(err)).WithCode(code(err)))
 	}
 }
@@ -220,7 +227,7 @@ func (h *handler) decode(w http.ResponseWriter, r *http.Request) (RunInput, erro
 	return input, nil
 }
 
-func (h *handler) observe(r *http.Request, err error) {
+func (h *handler) report(r *http.Request, err error) {
 	if h.onError != nil {
 		h.onError(r, err)
 	}
