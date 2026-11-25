@@ -27,8 +27,9 @@ type openCall struct {
 // when it is non-nil; anything else is refused. A conversation that already
 // answers the call is refused, but without a thread store the bridge keeps no
 // state, so an identical request sent twice runs the call twice, under one
-// call id (the package documentation says how a spec keys on it). It returns the calls the person
-// denied, whose results are then reported as denied.
+// call id (the package documentation says how a spec keys on it); a RunStore
+// claims the interrupts before the run, so then it runs once. It returns the
+// calls the person denied, whose results are then reported as denied.
 func resumed(
 	messages []aguix.Message, entries []aguix.ResumeEntry,
 	history []*session.Event, tail *genai.Content, author string, gated *Approval,

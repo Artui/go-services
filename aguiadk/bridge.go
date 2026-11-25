@@ -103,6 +103,7 @@ type bridge struct {
 	newRunner  func(session.Service) (*runner.Runner, error)
 	approval   *Approval
 	store      ThreadStore
+	runs       RunStore
 	optErr     error
 
 	instructions runInstructions
@@ -143,13 +144,26 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 	if err != nil {
 		return err
 	}
+	if err := b.startRun(ctx, userID, in); err != nil {
+		return err
+	}
+	interrupts, err := b.serve(ctx, in, out, userID, messages, history, tail, tools, denied, seed)
+	return b.endRun(ctx, userID, in, interrupts, err)
+}
+
+// serve runs the agent on the rebuilt conversation and returns the interrupts
+// it finished on.
+func (b *bridge) serve(
+	ctx context.Context, in aguix.RunInput, out *aguix.Stream, userID string, messages []aguix.Message,
+	history []*session.Event, tail *genai.Content, tools []*clientTool, denied map[string]bool, seed map[string]any,
+) ([]aguix.Interrupt, error) {
 	r, err := b.prepare(ctx, userID, in.ThreadID, history, seed)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if len(seed) > 0 {
 		if err := out.Emit(aguix.StateSnapshot(seed)); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
@@ -166,20 +180,20 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 		runErr = closeErr
 	}
 	if runErr != nil {
-		return runErr
+		return nil, runErr
 	}
 	if err := b.saveThread(ctx, userID, in.ThreadID, messages, w.rec); err != nil {
-		return err
+		return nil, err
 	}
 	// A gated call outranks a browser call of the same step: the client answers
 	// the browser call as not finished when it resumes.
 	if len(tr.interrupts) > 0 {
-		return out.Finish(aguix.Interrupted(tr.interrupts...))
+		return tr.interrupts, out.Finish(aguix.Interrupted(tr.interrupts...))
 	}
 	if pending := tr.pending(); len(pending) > 0 {
-		return out.Finish(aguix.Success(pending...))
+		return nil, out.Finish(aguix.Success(pending...))
 	}
-	return nil
+	return nil, nil
 }
 
 // seedState decodes the client's state into the session's initial state, keeping
