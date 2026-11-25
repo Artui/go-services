@@ -4,9 +4,9 @@
 //
 // A Store holds a thread's messages under the ids the wire gave them, keyed by
 // user and thread, so one user is never answered with another's thread. Memory
-// keeps them for the life of the process; SQL keeps them in a database/sql
-// table and outlives it, written in the SQL SQLite 3.35 and later runs (?
-// placeholders, ON CONFLICT and RETURNING). Both satisfy aguiadk's ThreadStore,
+// keeps them for the life of the process; SQL keeps them in database/sql
+// tables and outlives it, in SQLite 3.35 or later by default, or in Postgres or
+// MySQL with WithDialect. Both satisfy aguiadk's ThreadStore,
 // so the bridge saves each run through either, error handling left out here:
 //
 //	store, _ := aguistore.OpenSQL(ctx, db)

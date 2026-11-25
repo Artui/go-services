@@ -115,6 +115,41 @@ jobs:
           go-version: stable
       - run: make cover
 
+  # aguistore's SQL store against the servers its dialects name. Its tests skip
+  # a dialect whose DSN is unset, so every other job runs SQLite only, coverage
+  # included; this one is where Postgres and MySQL are actually spoken to.
+  dialects:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: aguistore
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 20
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: aguistore
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -proot" --health-interval 5s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: aguistore/go.mod
+      # One package run at a time: each test drops and recreates the tables.
+      - name: test every dialect
+        working-directory: aguistore
+        env:
+          AGUISTORE_POSTGRES_DSN: postgres://postgres:postgres@localhost:5432/aguistore?sslmode=disable
+          AGUISTORE_MYSQL_DSN: root:root@tcp(127.0.0.1:3306)/aguistore
+        run: go test -race -count=1 -p 1 ./...
+
   # The AG-UI bodies aguix's tests decode are written by @ag-ui/client itself,
   # at the version pinned in scripts/agui-wire's lockfile. This regenerates them
   # and fails on any difference, a new or deleted file included, so a fixture
@@ -174,7 +209,7 @@ jobs:
     # always(), never !cancelled(): a skipped job reports a skipped check, and
     # branch protection counts a skipped required check as passing.
     if: always()
-    needs: [floor, stable, published, lint, coverage, wire-fixtures, secrets]
+    needs: [floor, stable, published, lint, coverage, dialects, wire-fixtures, secrets]
     runs-on: ubuntu-latest
     steps:
       # Pass on an exact `success` from every job above, rather than failing on
