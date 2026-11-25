@@ -6,6 +6,8 @@ data: {"type":"TOOL_CALL_ARGS","delta":"{\"request\":\"Shelve 7.\"}","toolCallId
 
 data: {"type":"TOOL_CALL_END","toolCallId":"d1"}
 
+data: {"type":"SUBAGENT_STARTED","name":"researcher","subagentRunId":"subagent-d1","parentToolCallId":"d1"}
+
 data: {"type":"CUSTOM","name":"ag_ui.subagent","value":{"delegationId":"d1","agent":"researcher","phase":"tool_call","status":"researcher: calling shelve_book","tool":{"toolCallId":"r1","name":"shelve_book","ok":null}}}
 
 data: {"type":"CUSTOM","name":"ag_ui.subagent","value":{"delegationId":"d1","agent":"researcher","phase":"tool_result","status":"researcher: shelve_book returned","tool":{"toolCallId":"r1","name":"shelve_book","ok":true}}}
@@ -13,6 +15,8 @@ data: {"type":"CUSTOM","name":"ag_ui.subagent","value":{"delegationId":"d1","age
 data: {"type":"CUSTOM","name":"ag_ui.subagent","value":{"delegationId":"d1","agent":"researcher","phase":"tool_call","status":"researcher: calling missing_tool","tool":{"toolCallId":"r2","name":"missing_tool","ok":null}}}
 
 data: {"type":"CUSTOM","name":"ag_ui.subagent","value":{"delegationId":"d1","agent":"researcher","phase":"tool_result","status":"researcher: missing_tool failed","tool":{"toolCallId":"r2","name":"missing_tool","ok":false}}}
+
+data: {"type":"SUBAGENT_FINISHED","subagentRunId":"subagent-d1"}
 
 data: {"type":"TOOL_CALL_RESULT","messageId":"run-sub-1","role":"tool","toolCallId":"d1","content":"{\"result\":\"Shelved it.\"}"}
 

@@ -10,6 +10,7 @@ import (
 	"google.golang.org/adk/v2/platform"
 	"google.golang.org/adk/v2/plugin"
 	"google.golang.org/adk/v2/tool"
+	"google.golang.org/genai"
 )
 
 // sink holds the frames a run's tools and callbacks publish until the bridge
@@ -32,6 +33,9 @@ type sink struct {
 	byCall   map[string][]aguix.Event
 	order    []string
 
+	// invocations counts the sub-agent ids handed out, so none repeats.
+	invocations map[string]int
+
 	// live sends a frame now, for what is only worth seeing while it happens.
 	live func(aguix.Event)
 }
@@ -39,7 +43,9 @@ type sink struct {
 type sinkKey struct{}
 
 func withSink(ctx context.Context) (context.Context, *sink) {
-	s := &sink{byCall: map[string][]aguix.Event{}, live: func(aguix.Event) {}}
+	s := &sink{
+		byCall: map[string][]aguix.Event{}, invocations: map[string]int{}, live: func(aguix.Event) {},
+	}
 	ctx = context.WithValue(ctx, sinkKey{}, s)
 	return platform.WithTaskRunner(ctx, s.perCall), s
 }
@@ -116,6 +122,10 @@ type slot struct {
 	mu       sync.Mutex
 	id, name string
 	reported bool
+
+	// agent and subagent name the sub-agent this call delegated to and its
+	// invocation, empty for a call that runs none.
+	agent, subagent string
 }
 
 type slotKey struct{}
@@ -129,6 +139,12 @@ func (c *slot) named() (id, name string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.id, c.name
+}
+
+func (c *slot) delegated() (name, subagentRunID string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.agent, c.subagent
 }
 
 // root is the id of the outermost call: the one whose result the client sees.
@@ -158,11 +174,15 @@ func (s *sink) perCall(ctx context.Context, tasks []func(context.Context)) {
 }
 
 // sinkPlugin names each call before any callback or the tool itself runs, and
-// reports a delegated sub-agent's calls as they happen. agenttool's runner
-// inherits it, so it sees inside delegations too.
+// reports a delegation's lifecycle and the delegated sub-agent's calls as they
+// happen. agenttool's runner inherits it, so it sees inside delegations too.
 func sinkPlugin() *plugin.Plugin {
 	p, _ := plugin.New(plugin.Config{
 		Name: "aguiadk",
+		BeforeAgentCallback: func(ctx agent.Context) (*genai.Content, error) {
+			started(ctx)
+			return nil, nil
+		},
 		BeforeToolCallback: func(ctx agent.Context, t tool.Tool, _ map[string]any) (map[string]any, error) {
 			c := slotOf(ctx)
 			if c == nil {
@@ -202,6 +222,7 @@ func returned(ctx agent.Context, ok bool) {
 	c.reported = true
 	c.mu.Unlock()
 	if !again {
+		finished(ctx, c, ok)
 		progress(ctx, c, phaseToolResult, &ok)
 	}
 }

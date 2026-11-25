@@ -529,6 +529,9 @@ conformance module checks.
 
 ### Added
 
+- **`aguiadk` announces a delegated sub-agent's lifecycle.** An `agenttool`
+  delegation sends `SUBAGENT_STARTED` and then `SUBAGENT_FINISHED`, or
+  `SUBAGENT_ERROR` when it fails, around its `ag_ui.subagent` progress.
 - **`make release` and `make release-verify` cut and check a module's tag.**
   `make release MODULE=<dir or kernel> VERSION=<version>` refuses a dirty tree,
   a checkout that is not `origin/main` (or `SHA`), a version already on the

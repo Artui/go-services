@@ -10,8 +10,8 @@ github.com/Artui/go-services v0.7.1 h1:tBBbYuZPJuu7ATQrmX12YXoNDxf9LFsje0yzXkBeR
 github.com/Artui/go-services v0.7.1/go.mod h1:AzUZbK8feAV4JvWIlBhVf46nl/4U6ZnakP61K3P9vEA=
 github.com/Artui/go-services/adkx v0.2.0 h1:85jNH/AvAogiwWZ1KEG8P9mXy6Np4jdoYsabCdgofrc=
 github.com/Artui/go-services/adkx v0.2.0/go.mod h1:TB+zI3lF5DMUcEQeWNM942/EKRqs60wiN5R9HIZOrSk=
-github.com/Artui/go-services/aguix v0.6.0 h1:s9RyNabd0B6rpAXgH1TGqWY/YvwidOf7+X/5MDeTo1c=
-github.com/Artui/go-services/aguix v0.6.0/go.mod h1:mHlTdUrg0RyWbvbpDWQwYmSV5FlXopHM6SZiY86zGKI=
+github.com/Artui/go-services/aguix v0.7.0 h1:xoyG1kkP2tObSLjBsAYRKMbrmx9VMkjKgr3tu2HipYY=
+github.com/Artui/go-services/aguix v0.7.0/go.mod h1:mHlTdUrg0RyWbvbpDWQwYmSV5FlXopHM6SZiY86zGKI=
 github.com/a2aproject/a2a-go v0.3.15 h1:h5YpCiPq3jxQ5rIns7oDjPag3ivP8u817AzdA4F+NiI=
 github.com/a2aproject/a2a-go/v2 v2.7.0 h1:rwIpzO5O9Mxu/Rm4S2SZfHYzNcvF3FK9aaaTxP35kAo=
 github.com/a2aproject/a2a-go/v2 v2.7.0/go.mod h1:rvFIb0sBJl2qmJRYU2fQxI6hhIQksmGGMEhT/uRwWww=
