@@ -1,0 +1,23 @@
+data: {"type":"RUN_STARTED","threadId":"thread-1","runId":"run-subpaircut"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"d1","toolCallName":"researcher"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"request\":\"Go.\"}","toolCallId":"d1"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"d1"}
+
+data: {"type":"TOOL_CALL_START","toolCallId":"d2","toolCallName":"scribe"}
+
+data: {"type":"TOOL_CALL_ARGS","delta":"{\"request\":\"Go.\"}","toolCallId":"d2"}
+
+data: {"type":"TOOL_CALL_END","toolCallId":"d2"}
+
+data: {"type":"SUBAGENT_STARTED","name":"researcher","subagentRunId":"subagent-d1","parentToolCallId":"d1"}
+
+data: {"type":"SUBAGENT_STARTED","name":"scribe","subagentRunId":"subagent-d2","parentToolCallId":"d2"}
+
+data: {"type":"SUBAGENT_ERROR","message":"researcher was cancelled","code":"cancelled","subagentRunId":"subagent-d1"}
+
+data: {"type":"SUBAGENT_ERROR","message":"scribe was cancelled","code":"cancelled","subagentRunId":"subagent-d2"}
+
+data: {"type":"RUN_FINISHED","threadId":"thread-1","runId":"run-subpaircut"}

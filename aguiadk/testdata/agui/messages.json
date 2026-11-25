@@ -449,6 +449,42 @@
       "content": "Done."
     }
   ],
+  "subagent-browser-tool": [
+    {
+      "id": "d1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "d1",
+          "type": "function",
+          "function": {
+            "name": "researcher",
+            "arguments": "{\"request\":\"Go.\"}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-subbrowser-1",
+      "role": "tool",
+      "content": "{\"result\":\"Done.\"}",
+      "toolCallId": "d1"
+    },
+    {
+      "id": "f1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "f1",
+          "type": "function",
+          "function": {
+            "name": "fill_field",
+            "arguments": "{\"field\":\"email\"}"
+          }
+        }
+      ]
+    }
+  ],
   "subagent-cancelled": [
     {
       "id": "d1",
@@ -495,6 +531,65 @@
       "content": "Sorry."
     }
   ],
+  "subagent-gated-inside": [
+    {
+      "id": "d1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "d1",
+          "type": "function",
+          "function": {
+            "name": "researcher",
+            "arguments": "{\"request\":\"Go.\"}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-subinner-1",
+      "role": "tool",
+      "content": "{\"error\":\"sub-agent \\\"researcher\\\" stopped waiting on unresolved long-running tool calls [adk-14], which AgentTool cannot resume\"}",
+      "toolCallId": "d1",
+      "metadata": {
+        "outcome": "failed"
+      }
+    },
+    {
+      "id": "run-subinner-2",
+      "role": "assistant",
+      "content": "Done."
+    }
+  ],
+  "subagent-gated-pause": [
+    {
+      "id": "d1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "d1",
+          "type": "function",
+          "function": {
+            "name": "researcher",
+            "arguments": "{\"request\":\"Go.\"}"
+          }
+        }
+      ]
+    }
+  ],
+  "subagent-gated-resume": [
+    {
+      "id": "run-subgated-1",
+      "role": "tool",
+      "content": "{\"result\":\"Done.\"}",
+      "toolCallId": "d1"
+    },
+    {
+      "id": "run-subgated-2",
+      "role": "assistant",
+      "content": "Done."
+    }
+  ],
   "subagent-nested": [
     {
       "id": "d1",
@@ -518,6 +613,205 @@
     },
     {
       "id": "run-subnest-2",
+      "role": "assistant",
+      "content": "Done."
+    }
+  ],
+  "subagent-pair": [
+    {
+      "id": "d1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "d1",
+          "type": "function",
+          "function": {
+            "name": "researcher",
+            "arguments": "{\"request\":\"Go.\"}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-subpair-1",
+      "role": "tool",
+      "content": "{\"result\":\"Done.\"}",
+      "toolCallId": "d1"
+    },
+    {
+      "id": "d2",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "d2",
+          "type": "function",
+          "function": {
+            "name": "scribe",
+            "arguments": "{\"request\":\"Go.\"}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-subpair-2",
+      "role": "tool",
+      "content": "{\"result\":\"Done.\"}",
+      "toolCallId": "d2"
+    },
+    {
+      "id": "run-subpair-3",
+      "role": "assistant",
+      "content": "Done."
+    }
+  ],
+  "subagent-pair-cancelled": [
+    {
+      "id": "d1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "d1",
+          "type": "function",
+          "function": {
+            "name": "researcher",
+            "arguments": "{\"request\":\"Go.\"}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "d2",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "d2",
+          "type": "function",
+          "function": {
+            "name": "scribe",
+            "arguments": "{\"request\":\"Go.\"}"
+          }
+        }
+      ]
+    }
+  ],
+  "subagent-parallel": [
+    {
+      "id": "p1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "p1",
+          "type": "function",
+          "function": {
+            "name": "researcher",
+            "arguments": "{\"request\":\"Go.\"}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-subpar-1",
+      "role": "tool",
+      "content": "{\"result\":\"Done.\"}",
+      "toolCallId": "p1"
+    },
+    {
+      "id": "p2",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "p2",
+          "type": "function",
+          "function": {
+            "name": "scribe",
+            "arguments": "{\"request\":\"Go.\"}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-subpar-3",
+      "role": "tool",
+      "content": "{\"result\":\"Done.\"}",
+      "toolCallId": "p2"
+    },
+    {
+      "id": "run-subpar-2",
+      "role": "assistant",
+      "content": "Done."
+    },
+    {
+      "id": "run-subpar-4",
+      "role": "assistant",
+      "content": "Done."
+    }
+  ],
+  "subagent-sibling-failed": [
+    {
+      "id": "p1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "p1",
+          "type": "function",
+          "function": {
+            "name": "researcher",
+            "arguments": "{\"request\":\"Go.\"}"
+          }
+        }
+      ]
+    }
+  ],
+  "subagent-skipped": [
+    {
+      "id": "d1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "d1",
+          "type": "function",
+          "function": {
+            "name": "researcher",
+            "arguments": "{\"request\":\"Go.\"}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-subskip-1",
+      "role": "tool",
+      "content": "{\"result\":\"Skipped.\"}",
+      "toolCallId": "d1"
+    },
+    {
+      "id": "run-subskip-2",
+      "role": "assistant",
+      "content": "Done."
+    }
+  ],
+  "subagent-transfer": [
+    {
+      "id": "x1",
+      "role": "assistant",
+      "toolCalls": [
+        {
+          "id": "x1",
+          "type": "function",
+          "function": {
+            "name": "transfer_to_agent",
+            "arguments": "{\"agent_name\":\"researcher\"}"
+          }
+        }
+      ]
+    },
+    {
+      "id": "run-subtransfer-1",
+      "role": "tool",
+      "content": "{\"result\":null}",
+      "toolCallId": "x1"
+    },
+    {
+      "id": "run-subtransfer-2",
       "role": "assistant",
       "content": "Done."
     }

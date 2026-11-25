@@ -102,8 +102,8 @@ func finished(ctx agent.Context, c *slot, ok bool) {
 }
 
 // subagentRunID names the invocation call makes, "subagent-<call>" as
-// django-ag-ui does. A call id the model reuses is numbered, since the client
-// refuses a run that starts one sub-agent id twice.
+// django-ag-ui does. A reused call id is numbered, skipping ids already issued,
+// since the client refuses a run that starts one sub-agent id twice.
 func (s *sink) subagentRunID(call string) string {
 	base := "subagent-" + call
 	s.mu.Lock()
