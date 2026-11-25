@@ -525,13 +525,22 @@ conformance module checks.
   `APIKey`, since ADK's `anthropicmodel` otherwise follows `ANTHROPIC_BASE_URL`.
   The `example` and `published` programs now set it.
 
+`aguiadk/v0.8.0` announces a delegated sub-agent's lifecycle. Its aguix floor
+moves to v0.7.0, whose events it uses; the kernel stays at v0.7.1 and adkx at
+v0.2.0.
+
+- **An `agenttool` delegation sends `SUBAGENT_STARTED` and then
+  `SUBAGENT_FINISHED` or `SUBAGENT_ERROR`** around its `ag_ui.subagent`
+  progress. The `subagentRunId` is `subagent-<callId>` and `parentToolCallId`
+  is the delegating call, as django-ag-ui sends them; a call id the model
+  reuses is numbered, and a nested delegation names its
+  `parentSubagentRunId`. An error says only that the sub-agent failed, or was
+  cancelled with code `cancelled`, never what the failure said.
+
 ## [Unreleased]
 
 ### Added
 
-- **`aguiadk` announces a delegated sub-agent's lifecycle.** An `agenttool`
-  delegation sends `SUBAGENT_STARTED` and then `SUBAGENT_FINISHED`, or
-  `SUBAGENT_ERROR` when it fails, around its `ag_ui.subagent` progress.
 - **`make release` and `make release-verify` cut and check a module's tag.**
   `make release MODULE=<dir or kernel> VERSION=<version>` refuses a dirty tree,
   a checkout that is not `origin/main` (or `SHA`), a version already on the
