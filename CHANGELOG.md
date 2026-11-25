@@ -579,6 +579,23 @@ v0.2.0.
   MySQL two ids that differ only in case stay two users or two threads. MySQL
   keys are `VARCHAR(255)`. CI runs the store's tests against a Postgres and a
   MySQL service container.
+- **`aguiadk.WithMemory` gives the agent ADK's long-term memory, scoped to the
+  run's user.** Pass any `memory.Service`: ADK's `load_memory` and
+  `preload_memory` tools then search it for the `WithUserID` user only, so a
+  user recalls their own earlier threads and never another user's. Each run
+  that finishes adds its thread to memory once. A run that fails, or stops on an
+  interrupt or a pending browser call, adds nothing; the run that resumes it
+  adds the thread when it finishes.
+- **`aguistore.OpenADKMemory` is an ADK `memory.Service` over a
+  `database/sql` table**, `aguistore_memory`, in the same dialects as the
+  thread store (`WithDialect`). It keeps each session's events by app, user and
+  session, so a search answers only from the asking user's sessions. Adding a
+  session again replaces what that session stored before. A search is ADK's
+  keyword match: each event scores one point per query word it contains,
+  thought parts are left out, and the ten best come back. **aguistore now
+  requires `google.golang.org/adk/v2` v2.8.0, so its `go` directive moves from
+  1.26.0 to 1.26.10**, which is ADK's own floor. A consumer on an older
+  toolchain gets Go 1.26.10 downloaded, or fails under `GOTOOLCHAIN=local`.
 - **`aguiadk` has compiled Examples for `WithThreadStore`, `WithSkills` with
   `SkillCatalog`, `WithRunContext` and `AllowClientTools`.**
 

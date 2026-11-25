@@ -12,6 +12,7 @@ import (
 
 	"github.com/Artui/go-services/aguix"
 	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/memory"
 	"google.golang.org/adk/v2/plugin"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
@@ -76,7 +77,9 @@ func New(root agent.Agent, opts ...Option) (aguix.Agent, error) {
 	}
 	plugins := runner.PluginConfig{Plugins: []*plugin.Plugin{sinkPlugin(), instructionsPlugin()}}
 	b.newRunner = func(svc session.Service) (*runner.Runner, error) {
-		return runner.New(runner.Config{AppName: appName, Agent: root, SessionService: svc, PluginConfig: plugins})
+		return runner.New(runner.Config{
+			AppName: appName, Agent: root, SessionService: svc, MemoryService: b.memory, PluginConfig: plugins,
+		})
 	}
 	for _, opt := range opts {
 		opt(b)
@@ -104,6 +107,7 @@ type bridge struct {
 	approval   *Approval
 	store      ThreadStore
 	runs       RunStore
+	memory     memory.Service
 	optErr     error
 
 	instructions runInstructions
@@ -157,7 +161,7 @@ func (b *bridge) serve(
 	ctx context.Context, in aguix.RunInput, out *aguix.Stream, userID string, messages []aguix.Message,
 	history []*session.Event, tail *genai.Content, tools []*clientTool, denied map[string]bool, seed map[string]any,
 ) ([]aguix.Interrupt, error) {
-	r, err := b.prepare(ctx, userID, in.ThreadID, history, seed)
+	r, svc, err := b.prepare(ctx, userID, in.ThreadID, history, seed)
 	if err != nil {
 		return nil, err
 	}
@@ -193,7 +197,7 @@ func (b *bridge) serve(
 	if pending := tr.pending(); len(pending) > 0 {
 		return nil, out.Finish(aguix.Success(pending...))
 	}
-	return nil, nil
+	return nil, b.remember(ctx, svc, userID, in.ThreadID)
 }
 
 // seedState decodes the client's state into the session's initial state, keeping
@@ -224,28 +228,29 @@ func (b *bridge) user(ctx context.Context) (string, error) {
 }
 
 // prepare stores the replayed history in a session of its own, seeded with the
-// client's state, and returns a runner over it. The session id is the thread's,
-// so ADK and its telemetry name the conversation the client does.
+// client's state, and returns a runner over it and the session's service. The
+// session id is the thread's, so ADK and its telemetry name the conversation
+// the client does.
 func (b *bridge) prepare(
 	ctx context.Context, userID, threadID string, history []*session.Event, state map[string]any,
-) (*runner.Runner, error) {
+) (*runner.Runner, session.Service, error) {
 	svc := b.newService()
 	created, err := svc.Create(ctx, &session.CreateRequest{
 		AppName: appName, UserID: userID, SessionID: threadID, State: state,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("aguiadk: creating the run's session: %w", err)
+		return nil, nil, fmt.Errorf("aguiadk: creating the run's session: %w", err)
 	}
 	for _, ev := range history {
 		if err := svc.AppendEvent(ctx, created.Session, ev); err != nil {
-			return nil, fmt.Errorf("aguiadk: replaying the conversation: %w", err)
+			return nil, nil, fmt.Errorf("aguiadk: replaying the conversation: %w", err)
 		}
 	}
 	r, err := b.newRunner(svc)
 	if err != nil {
-		return nil, fmt.Errorf("aguiadk: %w", err)
+		return nil, nil, fmt.Errorf("aguiadk: %w", err)
 	}
-	return r, nil
+	return r, svc, nil
 }
 
 // drive runs the agent and streams what it yields.
