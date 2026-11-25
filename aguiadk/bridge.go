@@ -74,7 +74,7 @@ func New(root agent.Agent, opts ...Option) (aguix.Agent, error) {
 		root:       root,
 		newService: session.InMemoryService,
 	}
-	plugins := runner.PluginConfig{Plugins: []*plugin.Plugin{sinkPlugin()}}
+	plugins := runner.PluginConfig{Plugins: []*plugin.Plugin{sinkPlugin(), instructionsPlugin()}}
 	b.newRunner = func(svc session.Service) (*runner.Runner, error) {
 		return runner.New(runner.Config{AppName: appName, Agent: root, SessionService: svc, PluginConfig: plugins})
 	}
@@ -104,6 +104,8 @@ type bridge struct {
 	approval   *Approval
 	store      ThreadStore
 	optErr     error
+
+	instructions runInstructions
 
 	maxLLMCalls int
 }
@@ -153,7 +155,7 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 
 	tr := newTranslator(messageIDs(in.RunID))
 	tr.approval, tr.denied, tr.based = b.approval, denied, seed != nil
-	ctx, queued := withSink(withClientTools(ctx, tools))
+	ctx, queued := withSink(withClientTools(withInstructions(ctx, b.instructions.of(in)), tools))
 	w := &wire{out: out, rec: &recorder{}}
 	queued.live = w.live
 	runErr := b.drive(ctx, r, userID, in.ThreadID, tail, tr, queued, w)

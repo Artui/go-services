@@ -444,6 +444,14 @@ aguix type, so its floors stay where `v0.5.0` set them.
 - **`aguiadk.ClientToolset` takes an allow-list.** `AllowClientTools(names...)`
   declares only those browser tools and `OnDroppedClientTool` is told each name
   left out; with no option every tool the client lists is declared, as before.
+- **`aguiadk.WithRunContext` delivers the run input's context to the model**, opt-in:
+  the entries are fenced as `<untrusted-client-context>` (marker defused inside
+  values, 20000 characters, visible truncation) and appended to the system
+  instruction of every model call of the run's own agents, never to the messages.
+- **`aguiadk.WithSkills` and `aguiadk.SkillCatalog` serve server-resolved skills**: a
+  run whose latest user message opens with `/name` gets `# Skill: <name>` and the
+  body in its instructions, `/name` left as sent; the catalog answers GET with the
+  web component's `data-skills-url` entries, never a body.
 - **`make release` and `make release-verify` cut and check a module's tag.**
   `make release MODULE=<dir or kernel> VERSION=<version>` refuses a dirty tree,
   a checkout that is not `origin/main` (or `SHA`), a version already on the
