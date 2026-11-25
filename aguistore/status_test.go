@@ -24,7 +24,8 @@ const parked = `[{"id":"int-c1","reason":"tool_call","toolCallId":"c1",` +
 	`"metadata":{"kind":"approval","destructive":true,"n":9007199254740993}}]`
 
 func eachRuns(t *testing.T, fn func(t *testing.T, s RunStore)) {
-	each(t, func(t *testing.T, s Store) { fn(t, s.(RunStore)) })
+	t.Run("memory", func(t *testing.T) { fn(t, NewMemory(WithClock(newClock().now))) })
+	forEachDialect(t, func(t *testing.T, s *SQL) { fn(t, s) }, WithClock(newClock().now))
 }
 
 func row(t *testing.T, s Store, user, thread string) Thread {
@@ -120,30 +121,39 @@ func TestConcurrentResumesOfOneParkHaveOneWinner(t *testing.T) {
 		"sql":    openSQL(t, filepath.Join(t.TempDir(), "threads.db")+"?_pragma=busy_timeout(10000)"),
 	}
 	for name, s := range stores {
-		t.Run(name, func(t *testing.T) {
-			mustSave(t, s, "alice", "th1", msg("u1", "user", "Delete the book."))
-			start(t, s, "r1")
-			finish(t, s, "r1", StatusWaiting, "", parked)
-			var (
-				wg   sync.WaitGroup
-				wins atomic.Int32
-			)
-			for i := range 8 {
-				wg.Go(func() {
-					ok, err := s.StartRun(context.Background(), "alice", "th1", "r2-"+string(rune('a'+i)), []string{"int-c1"})
-					if err != nil {
-						t.Error(err)
-					}
-					if ok {
-						wins.Add(1)
-					}
-				})
+		t.Run(name, func(t *testing.T) { claimOnce(t, s) })
+	}
+	forEachDialect(t, func(t *testing.T, s *SQL) {
+		if s.cfg.dialect == SQLite {
+			t.Skip("SQLite ran above, with the busy timeout it needs")
+		}
+		claimOnce(t, s)
+	})
+}
+
+// claimOnce has eight resumes race for one park and expects one winner.
+func claimOnce(t *testing.T, s RunStore) {
+	mustSave(t, s, "alice", "th1", msg("u1", "user", "Delete the book."))
+	start(t, s, "r1")
+	finish(t, s, "r1", StatusWaiting, "", parked)
+	var (
+		wg   sync.WaitGroup
+		wins atomic.Int32
+	)
+	for i := range 8 {
+		wg.Go(func() {
+			ok, err := s.StartRun(context.Background(), "alice", "th1", "r2-"+string(rune('a'+i)), []string{"int-c1"})
+			if err != nil {
+				t.Error(err)
 			}
-			wg.Wait()
-			if wins.Load() != 1 {
-				t.Errorf("%d resumes won", wins.Load())
+			if ok {
+				wins.Add(1)
 			}
 		})
+	}
+	wg.Wait()
+	if wins.Load() != 1 {
+		t.Errorf("%d resumes won", wins.Load())
 	}
 }
 
@@ -257,22 +267,23 @@ func TestSQLRunErrorsAreReported(t *testing.T) {
 
 func TestAClaimReadBeforeAnotherWonIsLost(t *testing.T) {
 	ctx := context.Background()
-	s := openSQL(t, filepath.Join(t.TempDir(), "threads.db"))
-	mustSave(t, s, "alice", "th1", msg("u1", "user", "Delete the book."))
-	start(t, s, "r1")
-	finish(t, s, "r1", StatusWaiting, "", parked)
-	if !start(t, s, "r2", "int-c1") {
-		t.Fatal("the first resume lost")
-	}
-	if won, err := s.take(ctx, "alice", "th1", "r3", "r2"); won || err != nil {
-		t.Errorf("a claim on a running thread won: %v %v", won, err)
-	}
-	finish(t, s, "r2", StatusWaiting, "", parked)
-	// A second resume that read the park while r1 still held it updates now.
-	if won, err := s.take(ctx, "alice", "th1", "r3", "r1"); won || err != nil {
-		t.Errorf("a stale claim won: %v %v", won, err)
-	}
-	if won, err := s.take(ctx, "alice", "th1", "r3", "r2"); !won || err != nil {
-		t.Errorf("a current claim lost: %v %v", won, err)
-	}
+	forEachDialect(t, func(t *testing.T, s *SQL) {
+		mustSave(t, s, "alice", "th1", msg("u1", "user", "Delete the book."))
+		start(t, s, "r1")
+		finish(t, s, "r1", StatusWaiting, "", parked)
+		if !start(t, s, "r2", "int-c1") {
+			t.Fatal("the first resume lost")
+		}
+		if won, err := s.take(ctx, "alice", "th1", "r3", "r2"); won || err != nil {
+			t.Errorf("a claim on a running thread won: %v %v", won, err)
+		}
+		finish(t, s, "r2", StatusWaiting, "", parked)
+		// A second resume that read the park while r1 still held it updates now.
+		if won, err := s.take(ctx, "alice", "th1", "r3", "r1"); won || err != nil {
+			t.Errorf("a stale claim won: %v %v", won, err)
+		}
+		if won, err := s.take(ctx, "alice", "th1", "r3", "r2"); !won || err != nil {
+			t.Errorf("a current claim lost: %v %v", won, err)
+		}
+	})
 }
