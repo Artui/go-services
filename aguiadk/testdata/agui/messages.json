@@ -799,6 +799,15 @@
           }
         }
       ]
+    },
+    {
+      "id": "run-subsibling-1",
+      "role": "tool",
+      "content": "{\"error\":\"researcher was cancelled\"}",
+      "toolCallId": "p1",
+      "metadata": {
+        "outcome": "failed"
+      }
     }
   ],
   "subagent-skipped": [
