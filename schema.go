@@ -160,9 +160,10 @@ func checkDeclarationMarshals(t reflect.Type, declared *jsonschema.Schema) error
 		"embed the type instead of defining over it, or declare the schema it " +
 		"actually serves"
 	if got == "null" {
-		hint = "the zero value marshals to null -- if MarshalJSON wraps a value, " +
-			"encode a nil one as {} for an object (or the empty value of the declared " +
-			"kind), or declare the schema it actually serves"
+		hint = "the zero value marshals to null -- have MarshalJSON encode a nil one as " +
+			"{} for an object or [] for an array; if this is a defined type over one " +
+			"with a MarshalJSON method, embed the type instead; or declare the schema " +
+			"it actually serves"
 	}
 	return fmt.Errorf(
 		"services: %s declares %q in JSONSchema but marshals to %s (zero value: %s); %s",

@@ -402,13 +402,35 @@ func TestANullZeroValueIsRefusedNamingTheNilGuard(t *testing.T) {
 	if err == nil {
 		t.Fatal("accepted a type declaring an object whose zero value marshals to null")
 	}
-	for _, want := range []string{"output", "dynamicOut", `"object"`, "zero value marshals to null", "encode a nil one as {}"} {
+	for _, want := range []string{"output", "dynamicOut", `"object"`, "zero value marshals to null", "encode a nil one as {} for an object"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error %q does not mention %s", err, want)
 		}
 	}
-	if strings.Contains(err.Error(), "embed the type") {
-		t.Errorf("error %q blames a defined type for a nil wrapped value", err)
+}
+
+// A defined type over a slice loses MarshalJSON too, and its zero value is nil,
+// so the null refusal still has to name that cause.
+type emptyListBase []string
+
+func (emptyListBase) MarshalJSON() ([]byte, error) { return []byte(`[]`), nil }
+
+type definedList emptyListBase
+
+func (definedList) JSONSchema() (*jsonschema.Schema, error) {
+	return &jsonschema.Schema{Type: "array"}, nil
+}
+
+func TestANullZeroValueOfADefinedTypeStillNamesTheEmbedding(t *testing.T) {
+	_, err := reflectSchema(reflect.TypeFor[definedList]())
+
+	if err == nil {
+		t.Fatal("accepted a type declaring an array whose zero value marshals to null")
+	}
+	for _, want := range []string{"definedList", "[] for an array", "embed the type"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %s", err, want)
+		}
 	}
 }
 
