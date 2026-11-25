@@ -105,12 +105,13 @@ func finished(ctx agent.Context, c *slot, ok bool) {
 // django-ag-ui does. A call id the model reuses is numbered, since the client
 // refuses a run that starts one sub-agent id twice.
 func (s *sink) subagentRunID(call string) string {
-	id := "subagent-" + call
+	base := "subagent-" + call
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.invocations[id]++
-	if n := s.invocations[id]; n > 1 {
-		id = fmt.Sprintf("%s-%d", id, n)
+	id := base
+	for n := 2; s.issued[id]; n++ {
+		id = fmt.Sprintf("%s-%d", base, n)
 	}
+	s.issued[id] = true
 	return id
 }

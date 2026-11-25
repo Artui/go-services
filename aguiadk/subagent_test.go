@@ -119,6 +119,26 @@ func TestARepeatedCallIDGetsItsOwnSubagentRun(t *testing.T) {
 		`{"subagentRunId":"subagent-call_0-2","type":"SUBAGENT_FINISHED"}`)
 }
 
+// A call id shaped like a numbered one is still not issued twice.
+func TestANumberedSubagentRunSkipsAnIDAlreadyIssued(t *testing.T) {
+	helps := helper(t, "researcher", &scriptLLM{})
+	a := boss(t, &scriptLLM{steps: []step{
+		{calls: []*genai.FunctionCall{ask("x-2", "researcher")}},
+		{calls: []*genai.FunctionCall{ask("x", "researcher")}},
+		{calls: []*genai.FunctionCall{ask("x", "researcher")}},
+		{text: "Done."},
+	}}, helps)
+	var got []string
+	for _, f := range serve(t, a, input("run-subclash", text("user", "Delegate."))).frames {
+		if f["type"] == "SUBAGENT_STARTED" {
+			got = append(got, f["subagentRunId"].(string))
+		}
+	}
+	if want := []string{"subagent-x-2", "subagent-x", "subagent-x-3"}; !slices.Equal(got, want) {
+		t.Errorf("sub-agent run ids %v, want %v", got, want)
+	}
+}
+
 // A delegation the run's timeout cuts off says it was cancelled, once.
 func TestADelegationCutOffByTheRunTimeoutIsCancelled(t *testing.T) {
 	helps := helper(t, "researcher", &scriptLLM{steps: []step{{block: true}}})

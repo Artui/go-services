@@ -33,8 +33,8 @@ type sink struct {
 	byCall   map[string][]aguix.Event
 	order    []string
 
-	// invocations counts the sub-agent ids handed out, so none repeats.
-	invocations map[string]int
+	// issued holds the sub-agent ids handed out, so none repeats.
+	issued map[string]bool
 
 	// live sends a frame now, for what is only worth seeing while it happens.
 	live func(aguix.Event)
@@ -44,7 +44,7 @@ type sinkKey struct{}
 
 func withSink(ctx context.Context) (context.Context, *sink) {
 	s := &sink{
-		byCall: map[string][]aguix.Event{}, invocations: map[string]int{}, live: func(aguix.Event) {},
+		byCall: map[string][]aguix.Event{}, issued: map[string]bool{}, live: func(aguix.Event) {},
 	}
 	ctx = context.WithValue(ctx, sinkKey{}, s)
 	return platform.WithTaskRunner(ctx, s.perCall), s
