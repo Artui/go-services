@@ -261,6 +261,13 @@ func TestARunPastItsTimeoutIsCancelled(t *testing.T) {
 			aguix.SubagentFinished("s3"),
 			aguix.SubagentStarted("s4", "failed", ""), aguix.SubagentError("s4", "It broke."),
 		}},
+		// A sub-agent's id may equal a message's; only its own lifecycle closes it.
+		{"timeout-subagent-id-collides-finished", []aguix.Event{
+			aguix.SubagentStarted("x", "a", ""), aguix.TextMessageStart("x"), aguix.SubagentFinished("x"),
+		}},
+		{"timeout-subagent-id-collides-content", []aguix.Event{
+			aguix.SubagentStarted("x", "a", ""), aguix.TextMessageStart("x"), aguix.TextMessageContent("x", "a"),
+		}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			var reported error

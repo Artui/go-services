@@ -15,19 +15,24 @@ import (
 // fail a run: it returns nothing, and a panic is recovered, reported once to
 // WithOnError, and fn is not called again for that run. Its context is the
 // request's without its cancellation, so a store can write after a hang-up.
+// fn must not call the run's Stream: it runs holding the stream's lock, and
+// Emit, SetUsage and Finish would wait on it forever.
 func WithObserver(fn func(ctx context.Context, in RunInput, ev Event)) Option {
 	return func(h *handler) { h.observer = fn }
 }
 
 // WithOnFinish hands fn the messages the run streamed, rebuilt from its frames,
 // once the run is over: after RUN_FINISHED or RUN_ERROR, which it gets as end,
-// or after the client hung up, when end is the zero Event. end.FinishOutcome
-// reads how a finished run ended. A run refused before
+// or after the client hung up or the agent panicked, when end is the zero
+// Event. end.FinishOutcome reads how a finished run ended. A run refused before
 // its stream opened has no finish.
 //
-// The messages are this run's alone; the conversation before it is
-// in.Messages, so a store saves both. The context and the panic policy are
-// WithObserver's, except that a finish hook is only ever called once.
+// The messages are this run's alone, assistant text and tool calls and tool
+// results without reasoning, and nil when the run streamed none; the
+// conversation before it is in.Messages, so a store saves both. The response
+// stays open until fn returns, so the client's run ends after it: hand slow
+// work to a goroutine. The context and the panic policy are WithObserver's,
+// except that a finish hook is only ever called once.
 func WithOnFinish(fn func(ctx context.Context, in RunInput, end Event, messages []Message)) Option {
 	return func(h *handler) { h.onFinish = fn }
 }

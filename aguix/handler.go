@@ -36,6 +36,9 @@ type Option func(*handler)
 // It exists for the redaction above all: without it the run reports a fixed
 // sentence to the client and drops the real failure, which is worth knowing
 // before the first incident rather than during it.
+//
+// A panic in a WithObserver function is reported from inside Emit, so fn may
+// be called from whichever goroutine emitted, beside the handler's own calls.
 func WithOnError(fn func(r *http.Request, err error)) Option {
 	return func(h *handler) { h.onError = fn }
 }

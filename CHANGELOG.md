@@ -469,8 +469,9 @@ aguix type, so its floors stay where `v0.5.0` set them.
   wire order, after it is flushed, RUN_FINISHED's usage included; the finish
   hook gets the terminal event and the run's messages rebuilt from its frames
   (assistant text and tool calls, tool results). Neither can fail a run: a panic
-  is recovered and reported to `WithOnError`. Without them the wire is
-  unchanged.
+  is recovered and reported to `WithOnError`. Neither may call the run's
+  `Stream`, and the response stays open until the finish hook returns, so slow
+  work belongs in a goroutine. Without them the wire is unchanged.
 
 ### Changed
 
