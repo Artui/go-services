@@ -504,6 +504,15 @@ aguix type, so its floors stay where `v0.5.0` set them.
 
 ### Documentation
 
+- **`adkx` documents what a `Principal` can read and where an Anthropic key
+  goes.** A compiled example reads a request-scoped value and the tool-call id
+  into Deps, and the package doc says to set `BaseURL` beside an explicit
+  `APIKey`, since ADK's `anthropicmodel` otherwise follows
+  `ANTHROPIC_BASE_URL`. The `example` and `published` programs now set it.
+- **`aguiadk` documents running a resumed call once and reading cache usage.**
+  The tool-call id is stable across a repeated resume, so a spec can key
+  idempotency on it, as far as the client's history can be trusted; the doc
+  also says what `cachedInputTokens` and `cacheWriteInputTokens` show.
 - **`WithAtomic` now names the write-lock consequence of its own ordering.**
   Resolving dependencies inside the transaction is deliberate and is what lets a
   `Permit` function read the row it gates -- but resolving is a read, so on

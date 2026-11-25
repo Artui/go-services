@@ -64,7 +64,11 @@ func main() {
 		log.Fatal(errors.New("set ANTHROPIC_API_KEY"))
 	}
 	llm, err := anthropicmodel.NewModel(context.Background(), "claude-sonnet-5-5",
-		anthropicmodel.ClientConfig{Backend: anthropicmodel.BackendAnthropic, APIKey: key})
+		anthropicmodel.ClientConfig{
+			Backend: anthropicmodel.BackendAnthropic, APIKey: key,
+			// Named, or ANTHROPIC_BASE_URL could redirect the key; see adkx's doc.
+			BaseURL: "https://api.anthropic.com",
+		})
 	if err != nil {
 		log.Fatal(err)
 	}
