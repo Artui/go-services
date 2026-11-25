@@ -8,9 +8,8 @@ import (
 // transcript folds a run's frames back into the messages they streamed, the
 // way django-ag-ui's RunTranscript does: assistant text and tool calls, and
 // tool results. Reasoning, activities, state and custom frames are not messages
-// here; a frame for a call that never started is ignored, and so is a tool frame
-// a sub-agent made, which is not a call the parent's assistant made. A sub-agent's
-// text keeps its SubagentRunID.
+// here; a frame for a call that never started is ignored, and so is every frame
+// a sub-agent made, which is not the parent's message.
 type transcript struct {
 	items   []*transcriptItem
 	pending map[string]*pendingCall
@@ -19,15 +18,10 @@ type transcript struct {
 // transcriptItem is an assistant message being built, or a finished tool
 // message.
 type transcriptItem struct {
-	id       string
-	subagent string
-	text     strings.Builder
-	calls    []ToolCall
-	tool     *Message
-}
-
-var toolFrames = map[EventType]bool{
-	EventToolCallStart: true, EventToolCallArgs: true, EventToolCallEnd: true, EventToolCallResult: true,
+	id    string
+	text  strings.Builder
+	calls []ToolCall
+	tool  *Message
 }
 
 type pendingCall struct {
@@ -41,12 +35,12 @@ func newTranscript() *transcript {
 }
 
 func (t *transcript) add(ev Event) {
-	if ev.SubagentRunID != "" && toolFrames[ev.Type] {
+	if ev.SubagentRunID != "" {
 		return
 	}
 	switch ev.Type {
 	case EventTextMessageStart:
-		t.draft(ev.MessageID).subagent = ev.SubagentRunID
+		t.draft(ev.MessageID)
 	case EventTextMessageContent:
 		t.draft(ev.MessageID).text.WriteString(ev.Delta)
 	case EventToolCallStart:
@@ -100,9 +94,7 @@ func (t *transcript) messages() []Message {
 		if text == "" && len(item.calls) == 0 {
 			continue
 		}
-		message := Message{
-			ID: item.id, Role: "assistant", ToolCalls: item.calls, SubagentRunID: item.subagent,
-		}
+		message := Message{ID: item.id, Role: "assistant", ToolCalls: item.calls}
 		if text != "" {
 			message.Content = TextContent(text)
 		}
