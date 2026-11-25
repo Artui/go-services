@@ -451,6 +451,13 @@ aguix type, so its floors stay where `v0.5.0` set them.
   and the sum database all serve the version. A `release` workflow tags on
   merge when the merge adds a kernel heading or a new module token to the
   Adapters section, through the same script.
+- **`aguix.WithObserver` and `aguix.WithOnFinish` let a host see a run without
+  teeing the response.** The observer gets every frame the client received, in
+  wire order, after it is flushed, RUN_FINISHED's usage included; the finish
+  hook gets the terminal event and the run's messages rebuilt from its frames
+  (assistant text and tool calls, tool results). Neither can fail a run: a panic
+  is recovered and reported to `WithOnError`. Without them the wire is
+  unchanged.
 
 ### Changed
 

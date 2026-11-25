@@ -23,6 +23,8 @@ type Stream struct {
 	outcome *RunOutcome
 	usage   []TokenUsage
 	open    []Event
+
+	observe func(Event)
 }
 
 // NewStream prepares w for streaming and writes the response headers.
@@ -71,6 +73,9 @@ func (s *Stream) Emit(event Event) error {
 	}
 	s.flusher.Flush()
 	s.track(event)
+	if s.observe != nil {
+		s.observe(event)
+	}
 	return nil
 }
 
