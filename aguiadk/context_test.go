@@ -131,8 +131,7 @@ func TestRunContextWithNothingToSayAddsNoBlock(t *testing.T) {
 	}
 }
 
-// agenttool runs a delegated sub-agent with the run's plugins; its calls are
-// given a task, not the user's page, so they get no block.
+// A delegated sub-agent's calls get the skill and the block once each, as the root's do.
 func TestADelegatedSubAgentGetsTheRunContextAndTheSkill(t *testing.T) {
 	inner := &scriptLLM{steps: []step{{text: "Researched."}}}
 	researcher, err := llmagent.New(llmagent.Config{Name: "researcher", Description: "Researches.", Model: inner})
@@ -156,11 +155,15 @@ func TestADelegatedSubAgentGetsTheRunContextAndTheSkill(t *testing.T) {
 		t.Fatalf("calls: inner %d, outer %d", inner.calls(), outer.calls())
 	}
 	want := "# Skill: triage\n\n" + triageBody + "\n\n" + contextBlock(pageMap)
-	if got := instruction(inner.request(0)); !strings.HasSuffix(got, want) {
+	once := func(got string) bool {
+		return strings.HasSuffix(got, want) && strings.Count(got, openFence) == 1 &&
+			strings.Count(got, "# Skill: ") == 1
+	}
+	if got := instruction(inner.request(0)); !once(got) {
 		t.Errorf("the delegated sub-agent's instruction:\n%s", got)
 	}
 	for i := range 2 {
-		if got := instruction(outer.request(i)); !strings.HasSuffix(got, want) {
+		if got := instruction(outer.request(i)); !once(got) {
 			t.Errorf("the root's call %d:\n%s", i, got)
 		}
 	}
