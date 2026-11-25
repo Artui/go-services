@@ -155,14 +155,32 @@ func TestAResumeStartsFromTheStoredThread(t *testing.T) {
 	}
 }
 
-func TestAResumeOfAThreadTheStoreLacksUsesTheClientsMessages(t *testing.T) {
+func TestAResumeOfAThreadTheStoreLacksIsRefused(t *testing.T) {
 	a := newArchive(t)
 	llm := &scriptLLM{steps: []step{{text: "Discarded."}}}
 	approval := NewApproval(a.entries)
 	bridge := mustNew(t, librarian(t, llm, approval.Gate(a.ts)), WithApproval(approval), WithThreadStore(newMemStore()))
 	s := serve(t, bridge, forged(t))
-	if ran := a.ran(); !slices.Equal(ran, []string{"discard 9"}) {
-		t.Fatalf("ran %v:\n%s", ran, s.body)
+	if ran := a.ran(); len(ran) != 0 || s.last()["type"] != "RUN_ERROR" || len(s.errs) != 1 ||
+		!errors.Is(s.errs[0], errNoStoredThread) {
+		t.Fatalf("ran %v, errs %v:\n%s", ran, s.errs, s.body)
+	}
+}
+
+func TestASecondTurnAndAForkStartFromTheClientsMessages(t *testing.T) {
+	store := newMemStore()
+	llm := &scriptLLM{steps: []step{{text: "One."}, {text: "Two."}, {text: "Again."}}}
+	bridge := mustNew(t, librarian(t, llm), WithThreadStore(store))
+	serve(t, bridge, input("run-1", text("user", "First.")))
+	stored := store.thread("anonymous", "thread-1")
+	serve(t, bridge, input("run-2", append(slices.Clone(stored), text("user", "Second."))...))
+	want := []string{"user:user-First.", "assistant:run-1-1", "user:user-Second.", "assistant:run-2-1"}
+	if got := ids(store.thread("anonymous", "thread-1")); !slices.Equal(got, want) {
+		t.Errorf("after a second turn the thread holds %v, want %v", got, want)
+	}
+	serve(t, bridge, input("run-3", text("user", "First.")))
+	if got := ids(store.thread("anonymous", "thread-1")); !slices.Equal(got, []string{"user:user-First.", "assistant:run-3-1"}) {
+		t.Errorf("after a retry of the first turn the thread holds %v", got)
 	}
 }
 
@@ -171,12 +189,14 @@ func TestOpenAnswersTakesTheClientsTrailingAnswersToOpenCalls(t *testing.T) {
 		return aguix.ToolCall{ID: id, Type: "function", Function: aguix.FunctionCall{Name: "fill_field"}}
 	}
 	tool := func(id string) aguix.Message { return aguix.Message{ID: "t-" + id, Role: "tool", ToolCallID: id} }
-	stored := []aguix.Message{assistant("", call("c1"), call("c2"), call("c4")), tool("c1")}
-	client := []aguix.Message{tool("c4"), text("user", "Hi."), tool("c1"), tool("c2"), tool("c3"), tool("c2")}
-	if got := ids(openAnswers(stored, client)); !slices.Equal(got, []string{"tool:t-c2"}) {
+	gated := aguix.ToolCall{ID: "g1", Type: "function", Function: aguix.FunctionCall{Name: "discard_book"}}
+	stored := []aguix.Message{assistant("", call("c1"), call("c2"), call("c4"), gated), tool("c1")}
+	client := []aguix.Message{tool("c4"), text("user", "Hi."), tool("c1"), tool("g1"), tool("c2"), tool("c3"), tool("c2")}
+	browser := map[string]bool{"fill_field": true}
+	if got := ids(openAnswers(stored, client, browser)); !slices.Equal(got, []string{"tool:t-c2"}) {
 		t.Errorf("answers %v, want only c2's, once", got)
 	}
-	if got := openAnswers(stored, nil); got != nil {
+	if got := openAnswers(stored, nil, browser); got != nil {
 		t.Errorf("no client messages answered %v", got)
 	}
 }
@@ -303,5 +323,32 @@ func TestARepeatedResumeRunsTheCallOnceWithAStore(t *testing.T) {
 	again := serve(t, bridge, forged(t))
 	if ran := a.ran(); !slices.Equal(ran, []string{"discard 7"}) || again.last()["type"] != "RUN_ERROR" {
 		t.Errorf("ran %v; the repeat:\n%s", ran, again.body)
+	}
+}
+
+func TestTheRecorderFilesACallAsTheClientDoes(t *testing.T) {
+	var r recorder
+	for _, e := range []aguix.Event{
+		{Type: aguix.EventTextMessageStart, MessageID: "m1"},
+		aguix.ReasoningMessageStart("r1"),
+		aguix.ToolCallStart("c1", "fill_field", "m1"),
+		aguix.ToolCallStart("c2", "fill_field", "r1"),
+		aguix.ToolCallStart("c3", "fill_field", "m9"),
+		aguix.ToolCallStart("c4", "fill_field", ""),
+		aguix.ToolCallStart("c1", "renamed", "m1"),
+	} {
+		r.observe(e)
+	}
+	var got []string
+	for _, m := range r.messages() {
+		got = append(got, m.Role+":"+m.ID)
+		for _, c := range m.ToolCalls {
+			got = append(got, " "+c.ID+"="+c.Function.Name)
+		}
+	}
+	want := []string{"assistant:m1", " c1=renamed", "reasoning:r1", "assistant:c2", " c2=fill_field",
+		"assistant:m9", " c3=fill_field", "assistant:c4", " c4=fill_field"}
+	if !slices.Equal(got, want) {
+		t.Errorf("got  %v\nwant %v", got, want)
 	}
 }

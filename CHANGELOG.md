@@ -469,8 +469,11 @@ aguix type, so its floors stay where `v0.5.0` set them.
   answer saves nothing, and a save outlives a cancelled request. An ordinary
   run starts from the client's messages, as django-ag-ui's does; a run that
   resumes interrupts starts from the stored thread, followed by the client's
-  answers to the calls it left open, so a resume body cannot rewrite what the
-  model asked for. The store is keyed by the `WithUserID` user, and a run that
+  answers to the browser calls it left open, so a resume keeps to the calls and
+  arguments the thread holds (an approver's edited arguments aside), and a
+  resume of a thread the store does not hold is refused, as django-ag-ui
+  refuses it. The same resume sent again after the first finished is refused
+  too. The store is keyed by the `WithUserID` user, and a run that
   only answers a browser tool is saved as a continuation of its thread.
 - **A new module, `aguistore`, holds threads in memory or over `database/sql`,
   and serves them to the web component.** `NewMemory` and `OpenSQL` (tested on

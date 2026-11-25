@@ -24,9 +24,9 @@
 // its effect keys idempotency on that id: an adkx.Principal returns
 // agent.Context's FunctionCallID with the user, the registry's resolver puts
 // them in Deps, and the spec records the pair under a unique constraint in the
-// transaction that does the work. Key on the user too, because on a resume the
-// id comes from the history the client posts: it is only as trustworthy as the
-// client, and a client that changes it gets a new key. This guards against a
+// transaction that does the work. Key on the user too, because without a thread
+// store a resume's id comes from the history the client posts: it is only as
+// trustworthy as the client, and a client that changes it gets a new key. This guards against a
 // repeated request, not against a hostile client.
 //
 // # Prompt caching and large results

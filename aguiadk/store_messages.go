@@ -85,18 +85,27 @@ func (r *recorder) find(id string) *draft {
 	return nil
 }
 
-// call files a call on the assistant message it names when that message is the
-// newest one, and otherwise on a new assistant message of its own.
+// call files a call as the client's reducer does: a call it already holds is
+// renamed; otherwise it goes on the assistant message its parent id names,
+// wherever that is, or on a new assistant message under the parent id, or under
+// the call's own id when there is no parent or the parent is not an assistant.
 func (r *recorder) call(e aguix.Event) {
+	if d, i := r.findCall(e.ToolCallID); d != nil {
+		d.msg.ToolCalls[i].Function.Name = e.ToolCallName
+		return
+	}
+	id := e.ToolCallID
 	var d *draft
-	if n := len(r.msgs); n > 0 && e.ParentMessageID != "" &&
-		r.msgs[n-1].msg.ID == e.ParentMessageID && r.msgs[n-1].msg.Role == "assistant" {
-		d = r.msgs[n-1]
-	} else {
-		id := e.ParentMessageID
-		if id == "" {
-			id = e.ToolCallID
+	if e.ParentMessageID != "" {
+		i := slices.IndexFunc(r.msgs, func(m *draft) bool { return m.msg.ID == e.ParentMessageID })
+		switch {
+		case i < 0:
+			id = e.ParentMessageID
+		case r.msgs[i].msg.Role == "assistant":
+			d = r.msgs[i]
 		}
+	}
+	if d == nil {
 		d = r.open(aguix.Message{ID: id, Role: "assistant"})
 		d.hasText = false
 	}

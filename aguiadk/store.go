@@ -32,9 +32,14 @@ type ThreadStore interface {
 // from the messages the client sends, so retry and fork keep working, and the
 // thread is saved as those messages followed by what the run sent. A run that
 // resumes interrupts starts from the stored thread instead, followed by the
-// client's trailing tool messages that answer a call the stored thread left
-// open; a thread the store does not hold falls back to the client's messages,
-// as any new thread id would.
+// client's trailing tool messages that answer a browser tool's call the stored
+// thread left open, so a resume keeps to the calls and arguments the thread
+// holds (an approver's edited arguments aside). A resume of a thread the store
+// does not hold is refused, as django-ag-ui refuses it.
+//
+// The message ids a resume names then come from the store, which also refuses
+// the same resume sent again once the first has finished; two sent at once can
+// still both run.
 //
 // The thread is saved when the run finishes, waiting on the browser or on an
 // approval included, and not when it fails or has nothing to answer. The save
@@ -60,18 +65,24 @@ func (b *bridge) startingHistory(ctx context.Context, userID string, in aguix.Ru
 		return nil, fmt.Errorf("aguiadk: loading the thread: %w", err)
 	}
 	if !ok {
-		return in.Messages, nil
+		return nil, errNoStoredThread
 	}
-	return slices.Concat(stored, openAnswers(stored, in.Messages)), nil
+	browser := map[string]bool{}
+	for _, t := range in.Tools {
+		browser[t.Name] = true
+	}
+	return slices.Concat(stored, openAnswers(stored, in.Messages, browser)), nil
 }
 
+var errNoStoredThread = errors.New("aguiadk: the thread to resume is not stored")
+
 // openAnswers returns the client's trailing tool messages that answer a call
-// stored left open, each once.
-func openAnswers(stored, client []aguix.Message) []aguix.Message {
+// to a browser tool stored left open, each once.
+func openAnswers(stored, client []aguix.Message, browser map[string]bool) []aguix.Message {
 	open := map[string]bool{}
 	for _, m := range stored {
 		for _, c := range m.ToolCalls {
-			open[c.ID] = true
+			open[c.ID] = browser[c.Function.Name]
 		}
 		if m.Role == "tool" {
 			delete(open, m.ToolCallID)
