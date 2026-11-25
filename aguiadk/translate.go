@@ -57,11 +57,11 @@ type translator struct {
 	reasoning string
 	thoughts  []streamedThought
 
-	// sink names the delegations that failed, whose results it redacts.
+	// sink names the failed delegations and cancelled calls whose results it redacts.
 	sink *sink
 }
 
-// failure is how a top-level delegation ended: its error's words are written
+// failure is how a top-level delegation or call ended: its error's words are written
 // for an operator, and may quote a model's ErrorMessage or a sibling's error.
 type failure struct {
 	agent     string
@@ -76,16 +76,23 @@ func (f failure) text() string {
 	return f.agent + " failed"
 }
 
-// takeFailure takes the failure recorded for call, if one was.
+// takeFailure takes the oldest failure recorded for call, if one was.
 func (s *sink) takeFailure(call string) (failure, bool) {
 	if s == nil {
 		return failure{}, false
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	f, ok := s.failures[call]
-	delete(s.failures, call)
-	return f, ok
+	queued := s.failures[call]
+	if len(queued) == 0 {
+		return failure{}, false
+	}
+	if len(queued) == 1 {
+		delete(s.failures, call)
+	} else {
+		s.failures[call] = queued[1:]
+	}
+	return queued[0], true
 }
 
 func newTranslator(newID func() string) *translator {

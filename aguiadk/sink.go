@@ -36,8 +36,9 @@ type sink struct {
 	// issued holds the sub-agent ids handed out, so none repeats.
 	issued map[string]bool
 
-	// failures holds each failed top-level delegation until its result is sent.
-	failures map[string]failure
+	// failures queues, per call id, each failed top-level delegation or cancelled
+	// call until its result is sent.
+	failures map[string][]failure
 
 	// live sends a frame now, for what is only worth seeing while it happens.
 	live func(aguix.Event)
@@ -47,7 +48,7 @@ type sinkKey struct{}
 
 func withSink(ctx context.Context) (context.Context, *sink) {
 	s := &sink{
-		byCall: map[string][]aguix.Event{}, issued: map[string]bool{}, failures: map[string]failure{},
+		byCall: map[string][]aguix.Event{}, issued: map[string]bool{}, failures: map[string][]failure{},
 		live: func(aguix.Event) {},
 	}
 	ctx = context.WithValue(ctx, sinkKey{}, s)
@@ -226,10 +227,14 @@ func returned(ctx agent.Context, ok bool) {
 	c.reported = true
 	c.mu.Unlock()
 	if !again {
-		if name, run := c.delegated(); !ok && run != "" && c.parent == nil {
-			id, _ := c.named()
+		// A cancelled call's error quotes whatever cancelled it, a sibling's error say.
+		if agent, run := c.delegated(); !ok && c.parent == nil && (run != "" || ctx.Err() != nil) {
+			id, name := c.named()
+			if run == "" {
+				agent = name
+			}
 			c.sink.mu.Lock()
-			c.sink.failures[id] = failure{agent: name, cancelled: ctx.Err() != nil}
+			c.sink.failures[id] = append(c.sink.failures[id], failure{agent: agent, cancelled: ctx.Err() != nil})
 			c.sink.mu.Unlock()
 		}
 		finished(ctx, c, ok)
