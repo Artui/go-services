@@ -468,6 +468,12 @@ aguix type, so its floors stay where `v0.5.0` set them.
 
 ### Fixed
 
+- **A `SchemaFor` type whose zero value marshals to `null` is told how to fix
+  that.** The refusal at registration blamed a defined type losing its
+  `MarshalJSON`, which misleads for a type wrapping a value it learns at run
+  time. It now says to encode a nil wrapped value as `{}` for an object. Which
+  types are refused is unchanged. Ships with the next kernel tag.
+
 - **The coverage gate measured only the kernel in CI.** `scripts/coverage.sh`
   ran `go tool cover -func` from the repo root, which cannot resolve a
   submodule's packages without a `go.work` (gitignored, so absent in CI); the

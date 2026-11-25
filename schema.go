@@ -115,6 +115,11 @@ func collectSchemaOverrides(
 // lie the compiler is happy with. The embedded spelling, `struct{ time.Time }`,
 // keeps the method and is correct.
 //
+// A type wrapping a value it only learns at run time, `struct{ V any }` with a
+// MarshalJSON that encodes V, meets the same refusal from the other side: its
+// zero value holds nothing, so it marshals to `null`. It has to encode a nil V as
+// the empty value of the declared kind, `{}` for an object.
+//
 // Only the JSON *kind* is compared, deliberately. Validating a zero value
 // against the whole declaration would refuse honest types: an enum's zero value
 // is rarely one of its own members -- `LoanStatus("")` is not `on_loan` -- and
@@ -151,12 +156,17 @@ func checkDeclarationMarshals(t reflect.Type, declared *jsonschema.Schema) error
 	if got == "integer" && slices.Contains(types, "number") {
 		return nil
 	}
+	hint := "a defined type over one with a MarshalJSON method does not inherit it -- " +
+		"embed the type instead of defining over it, or declare the schema it " +
+		"actually serves"
+	if got == "null" {
+		hint = "the zero value marshals to null -- if MarshalJSON wraps a value, " +
+			"encode a nil one as {} for an object (or the empty value of the declared " +
+			"kind), or declare the schema it actually serves"
+	}
 	return fmt.Errorf(
-		"services: %s declares %q in JSONSchema but marshals to %s (zero value: %s); "+
-			"a defined type over one with a MarshalJSON method does not inherit it -- "+
-			"embed the type instead of defining over it, or declare the schema it "+
-			"actually serves",
-		t, strings.Join(types, "/"), got, encoded)
+		"services: %s declares %q in JSONSchema but marshals to %s (zero value: %s); %s",
+		t, strings.Join(types, "/"), got, encoded, hint)
 }
 
 // jsonKind names the JSON Schema type of a decoded JSON value.
