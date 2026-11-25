@@ -21,9 +21,8 @@ import "encoding/json"
 // than the structs.
 type EventType string
 
-// Only the events this package emits. The protocol has more -- sub-agent
-// lifecycle, steps, raw -- and adding one here is a decision to support it
-// rather than a line in a list.
+// Only the events this package emits. The protocol has more -- steps, raw --
+// and adding one here is a decision to support it rather than a line in a list.
 const (
 	EventRunStarted  EventType = "RUN_STARTED"
 	EventRunFinished EventType = "RUN_FINISHED"
@@ -53,6 +52,10 @@ const (
 	EventActivityDelta    EventType = "ACTIVITY_DELTA"
 
 	EventCustom EventType = "CUSTOM"
+
+	EventSubagentStarted  EventType = "SUBAGENT_STARTED"
+	EventSubagentFinished EventType = "SUBAGENT_FINISHED"
+	EventSubagentError    EventType = "SUBAGENT_ERROR"
 )
 
 // ToolOutcome says how a tool call ended.
@@ -174,6 +177,18 @@ type Event struct {
 	EntityID       string `json:"entityId,omitempty"`
 	EncryptedValue string `json:"encryptedValue,omitempty"`
 
+	// Sub-agents. SubagentRunID names one invocation on SUBAGENT_* and, on any
+	// other event, attributes it to that invocation (see WithSubagentRunID).
+	// They are declared after every older field, so a frame that sets none of
+	// them is byte for byte what it was before they existed.
+	SubagentRunID       string `json:"subagentRunId,omitempty"`
+	ParentSubagentRunID string `json:"parentSubagentRunId,omitempty"`
+	ParentToolCallID    string `json:"parentToolCallId,omitempty"`
+	Description         string `json:"description,omitempty"`
+
+	// SUBAGENT_FINISHED's result, any JSON value but null.
+	Result any `json:"result,omitempty"`
+
 	// The one object-valued slot an event has, written under the key its type
 	// names (see payloadKeys). It is not a field because the keys collide with
 	// the string ones above: STATE_DELTA's "delta" is an array and
@@ -192,6 +207,7 @@ var payloadKeys = map[EventType]string{
 	EventActivityDelta:    "patch",
 	EventCustom:           "value",
 	EventRunFinished:      "outcome",
+	EventSubagentFinished: "outcome",
 }
 
 type plainEvent Event
