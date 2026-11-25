@@ -537,6 +537,80 @@ v0.2.0.
   `parentSubagentRunId`. An error says only that the sub-agent failed, or was
   cancelled with code `cancelled`, never what the failure said.
 
+`aguistore/v0.2.0` records each thread's run status and adds Postgres, MySQL
+and an ADK memory service. It now requires `google.golang.org/adk/v2` v2.8.0
+(and `golang.org/x/text` directly), so its go directive moves from 1.26.0 to
+1.26.10, ADK's own floor; the kernel stays at v0.7.1 and aguix at v0.6.0. It
+still does not import aguiadk: the conformance module checks that `Memory` and
+`SQL` satisfy `aguiadk.RunStore` by their method set.
+
+- **`aguistore` records each thread's run status, and its list is also a
+  watch.** `Memory` and `SQL` are a `RunStore`: the bridge marks a thread
+  `running`, then `idle`, `failed` (with `reason`) or `waiting` on the
+  interrupts its run parked on, stored as the bytes RUN_FINISHED carried. The
+  list carries `status`, `reason`, `interrupts` and `last_read_at`, which
+  `POST <id>/read/` stamps, so a parked approval survives a reload. A resume
+  claims the park, so the same answer sent twice runs once; a winning claim
+  returns the interrupts it took, so a run can park them again. The same `GET` with
+  `Accept: text/event-stream` streams the list (`id: <etag>`, `data:
+  {threads}`) each time it changes, with comment heartbeats, polling every 2s for
+  at most 5 minutes (`WithWatch`). The status lives in a new `aguistore_runs`
+  table, which `OpenSQL` adds to a v0.1.0 database.
+- **`aguistore`'s SQL store speaks Postgres and MySQL as well as SQLite.**
+  `OpenSQL(ctx, db, aguistore.WithDialect(aguistore.Postgres))` (or
+  `aguistore.MySQL`) renders the same statements with the dialect's
+  placeholders and upsert; SQLite stays the default. Keys are collated byte for
+  byte in every dialect (`COLLATE "C"`, `utf8mb4_bin`), so a list's tiebreak on
+  thread id is the one the query defines and the Memory store matches, and on
+  MySQL two ids that differ only in case stay two users or two threads. MySQL
+  keys are `VARCHAR(255)`. CI runs the store's tests against a Postgres and a
+  MySQL service container.
+- **`aguistore.OpenADKMemory` is an ADK `memory.Service` over a
+  `database/sql` table**, `aguistore_memory`, in the same dialects as the
+  thread store (`WithDialect`). It keeps each session's events by app, user and
+  session, so a search answers only from the asking user's sessions. Adding a
+  session again replaces what that session stored before. A search is ADK's
+  keyword match: each event scores one point per query word it contains,
+  thought parts are left out, and the ten best come back. **aguistore now
+  requires `google.golang.org/adk/v2` v2.8.0, so its `go` directive moves from
+  1.26.0 to 1.26.10**, which is ADK's own floor. A consumer on an older
+  toolchain gets Go 1.26.10 downloaded, or fails under `GOTOOLCHAIN=local`.
+
+`aguiadk/v0.9.0` claims a resume through a `RunStore`, keeps activities and
+memory with the thread, and stops a failed delegation's result quoting its
+error. Its floors stay where `v0.8.0` set them: kernel v0.7.1, aguix v0.7.0,
+adkx v0.2.0.
+
+- **`aguiadk` records each run through a `RunStore` and stores activities.**
+  A thread store that is also a `RunStore` is told each run's start and end,
+  and a resume that loses the claim on its interrupts is refused with
+  RUN_ERROR, so two sent at once run the call once. A resume that ends before
+  it reaches a call it answers (a dropped connection, say) parks the thread on
+  its interrupts again, so the approval can be sent again; one that reached the
+  call does not. Each ACTIVITY_SNAPSHOT's last snapshot is stored in the thread
+  where it was sent, and put back into the history of each later run, since the
+  client sends none, so charts, suggestions and compaction notes come back with
+  the thread.
+- **`aguiadk.WithMemory` gives the agent ADK's long-term memory, scoped to the
+  run's user.** Pass any `memory.Service`: ADK's `load_memory` and
+  `preload_memory` tools then search it for the `WithUserID` user only, so a
+  user recalls their own earlier threads and never another user's. Each run
+  that finishes adds its thread to memory once. A run that fails, or stops on an
+  interrupt or a pending browser call, adds nothing; the run that resumes it
+  adds the thread when it finishes.
+- **`aguiadk.WithSkills` refuses a skill whose body is empty or white space**,
+  with an error naming the skill. Such a skill used to be offered in the
+  palette and then add nothing to the run when picked.
+- **`aguiadk`: a failed delegation's TOOL_CALL_RESULT no longer carries the
+  sub-agent's raw error.** It used to send ADK agenttool's text, which quotes a
+  model's ErrorMessage and, for a call a ParallelAgent cancels when a sibling
+  branch fails, that sibling's Go error, even when the sub-agent had not
+  started. A failed delegation now sends `{"error":"<agent> failed"}`, and any
+  cancelled top-level call `{"error":"<name> was cancelled"}`, the words
+  SUBAGENT_ERROR sends.
+- **`aguiadk` has compiled Examples for `WithThreadStore`, `WithSkills` with
+  `SkillCatalog`, `WithRunContext` and `AllowClientTools`.**
+
 ## [Unreleased]
 
 ### Added
@@ -552,62 +626,7 @@ v0.2.0.
   merge when the merge adds a kernel heading or a new module token to the
   Adapters section, through the same script.
 
-- **`aguistore` records each thread's run status, and its list is also a
-  watch.** `Memory` and `SQL` are a `RunStore`: the bridge marks a thread
-  `running`, then `idle`, `failed` (with `reason`) or `waiting` on the
-  interrupts its run parked on, stored as the bytes RUN_FINISHED carried. The
-  list carries `status`, `reason`, `interrupts` and `last_read_at`, which
-  `POST <id>/read/` stamps, so a parked approval survives a reload. A resume
-  claims the park, so the same answer sent twice runs once; a winning claim
-  returns the interrupts it took, so a run can park them again. The same `GET` with
-  `Accept: text/event-stream` streams the list (`id: <etag>`, `data:
-  {threads}`) each time it changes, with comment heartbeats, polling every 2s for
-  at most 5 minutes (`WithWatch`). The status lives in a new `aguistore_runs`
-  table, which `OpenSQL` adds to a v0.1.0 database.
-- **`aguiadk` records each run through a `RunStore` and stores activities.**
-  A thread store that is also a `RunStore` is told each run's start and end,
-  and a resume that loses the claim on its interrupts is refused with
-  RUN_ERROR, so two sent at once run the call once. A resume that ends before
-  it reaches a call it answers (a dropped connection, say) parks the thread on
-  its interrupts again, so the approval can be sent again; one that reached the
-  call does not. Each ACTIVITY_SNAPSHOT's last snapshot is stored in the thread
-  where it was sent, and put back into the history of each later run, since the
-  client sends none, so charts, suggestions and compaction notes come back with
-  the thread.
-- **`aguistore`'s SQL store speaks Postgres and MySQL as well as SQLite.**
-  `OpenSQL(ctx, db, aguistore.WithDialect(aguistore.Postgres))` (or
-  `aguistore.MySQL`) renders the same statements with the dialect's
-  placeholders and upsert; SQLite stays the default. Keys are collated byte for
-  byte in every dialect (`COLLATE "C"`, `utf8mb4_bin`), so a list's tiebreak on
-  thread id is the one the query defines and the Memory store matches, and on
-  MySQL two ids that differ only in case stay two users or two threads. MySQL
-  keys are `VARCHAR(255)`. CI runs the store's tests against a Postgres and a
-  MySQL service container.
-- **`aguiadk.WithMemory` gives the agent ADK's long-term memory, scoped to the
-  run's user.** Pass any `memory.Service`: ADK's `load_memory` and
-  `preload_memory` tools then search it for the `WithUserID` user only, so a
-  user recalls their own earlier threads and never another user's. Each run
-  that finishes adds its thread to memory once. A run that fails, or stops on an
-  interrupt or a pending browser call, adds nothing; the run that resumes it
-  adds the thread when it finishes.
-- **`aguistore.OpenADKMemory` is an ADK `memory.Service` over a
-  `database/sql` table**, `aguistore_memory`, in the same dialects as the
-  thread store (`WithDialect`). It keeps each session's events by app, user and
-  session, so a search answers only from the asking user's sessions. Adding a
-  session again replaces what that session stored before. A search is ADK's
-  keyword match: each event scores one point per query word it contains,
-  thought parts are left out, and the ten best come back. **aguistore now
-  requires `google.golang.org/adk/v2` v2.8.0, so its `go` directive moves from
-  1.26.0 to 1.26.10**, which is ADK's own floor. A consumer on an older
-  toolchain gets Go 1.26.10 downloaded, or fails under `GOTOOLCHAIN=local`.
-- **`aguiadk` has compiled Examples for `WithThreadStore`, `WithSkills` with
-  `SkillCatalog`, `WithRunContext` and `AllowClientTools`.**
-
 ### Changed
-
-- **`aguiadk.WithSkills` refuses a skill whose body is empty or white space**,
-  with an error naming the skill. Such a skill used to be offered in the
-  palette and then add nothing to the run when picked.
 
 - **`adkx` moves to ADK v2.8.0 and Go 1.26.10, and its tools now run in an ADK
   agent.** See the `adkx/v0.2.0` paragraph under Adapters; `conformance` and `example` follow, and `make check-floors`
@@ -622,14 +641,6 @@ v0.2.0.
   green.
 
 ### Fixed
-
-- **`aguiadk`: a failed delegation's TOOL_CALL_RESULT no longer carries the
-  sub-agent's raw error.** It used to send ADK agenttool's text, which quotes a
-  model's ErrorMessage and, for a call a ParallelAgent cancels when a sibling
-  branch fails, that sibling's Go error, even when the sub-agent had not
-  started. A failed delegation now sends `{"error":"<agent> failed"}`, and any
-  cancelled top-level call `{"error":"<name> was cancelled"}`, the words
-  SUBAGENT_ERROR sends.
 
 - **A `SchemaFor` type whose zero value marshals to `null` is told how to fix
   that.** The refusal at registration blamed a defined type losing its
@@ -665,7 +676,6 @@ v0.2.0.
 
   Written down because a single-threaded suite structurally cannot find it. The
   consumer that did had 40 of its 41 tests green under the broken DSN.
-
 
 ## [0.7.1] - 2026-09-08
 
@@ -748,7 +758,6 @@ both carry `replace` directives and have never read a published module.
   This is what makes `type Instant time.Time` fail loudly instead of quietly:
   a defined type does not inherit `MarshalJSON`, and `time.Time`'s fields are
   unexported, so it would advertise a date-time string and serve `{}`.
-
 
 - **`aguix`, a fifth adapter: an agent over AG-UI.** An HTTP handler that
   decodes `RunAgentInput` and streams the protocol's events, a `Toolbox` that
