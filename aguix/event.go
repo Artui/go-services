@@ -413,6 +413,14 @@ func RunFinishedWith(threadID, runID string, outcome RunOutcome) Event {
 	}
 }
 
+// FinishOutcome reads the outcome a RUN_FINISHED carries, for an observer of
+// the run. It reports false for any other event and for a bare RUN_FINISHED,
+// which a client reads as a success.
+func (e Event) FinishOutcome() (RunOutcome, bool) {
+	outcome, ok := e.payload.(RunOutcome)
+	return outcome, ok && e.Type == EventRunFinished
+}
+
 // StateSnapshot replaces the client's shared state with snapshot.
 func StateSnapshot(snapshot any) Event {
 	return Event{Type: EventStateSnapshot, payload: snapshot, hasPayload: true}
