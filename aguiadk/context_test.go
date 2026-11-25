@@ -6,6 +6,7 @@ import (
 
 	"github.com/Artui/go-services/adkx"
 	"github.com/Artui/go-services/aguix"
+	"google.golang.org/adk/v2/agent"
 	"google.golang.org/adk/v2/agent/llmagent"
 	"google.golang.org/adk/v2/model"
 	"google.golang.org/adk/v2/tool"
@@ -14,8 +15,8 @@ import (
 )
 
 const (
-	openFence  = "<" + RunContextSentinel + ">"
-	closeFence = "</" + RunContextSentinel + ">"
+	openFence  = "<" + runContextSentinel + ">"
+	closeFence = "</" + runContextSentinel + ">"
 	pageMap    = "SENTINEL-PAGE-MAP"
 )
 
@@ -48,7 +49,7 @@ func contextBlock(value string) string {
 func contentsCarry(req *model.LLMRequest, needle string) bool {
 	for _, c := range req.Contents {
 		for _, p := range c.Parts {
-			if p != nil && (strings.Contains(p.Text, needle) || strings.Contains(strings.ToLower(p.Text), RunContextSentinel)) {
+			if p != nil && (strings.Contains(p.Text, needle) || strings.Contains(strings.ToLower(p.Text), runContextSentinel)) {
 				return true
 			}
 		}
@@ -88,7 +89,7 @@ func TestRunContextReachesEveryModelCallInsideTheFence(t *testing.T) {
 			t.Errorf("call %d: the browser's tool is no longer declared", i)
 		}
 	}
-	if strings.Contains(s.body, pageMap) || strings.Contains(s.body, RunContextSentinel) {
+	if strings.Contains(s.body, pageMap) || strings.Contains(s.body, runContextSentinel) {
 		t.Errorf("the context was streamed: %s", s.body)
 	}
 }
@@ -273,5 +274,31 @@ func TestAppendInstructionStartsAnInstructionWhereThereIsNone(t *testing.T) {
 		if instruction(req) != "added" {
 			t.Errorf("got %q", instruction(req))
 		}
+	}
+}
+
+// A transfer is a tool call, but the agent it hands over to is one of the run's own.
+func TestRunContextFollowsATransfer(t *testing.T) {
+	inner := &scriptLLM{steps: []step{{text: "Here."}}}
+	child, err := llmagent.New(llmagent.Config{Name: "child", Description: "Takes over.", Model: inner})
+	if err != nil {
+		t.Fatal(err)
+	}
+	outer := &scriptLLM{steps: []step{{calls: []*genai.FunctionCall{
+		{ID: "x1", Name: "transfer_to_agent", Args: map[string]any{"agent_name": "child"}},
+	}}}}
+	root, err := llmagent.New(llmagent.Config{
+		Name: "librarian", Model: outer, SubAgents: []agent.Agent{child},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := serve(t, mustNew(t, root, WithRunContext()),
+		contextRun("run-1", aguix.ContextItem{Description: "page_map", Value: pageMap}))
+	if len(s.errs) > 0 || inner.calls() != 1 {
+		t.Fatalf("errors %v, child calls %d", s.errs, inner.calls())
+	}
+	if _, ok := fenced(instruction(inner.request(0))); !ok {
+		t.Errorf("the transferred-to agent lost the block: %s", instruction(inner.request(0)))
 	}
 }
