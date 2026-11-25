@@ -7,11 +7,16 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 	"time"
 	"unicode"
 
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
+	"golang.org/x/text/unicode/norm"
+	"golang.org/x/text/unicode/runenames"
 	"google.golang.org/adk/v2/memory"
 	"google.golang.org/adk/v2/session"
 	"google.golang.org/genai"
@@ -23,9 +28,12 @@ import (
 // It keeps each session's events with content, keyed by app, user and session,
 // so a search answers from the asking user's own sessions only. Adding a
 // session again replaces what it stored, as ADK's in-memory service does. A
-// search is a keyword match like that one's: an event scores one for each word
-// of the query among its own, thought parts left out, and the ten best come
-// back, highest first and oldest first among equals. It speaks the dialect
+// search is that one's keyword match: text is NFC-normalised and lower-cased,
+// and an event scores one for each query word among its own words (a word
+// that mixes Latin with another script also counting each run of one script),
+// or anywhere in its text for a query word with non-ASCII letters. Thought
+// parts are left out, and the ten best come back, highest first and oldest
+// first among equals. It speaks the dialect
 // WithDialect names, SQLite by default, and reads no other option.
 type ADKMemory struct {
 	db *sql.DB
@@ -146,7 +154,7 @@ func (m *ADKMemory) SearchMemory(ctx context.Context, req *memory.SearchRequest)
 		return nil, errors.New("aguistore: SearchMemory needs a request")
 	}
 	res := &memory.SearchResponse{}
-	query := words(req.Query)
+	query := queryWords(req.Query)
 	if len(query) == 0 {
 		return res, nil
 	}
@@ -193,28 +201,78 @@ func (r memoryRow) entry() (memory.Entry, error) {
 	return e, json.Unmarshal([]byte(r.metadata), &e.CustomMetadata)
 }
 
-// overlap counts the query's words that appear in the content's text.
+// overlap counts the query's words the content's text holds: as a word, or,
+// for a word with non-ASCII letters, anywhere in the text, as ADK's in-memory
+// service matches them.
 func overlap(query map[string]bool, c *genai.Content) int {
 	var texts []string
 	for _, p := range c.Parts {
 		texts = append(texts, p.Text)
 	}
+	text := strings.Join(texts, " ")
+	own := searchableWords(text)
+	lower := cases.Lower(language.Und).String(norm.NFC.String(text))
 	n := 0
-	for w := range words(strings.Join(texts, " ")) {
-		if query[w] {
+	for w, substring := range query {
+		if _, ok := own[w]; ok || (substring && strings.Contains(lower, w)) {
 			n++
 		}
 	}
 	return n
 }
 
-// words splits text into its lower-cased words: runs of letters, digits and _.
-func words(text string) map[string]bool {
+// queryWords maps each of the query's words to whether it may match inside a
+// longer word, which one with non-ASCII letters may.
+func queryWords(text string) map[string]bool {
 	out := map[string]bool{}
-	for w := range strings.FieldsFuncSeq(strings.ToLower(text), func(r rune) bool {
-		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '_'
-	}) {
-		out[w] = true
+	for w := range words(text) {
+		out[w] = hasNonASCII(w)
 	}
 	return out
+}
+
+// words splits NFC-normalised text into its lower-cased words: runs of
+// letters, digits and _.
+func words(text string) map[string]struct{} {
+	lower := cases.Lower(language.Und)
+	out := map[string]struct{}{}
+	for w := range strings.FieldsFuncSeq(norm.NFC.String(text), func(r rune) bool {
+		return !unicode.IsLetter(r) && !unicode.IsNumber(r) && r != '_'
+	}) {
+		out[lower.String(w)] = struct{}{}
+	}
+	return out
+}
+
+// searchableWords is words plus, for a word that mixes Latin and other
+// scripts, each run of one script, so "Python" is found in "私はPythonを使う".
+func searchableWords(text string) map[string]struct{} {
+	out := words(text)
+	for _, w := range slices.Collect(maps.Keys(out)) {
+		if !hasNonASCII(w) {
+			continue
+		}
+		start, runLatin := 0, false
+		for i, r := range w {
+			latin := isLatin(r)
+			if i > 0 && latin != runLatin {
+				out[w[start:i]] = struct{}{}
+				start = i
+			}
+			runLatin = latin
+		}
+		out[w[start:]] = struct{}{}
+	}
+	return out
+}
+
+func isLatin(r rune) bool {
+	if r <= unicode.MaxASCII {
+		return unicode.IsLetter(r) || unicode.IsNumber(r) || r == '_'
+	}
+	return strings.HasPrefix(runenames.Name(r), "LATIN")
+}
+
+func hasNonASCII(s string) bool {
+	return strings.IndexFunc(s, func(r rune) bool { return r > unicode.MaxASCII }) >= 0
 }
