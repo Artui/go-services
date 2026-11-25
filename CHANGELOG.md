@@ -463,8 +463,8 @@ set them: kernel v0.7.1, aguix v0.6.0, adkx v0.2.0.
 - **`aguiadk.WithSkills` and `aguiadk.SkillCatalog` serve server-resolved
   skills**: a run whose latest user message opens with `/name` gets `# Skill:
   <name>` and the body in its instructions, a delegated sub-agent's included,
-  `/name` left as sent; the catalog
-  answers GET with the web component's `data-skills-url` entries, never a body.
+  `/name` left as sent; the catalog answers GET with the web component's
+  `data-skills-url` entries, never a body.
 - **`aguiadk.ClientToolset` takes an allow-list.** `AllowClientTools(names...)`
   declares only those browser tools and `OnDroppedClientTool` is told each name
   left out; with no option every tool the client lists is declared, as before.
