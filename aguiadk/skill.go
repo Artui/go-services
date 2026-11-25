@@ -34,10 +34,11 @@ type Skill struct {
 //
 // A run whose latest user message opens with /name, a skill's name, adds
 // "# Skill: <name>" and the skill's body to the instructions of every model
-// call the run's own agents make, as WithRunContext adds its block. The message
-// itself is left as the user sent it, so /name stays in the conversation, and a
-// name that is not a skill's changes nothing. The latest user message decides,
-// so a run that answers a browser tool call keeps the skill its user picked.
+// call the run makes, a delegated sub-agent's included, as WithRunContext adds
+// its block. The message itself is left as the user sent it, so /name stays in
+// the conversation, and a name that is not a skill's changes nothing. The
+// latest user message decides, so a run that answers a browser tool call keeps
+// the skill its user picked.
 // Serve the same skills to the web component with SkillCatalog.
 //
 // New refuses a name that is empty, starts with a slash or holds white space,

@@ -133,7 +133,7 @@ func TestRunContextWithNothingToSayAddsNoBlock(t *testing.T) {
 
 // agenttool runs a delegated sub-agent with the run's plugins; its calls are
 // given a task, not the user's page, so they get no block.
-func TestRunContextSkipsADelegatedSubAgent(t *testing.T) {
+func TestADelegatedSubAgentGetsTheRunContextAndTheSkill(t *testing.T) {
 	inner := &scriptLLM{steps: []step{{text: "Researched."}}}
 	researcher, err := llmagent.New(llmagent.Config{Name: "researcher", Description: "Researches.", Model: inner})
 	if err != nil {
@@ -149,17 +149,19 @@ func TestRunContextSkipsADelegatedSubAgent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	serve(t, mustNew(t, root, WithRunContext()),
-		contextRun("run-1", aguix.ContextItem{Description: "page_map", Value: pageMap}))
+	in := contextRun("run-1", aguix.ContextItem{Description: "page_map", Value: pageMap})
+	in.Messages = []aguix.Message{text("user", "/triage")}
+	serve(t, mustNew(t, root, WithRunContext(), WithSkills(skills)), in)
 	if inner.calls() != 1 || outer.calls() != 2 {
 		t.Fatalf("calls: inner %d, outer %d", inner.calls(), outer.calls())
 	}
-	if strings.Contains(instruction(inner.request(0)), pageMap) {
-		t.Errorf("the delegated sub-agent received the block: %s", instruction(inner.request(0)))
+	want := "# Skill: triage\n\n" + triageBody + "\n\n" + contextBlock(pageMap)
+	if got := instruction(inner.request(0)); !strings.HasSuffix(got, want) {
+		t.Errorf("the delegated sub-agent's instruction:\n%s", got)
 	}
 	for i := range 2 {
-		if _, ok := fenced(instruction(outer.request(i))); !ok {
-			t.Errorf("the root's call %d lacks its block", i)
+		if got := instruction(outer.request(i)); !strings.HasSuffix(got, want) {
+			t.Errorf("the root's call %d:\n%s", i, got)
 		}
 	}
 }

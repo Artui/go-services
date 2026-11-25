@@ -40,10 +40,10 @@ var sentinelPattern = regexp.MustCompile("(?i)" + regexp.QuoteMeta(runContextSen
 // host's getContext entries there, and without this option the model never
 // sees them. With it, the entries are rendered as one fenced block, framed as
 // data from the browser rather than instructions, and appended to the system
-// instruction of every model call the run's own agents make. The block is
-// never added to the conversation, so it is neither streamed nor part of the
-// history the client sends back, and a sub-agent that agenttool runs for a
-// call does not receive it.
+// instruction of every model call the run makes, a sub-agent's that agenttool
+// runs for a call included, since it works for the same user on the same page.
+// The block is never added to the conversation, so it is neither streamed nor
+// part of the history the client sends back.
 //
 // The fence's marker word is defused wherever a value or a description
 // carries it, in any casing, so the client cannot close the block early. A
@@ -141,8 +141,7 @@ func instructionsPlugin() *plugin.Plugin {
 		Name: "aguiadk-instructions",
 		BeforeModelCallback: func(ctx agent.Context, req *model.LLMRequest) (*model.LLMResponse, error) {
 			text, _ := ctx.Value(instructionsKey{}).(string)
-			// A call inside a delegation carries the delegating call's slot.
-			if text == "" || slotOf(ctx) != nil {
+			if text == "" {
 				return nil, nil
 			}
 			appendInstruction(req, text)
