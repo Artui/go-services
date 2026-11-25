@@ -522,7 +522,7 @@
     {
       "id": "run-subfail-1",
       "role": "tool",
-      "content": "{\"error\":\"error from sub-agent \\\"researcher\\\" (code: \\\"500\\\", message: \\\"provider detail\\\")\"}",
+      "content": "{\"error\":\"researcher failed\"}",
       "toolCallId": "d1",
       "metadata": {
         "outcome": "failed"

@@ -10,7 +10,7 @@ data: {"type":"SUBAGENT_STARTED","name":"researcher","subagentRunId":"subagent-d
 
 data: {"type":"SUBAGENT_ERROR","message":"researcher failed","subagentRunId":"subagent-d1"}
 
-data: {"type":"TOOL_CALL_RESULT","messageId":"run-subfail-1","role":"tool","toolCallId":"d1","content":"{\"error\":\"error from sub-agent \\\"researcher\\\" (code: \\\"500\\\", message: \\\"provider detail\\\")\"}","outcome":"failed","metadata":{"outcome":"failed"}}
+data: {"type":"TOOL_CALL_RESULT","messageId":"run-subfail-1","role":"tool","toolCallId":"d1","content":"{\"error\":\"researcher failed\"}","outcome":"failed","metadata":{"outcome":"failed"}}
 
 data: {"type":"TEXT_MESSAGE_START","messageId":"run-subfail-2","role":"assistant"}
 

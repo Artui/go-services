@@ -602,6 +602,12 @@ v0.2.0.
 
 ### Fixed
 
+- **`aguiadk`: a failed delegation's TOOL_CALL_RESULT no longer carries the
+  sub-agent's raw error.** It used to send ADK agenttool's text, which quotes a
+  model's ErrorMessage and, for a ParallelAgent branch cancelled by a failing
+  sibling, that sibling's Go error. It now sends `{"error": "<agent> failed"}`
+  or `{"error": "<agent> was cancelled"}`, the words SUBAGENT_ERROR sends.
+
 - **A `SchemaFor` type whose zero value marshals to `null` is told how to fix
   that.** The refusal at registration blamed a defined type losing its
   `MarshalJSON`, which misleads for a type wrapping a value it learns at run
