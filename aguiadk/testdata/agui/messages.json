@@ -21,6 +21,45 @@
       "toolCallId": "c1"
     },
     {
+      "id": "chart-11111111",
+      "role": "activity",
+      "content": {
+        "kind": "bar",
+        "labels": [
+          "Mon"
+        ],
+        "series": [
+          {
+            "label": "Loans",
+            "points": [
+              3
+            ]
+          }
+        ]
+      },
+      "activityType": "chart"
+    },
+    {
+      "id": "suggestions-22222222",
+      "role": "activity",
+      "content": {
+        "prompts": [
+          "Chart next week too"
+        ]
+      },
+      "activityType": "suggestions"
+    },
+    {
+      "id": "compaction-33333333",
+      "role": "activity",
+      "content": {
+        "after": 4,
+        "before": 9,
+        "removed": 5
+      },
+      "activityType": "compaction"
+    },
+    {
       "id": "run-act-2",
       "role": "assistant",
       "content": "Charted."
