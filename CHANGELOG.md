@@ -551,7 +551,23 @@ v0.2.0.
   and the sum database all serve the version. A `release` workflow tags on
   merge when the merge adds a kernel heading or a new module token to the
   Adapters section, through the same script.
+- **`aguistore`'s SQL store speaks Postgres and MySQL as well as SQLite.**
+  `OpenSQL(ctx, db, aguistore.WithDialect(aguistore.Postgres))` (or
+  `aguistore.MySQL`) renders the same statements with the dialect's
+  placeholders and upsert; SQLite stays the default. Keys are collated byte for
+  byte in every dialect (`COLLATE "C"`, `utf8mb4_bin`), so a list's tiebreak on
+  thread id is the one the query defines and the Memory store matches, and on
+  MySQL two ids that differ only in case stay two users or two threads. MySQL
+  keys are `VARCHAR(255)`. CI runs the store's tests against a Postgres and a
+  MySQL service container.
+- **`aguiadk` has compiled Examples for `WithThreadStore`, `WithSkills` with
+  `SkillCatalog`, `WithRunContext` and `AllowClientTools`.**
+
 ### Changed
+
+- **`aguiadk.WithSkills` refuses a skill whose body is empty or white space**,
+  with an error naming the skill. Such a skill used to be offered in the
+  palette and then add nothing to the run when picked.
 
 - **`adkx` moves to ADK v2.8.0 and Go 1.26.10, and its tools now run in an ADK
   agent.** See the `adkx/v0.2.0` paragraph under Adapters; `conformance` and `example` follow, and `make check-floors`

@@ -51,7 +51,8 @@ type Store interface {
 type Option func(*config)
 
 type config struct {
-	now func() time.Time
+	now     func() time.Time
+	dialect Dialect
 }
 
 // WithClock sets the clock a store stamps each save with; the default is
