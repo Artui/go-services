@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"sync"
+	"time"
 
 	services "github.com/Artui/go-services"
 	"github.com/Artui/go-services/aguix"
@@ -18,6 +19,15 @@ type Memory struct {
 	cfg     config
 	mu      sync.Mutex
 	threads map[string]map[string]*memoryThread
+	runs    map[string]map[string]*memoryRun
+}
+
+// memoryRun is a thread's run status, kept apart from its messages as SQL keeps
+// it, so a run that starts before the thread's first save still records.
+type memoryRun struct {
+	runID, status, reason string
+	interrupts            []byte
+	lastRead              time.Time
 }
 
 type memoryThread struct {
@@ -27,7 +37,9 @@ type memoryThread struct {
 
 // NewMemory returns an empty Memory.
 func NewMemory(opts ...Option) *Memory {
-	return &Memory{cfg: configure(opts), threads: map[string]map[string]*memoryThread{}}
+	return &Memory{
+		cfg: configure(opts), threads: map[string]map[string]*memoryThread{}, runs: map[string]map[string]*memoryRun{},
+	}
 }
 
 // LoadThread returns the thread's messages, decoded afresh on every call so a
@@ -70,8 +82,13 @@ func (s *Memory) ListThreads(_ context.Context, userID string, limit int) ([]Thr
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	out := make([]Thread, 0, len(s.threads[userID]))
-	for _, t := range s.threads[userID] {
-		out = append(out, t.Thread)
+	for id, t := range s.threads[userID] {
+		row := t.Thread
+		if run := s.runs[userID][id]; run != nil {
+			row.Status, row.Reason, row.LastReadAt = run.status, run.reason, run.lastRead
+			row.Interrupts = slices.Clone(run.interrupts)
+		}
+		out = append(out, row)
 	}
 	slices.SortFunc(out, newestFirst)
 	return out[:min(len(out), max(limit, 0))], nil
@@ -94,7 +111,61 @@ func (s *Memory) DeleteThread(_ context.Context, userID, threadID string) error 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.threads[userID], threadID)
+	delete(s.runs[userID], threadID)
 	return nil
+}
+
+// StartRun marks the thread running, or claims it for a resume.
+func (s *Memory) StartRun(_ context.Context, userID, threadID, runID string, resumes []string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	run := s.run(userID, threadID)
+	if len(resumes) > 0 && !claimable(run.status, run.interrupts, resumes) {
+		return false, nil
+	}
+	run.runID, run.status, run.reason, run.interrupts = runID, StatusRunning, "", nil
+	return true, nil
+}
+
+// FinishRun records how runID ended, unless another run has replaced it.
+func (s *Memory) FinishRun(
+	_ context.Context, userID, threadID, runID, status, reason string, interrupts json.RawMessage,
+) error {
+	if err := checkFinish(status, interrupts); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if run := s.runs[userID][threadID]; run != nil && run.runID == runID {
+		run.status, run.reason, run.interrupts = status, reason, slices.Clone(interrupts)
+	}
+	return nil
+}
+
+// MarkRead stamps the thread read.
+func (s *Memory) MarkRead(_ context.Context, userID, threadID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.threads[userID][threadID]; !ok {
+		return fmt.Errorf("%w: thread %q", services.ErrNotFound, threadID)
+	}
+	s.run(userID, threadID).lastRead = s.cfg.now()
+	return nil
+}
+
+// run returns the thread's run row, creating an idle one; s.mu is held.
+func (s *Memory) run(userID, threadID string) *memoryRun {
+	mine := s.runs[userID]
+	if mine == nil {
+		mine = map[string]*memoryRun{}
+		s.runs[userID] = mine
+	}
+	run := mine[threadID]
+	if run == nil {
+		run = &memoryRun{status: StatusIdle}
+		mine[threadID] = run
+	}
+	return run
 }
 
 func newestFirst(a, b Thread) int {
