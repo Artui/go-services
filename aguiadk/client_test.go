@@ -77,11 +77,16 @@ func TestAllowedClientToolStillEndsTheRunPending(t *testing.T) {
 	}
 }
 
-func TestCallingADroppedClientToolLeavesNothingPending(t *testing.T) {
+func TestCallingADroppedClientToolFailsThatCallOnly(t *testing.T) {
 	llm := &scriptLLM{steps: []step{{calls: []*genai.FunctionCall{{ID: "c1", Name: "exfiltrate", Args: map[string]any{}}}}}}
 	bridge := mustNew(t, librarian(t, llm, ClientToolset(AllowClientTools(fillField.Name))))
 	s := serve(t, bridge, withTools("run-1", fillField, exfiltrate))
 
+	wantTypes(t, s, "RUN_STARTED", "TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_END", "TOOL_CALL_RESULT",
+		"TEXT_MESSAGE_START", "TEXT_MESSAGE_CONTENT", "TEXT_MESSAGE_END", "RUN_FINISHED")
+	if result := s.first("TOOL_CALL_RESULT"); result["outcome"] != "failed" {
+		t.Errorf("result frame %v", result)
+	}
 	if _, has := s.last()["outcome"]; has {
 		t.Errorf("the run ended for a dropped tool: %v", s.last())
 	}
