@@ -437,11 +437,11 @@ aguix type, so its floors stay where `v0.5.0` set them.
   invalidation under a `ParallelAgent`, activities from a tool and a model
   callback, and a delegated sub-agent's progress.
 
-## [Unreleased]
+`aguix/v0.7.0` adds the sub-agent lifecycle events and lets a host watch a run
+without teeing the response. Its floors are unchanged, and a run that uses
+neither writes the bytes it wrote before.
 
-### Added
-
-- **aguix: `SUBAGENT_STARTED`, `SUBAGENT_FINISHED` and `SUBAGENT_ERROR`.**
+- **`SUBAGENT_STARTED`, `SUBAGENT_FINISHED` and `SUBAGENT_ERROR`.**
   `SubagentStarted(subagentRunID, name, parentToolCallID)`, `SubagentFinished`,
   `SubagentSuspended` and `SubagentError` build them, with `WithDescription`,
   `WithParentSubagentRunID` and `WithResult`; `Event.WithSubagentRunID`
@@ -452,8 +452,24 @@ aguix type, so its floors stay where `v0.5.0` set them.
   `SUBAGENT_ERROR` code `unfinished`, as django-ag-ui does, since the client's
   verifier rejects a `RUN_FINISHED` over one; a span it closes keeps the
   `subagentRunId` of the frame that opened it.
-- **aguix: `Event.FinishOutcome`** reads the outcome a `RUN_FINISHED` carries,
+- **`WithObserver` and `WithOnFinish` let a host see a run without teeing
+  the response.** The observer gets every frame the client received, in
+  wire order, after it is flushed, RUN_FINISHED's usage included; the finish
+  hook gets the terminal event and the run's messages rebuilt from its frames
+  (assistant text and tool calls, tool results). Neither can fail a run: a panic
+  is recovered and reported to `WithOnError`. The observer must not call the
+  run's `Stream`, and the response stays open until the finish hook returns, so
+  slow work belongs in a goroutine. Without them the wire is unchanged.
+- **`Event.FinishOutcome`** reads the outcome a `RUN_FINISHED` carries,
   so an observer of a run can tell a success from an interrupt or a cancel.
+- Its tests record a run of every sub-agent frame and a timed-out run with
+  sub-agents open under `aguix/testdata/agui/transcripts`, which
+  `scripts/agui-wire/verify-transcripts.mjs` checks against the client.
+
+## [Unreleased]
+
+### Added
+
 - **`make release` and `make release-verify` cut and check a module's tag.**
   `make release MODULE=<dir or kernel> VERSION=<version>` refuses a dirty tree,
   a checkout that is not `origin/main` (or `SHA`), a version already on the
@@ -464,14 +480,6 @@ aguix type, so its floors stay where `v0.5.0` set them.
   and the sum database all serve the version. A `release` workflow tags on
   merge when the merge adds a kernel heading or a new module token to the
   Adapters section, through the same script.
-- **`aguix.WithObserver` and `aguix.WithOnFinish` let a host see a run without
-  teeing the response.** The observer gets every frame the client received, in
-  wire order, after it is flushed, RUN_FINISHED's usage included; the finish
-  hook gets the terminal event and the run's messages rebuilt from its frames
-  (assistant text and tool calls, tool results). Neither can fail a run: a panic
-  is recovered and reported to `WithOnError`. The observer must not call the
-  run's `Stream`, and the response stays open until the finish hook returns, so
-  slow work belongs in a goroutine. Without them the wire is unchanged.
 
 ### Changed
 
