@@ -208,7 +208,7 @@ their floors genuinely differ.
 | `.../go-services/adkx` | 1.26.10 | `google.golang.org/adk/v2` |
 | `.../go-services/aguix` | 1.24 | nothing beyond the kernel |
 | `.../go-services/aguiadk` | 1.26.10 | `adkx`, `aguix`, `google.golang.org/adk/v2` |
-| `.../go-services/aguistore` | 1.26 | `aguix`; `modernc.org/sqlite` in its tests only |
+| `.../go-services/aguistore` | 1.26.10 | `aguix`, `google.golang.org/adk/v2`; `modernc.org/sqlite`, `pgx` and `go-sql-driver/mysql` in its tests only |
 
 The kernel's 1.24 is `encoding/json`'s `omitzero`, which `Optional[T]` needs.
 `mcpx` follows the MCP SDK. `ginx` is highest because clearing Gin's transitive

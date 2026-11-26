@@ -14,7 +14,7 @@ data: {"type":"CUSTOM","name":"ag_ui.subagent","value":{"delegationId":"d1","age
 
 data: {"type":"SUBAGENT_ERROR","message":"researcher failed","subagentRunId":"subagent-d1"}
 
-data: {"type":"TOOL_CALL_RESULT","messageId":"run-subinner-1","role":"tool","toolCallId":"d1","content":"{\"error\":\"sub-agent \\\"researcher\\\" stopped waiting on unresolved long-running tool calls [adk-14], which AgentTool cannot resume\"}","outcome":"failed","metadata":{"outcome":"failed"}}
+data: {"type":"TOOL_CALL_RESULT","messageId":"run-subinner-1","role":"tool","toolCallId":"d1","content":"{\"error\":\"researcher failed\"}","outcome":"failed","metadata":{"outcome":"failed"}}
 
 data: {"type":"TEXT_MESSAGE_START","messageId":"run-subinner-2","role":"assistant"}
 

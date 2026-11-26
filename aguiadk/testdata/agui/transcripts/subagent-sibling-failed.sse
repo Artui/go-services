@@ -10,4 +10,6 @@ data: {"type":"SUBAGENT_STARTED","name":"researcher","subagentRunId":"subagent-p
 
 data: {"type":"SUBAGENT_ERROR","message":"researcher was cancelled","code":"cancelled","subagentRunId":"subagent-p1"}
 
+data: {"type":"TOOL_CALL_RESULT","messageId":"run-subsibling-1","role":"tool","toolCallId":"p1","content":"{\"error\":\"researcher was cancelled\"}","outcome":"failed","metadata":{"outcome":"failed"}}
+
 data: {"type":"RUN_ERROR","message":"The assistant could not complete that. The reason was recorded on the server.","code":"error"}

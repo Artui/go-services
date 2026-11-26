@@ -4,13 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"iter"
-	"net/http"
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,8 +17,6 @@ import (
 	"google.golang.org/adk/v2/agent/workflowagents/parallelagent"
 	"google.golang.org/adk/v2/agent/workflowagents/sequentialagent"
 	"google.golang.org/adk/v2/model"
-	"google.golang.org/adk/v2/platform"
-	"google.golang.org/adk/v2/session"
 	"google.golang.org/adk/v2/tool"
 	"google.golang.org/adk/v2/tool/agenttool"
 	"google.golang.org/adk/v2/tool/functiontool"
@@ -431,31 +426,31 @@ func TestTwoDelegationsCutOffByTheRunTimeoutAreBothCancelled(t *testing.T) {
 	golden(t, "subagent-pair-cancelled", s)
 }
 
-// quietWhenCancelled runs a, dropping what it yields once cancelled: ADK picks at
-// random whether a cancelled branch's last event still reaches the run.
-func quietWhenCancelled(t *testing.T, a agent.Agent) agent.Agent {
-	t.Helper()
-	quiet, err := agent.New(agent.Config{
-		Name: "quiet", SubAgents: []agent.Agent{a},
-		Run: func(ctx agent.InvocationContext) iter.Seq2[*session.Event, error] {
-			return func(yield func(*session.Event, error) bool) {
-				for ev, err := range a.Run(ctx) {
-					if ctx.Err() != nil || !yield(ev, err) {
-						return
-					}
-				}
-			}
-		},
-	})
-	if err != nil {
-		t.Fatal(err)
+// A ParallelAgent branch that fails cancels its sibling, whose delegation says
+// so before the run does, and whose result names no other branch's error.
+func TestASiblingFailingMidDelegationClosesItBeforeRunError(t *testing.T) {
+	var s served
+	for range 50 {
+		if s = siblingFailed(t); slices.ContainsFunc(s.frames, func(f map[string]any) bool { return f["type"] == "TOOL_CALL_RESULT" }) {
+			break
+		}
 	}
-	return quiet
+	wantTypes(t, s, "RUN_STARTED", "TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_END",
+		"SUBAGENT_STARTED", "SUBAGENT_ERROR", "TOOL_CALL_RESULT", "RUN_ERROR")
+	wantLifecycle(t, s,
+		`{"name":"researcher","parentToolCallId":"p1","subagentRunId":"subagent-p1","type":"SUBAGENT_STARTED"}`,
+		`{"code":"cancelled","message":"researcher was cancelled","subagentRunId":"subagent-p1","type":"SUBAGENT_ERROR"}`)
+	if strings.Contains(s.body, "provider detail") || !strings.Contains(s.body, `researcher was cancelled\"`) {
+		t.Errorf("the cancelled branch's result:\n%s", s.body)
+	}
+	golden(t, "subagent-sibling-failed", s)
 }
 
-// A ParallelAgent branch that fails cancels its sibling, whose delegation says
-// so before the run does.
-func TestASiblingFailingMidDelegationClosesItBeforeRunError(t *testing.T) {
+// siblingFailed runs a lender delegating to a researcher beside a shelver whose
+// model fails once the researcher is inside its call. ADK yields the cancelled
+// delegation's result in some runs and not others.
+func siblingFailed(t *testing.T) served {
+	t.Helper()
 	inside, enter := signal()
 	researcher := helper(t, "researcher", hooked{&scriptLLM{}, func(ctx context.Context) {
 		enter()
@@ -478,24 +473,7 @@ func TestASiblingFailingMidDelegationClosesItBeforeRunError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := serve(t, mustNew(t, both(t, quietWhenCancelled(t, lender), shelver)),
-		input("run-subsibling", text("user", "Both.")))
-	wantTypes(t, s, "RUN_STARTED", "TOOL_CALL_START", "TOOL_CALL_ARGS", "TOOL_CALL_END",
-		"SUBAGENT_STARTED", "SUBAGENT_ERROR", "RUN_ERROR")
-	wantLifecycle(t, s,
-		`{"name":"researcher","parentToolCallId":"p1","subagentRunId":"subagent-p1","type":"SUBAGENT_STARTED"}`,
-		`{"code":"cancelled","message":"researcher was cancelled","subagentRunId":"subagent-p1","type":"SUBAGENT_ERROR"}`)
-	golden(t, "subagent-sibling-failed", s)
-}
-
-// countedIDs numbers ADK's ids, one of which the failed delegation's result
-// quotes, so that its transcript is the same on every run.
-func countedIDs(next http.Handler) http.Handler {
-	var n atomic.Int64
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := platform.WithUUIDProvider(r.Context(), func() string { return fmt.Sprint(n.Add(1)) })
-		next.ServeHTTP(w, r.WithContext(ctx))
-	})
+	return serve(t, mustNew(t, both(t, lender, shelver)), input("run-subsibling", text("user", "Both.")))
 }
 
 // A sub-agent cannot wait for a person, so a gated tool inside it fails the
@@ -513,7 +491,7 @@ func TestAGatedToolInsideASubagentEndsInSubagentError(t *testing.T) {
 	}
 	root := boss(t, &scriptLLM{steps: []step{{calls: []*genai.FunctionCall{ask("d1", "researcher")}}}},
 		agenttool.New(inner, nil))
-	s := serve(t, root, input("run-subinner", text("user", "Delegate.")), countedIDs)
+	s := serve(t, root, input("run-subinner", text("user", "Delegate.")))
 	wantLifecycle(t, s,
 		`{"name":"researcher","parentToolCallId":"d1","subagentRunId":"subagent-d1","type":"SUBAGENT_STARTED"}`,
 		`{"message":"researcher failed","subagentRunId":"subagent-d1","type":"SUBAGENT_ERROR"}`)

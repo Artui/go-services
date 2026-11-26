@@ -21,14 +21,29 @@
 // The bridge on its own keeps no state, so an identical resume sent twice runs
 // the call twice, under the same tool-call id both times. WithThreadStore
 // refuses the second once the first has finished, since the stored thread then
-// answers the call, but two sent at once can still both run. A spec that must
-// not repeat its effect keys idempotency on that id: an adkx.Principal returns
+// answers the call, but two sent at once can still both run, unless the store
+// is also a RunStore (aguistore's are): the bridge then claims the interrupts a
+// resume answers before it runs, and refuses the resume that loses the claim
+// with RUN_ERROR. Without one, a spec that must not repeat its effect keys
+// idempotency on that id: an adkx.Principal returns
 // agent.Context's FunctionCallID with the user, the registry's resolver puts
 // them in Deps, and the spec records the pair under a unique constraint in the
 // transaction that does the work. Key on the user too, because without a thread
 // store a resume's id comes from the history the client posts: it is only as
 // trustworthy as the client, and a client that changes it gets a new key. This
 // guards against a repeated request, not against a hostile client.
+//
+// # Long-term memory
+//
+// WithMemory gives the agent an ADK memory.Service, so its load_memory and
+// preload_memory tools recall the user's earlier threads. The search is scoped
+// to the run's user, the one WithUserID names, so one user never recalls
+// another's conversation. Each finished run adds the thread's conversation so
+// far, once: a run that fails, or stops on an interrupt or a browser call, adds
+// nothing, and the run that resumes it adds the thread when it finishes. ADK's
+// memory.InMemoryService keeps memory for the life of the process;
+// aguistore.OpenADKMemory keeps it in the same databases as aguistore's SQL
+// store. Both replace a thread added again, keeping only its latest version.
 //
 // # Prompt caching and large results
 //

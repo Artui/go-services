@@ -42,11 +42,12 @@ type Skill struct {
 // Serve the same skills to the web component with SkillCatalog.
 //
 // New refuses a name that is empty, starts with a slash or holds white space,
-// since the user could not pick it.
+// since the user could not pick it, and a skill whose body is blank, since
+// picking it would tell the agent nothing.
 func WithSkills(skills map[string]Skill) Option {
 	return func(b *bridge) {
-		for name := range skills {
-			if err := checkSkillName(name); err != nil {
+		for _, name := range slices.Sorted(maps.Keys(skills)) {
+			if err := checkSkill(name, skills[name]); err != nil {
 				b.optErr = err
 				return
 			}
@@ -55,9 +56,12 @@ func WithSkills(skills map[string]Skill) Option {
 	}
 }
 
-func checkSkillName(name string) error {
+func checkSkill(name string, s Skill) error {
 	if name == "" || strings.HasPrefix(name, "/") || strings.ContainsFunc(name, unicode.IsSpace) {
 		return fmt.Errorf("aguiadk: skill name %q cannot be picked as /name", name)
+	}
+	if strings.TrimSpace(s.Body) == "" {
+		return fmt.Errorf("aguiadk: skill %q has no body", name)
 	}
 	return nil
 }
@@ -74,7 +78,7 @@ func (ri runInstructions) skill(in aguix.RunInput) string {
 	}
 	name := words[0][1:]
 	s, ok := ri.skills[name]
-	if !ok || strings.TrimSpace(s.Body) == "" {
+	if !ok {
 		return ""
 	}
 	return fmt.Sprintf("# Skill: %s\n\n%s", name, s.Body)

@@ -21,6 +21,45 @@
       "toolCallId": "c1"
     },
     {
+      "id": "chart-11111111",
+      "role": "activity",
+      "content": {
+        "kind": "bar",
+        "labels": [
+          "Mon"
+        ],
+        "series": [
+          {
+            "label": "Loans",
+            "points": [
+              3
+            ]
+          }
+        ]
+      },
+      "activityType": "chart"
+    },
+    {
+      "id": "suggestions-22222222",
+      "role": "activity",
+      "content": {
+        "prompts": [
+          "Chart next week too"
+        ]
+      },
+      "activityType": "suggestions"
+    },
+    {
+      "id": "compaction-33333333",
+      "role": "activity",
+      "content": {
+        "after": 4,
+        "before": 9,
+        "removed": 5
+      },
+      "activityType": "compaction"
+    },
+    {
       "id": "run-act-2",
       "role": "assistant",
       "content": "Charted."
@@ -519,7 +558,7 @@
     {
       "id": "run-subfail-1",
       "role": "tool",
-      "content": "{\"error\":\"error from sub-agent \\\"researcher\\\" (code: \\\"500\\\", message: \\\"provider detail\\\")\"}",
+      "content": "{\"error\":\"researcher failed\"}",
       "toolCallId": "d1",
       "metadata": {
         "outcome": "failed"
@@ -549,7 +588,7 @@
     {
       "id": "run-subinner-1",
       "role": "tool",
-      "content": "{\"error\":\"sub-agent \\\"researcher\\\" stopped waiting on unresolved long-running tool calls [adk-14], which AgentTool cannot resume\"}",
+      "content": "{\"error\":\"researcher failed\"}",
       "toolCallId": "d1",
       "metadata": {
         "outcome": "failed"
@@ -760,6 +799,15 @@
           }
         }
       ]
+    },
+    {
+      "id": "run-subsibling-1",
+      "role": "tool",
+      "content": "{\"error\":\"researcher was cancelled\"}",
+      "toolCallId": "p1",
+      "metadata": {
+        "outcome": "failed"
+      }
     }
   ],
   "subagent-skipped": [

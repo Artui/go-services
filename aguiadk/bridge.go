@@ -12,6 +12,7 @@ import (
 
 	"github.com/Artui/go-services/aguix"
 	"google.golang.org/adk/v2/agent"
+	"google.golang.org/adk/v2/memory"
 	"google.golang.org/adk/v2/plugin"
 	"google.golang.org/adk/v2/runner"
 	"google.golang.org/adk/v2/session"
@@ -74,9 +75,11 @@ func New(root agent.Agent, opts ...Option) (aguix.Agent, error) {
 		root:       root,
 		newService: session.InMemoryService,
 	}
-	plugins := runner.PluginConfig{Plugins: []*plugin.Plugin{sinkPlugin(), instructionsPlugin()}}
+	plugins := runner.PluginConfig{Plugins: []*plugin.Plugin{sinkPlugin(), instructionsPlugin(), toolReachPlugin()}}
 	b.newRunner = func(svc session.Service) (*runner.Runner, error) {
-		return runner.New(runner.Config{AppName: appName, Agent: root, SessionService: svc, PluginConfig: plugins})
+		return runner.New(runner.Config{
+			AppName: appName, Agent: root, SessionService: svc, MemoryService: b.memory, PluginConfig: plugins,
+		})
 	}
 	for _, opt := range opts {
 		opt(b)
@@ -103,6 +106,8 @@ type bridge struct {
 	newRunner  func(session.Service) (*runner.Runner, error)
 	approval   *Approval
 	store      ThreadStore
+	runs       RunStore
+	memory     memory.Service
 	optErr     error
 
 	instructions runInstructions
@@ -143,20 +148,39 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 	if err != nil {
 		return err
 	}
-	r, err := b.prepare(ctx, userID, in.ThreadID, history, seed)
+	claimed, err := b.startRun(ctx, userID, in)
 	if err != nil {
 		return err
 	}
+	ctx, answered := watchTools(ctx)
+	interrupts, err := b.serve(ctx, in, out, userID, messages, history, tail, tools, denied, seed)
+	if answered.reached() {
+		claimed = nil
+	}
+	return b.endRun(ctx, userID, in, interrupts, err, claimed)
+}
+
+// serve runs the agent on the rebuilt conversation and returns the interrupts
+// it finished on.
+func (b *bridge) serve(
+	ctx context.Context, in aguix.RunInput, out *aguix.Stream, userID string, messages []aguix.Message,
+	history []*session.Event, tail *genai.Content, tools []*clientTool, denied map[string]bool, seed map[string]any,
+) ([]aguix.Interrupt, error) {
+	r, svc, err := b.prepare(ctx, userID, in.ThreadID, history, seed)
+	if err != nil {
+		return nil, err
+	}
 	if len(seed) > 0 {
 		if err := out.Emit(aguix.StateSnapshot(seed)); err != nil {
-			return err
+			return nil, err
 		}
 	}
 
 	tr := newTranslator(messageIDs(in.RunID))
 	tr.approval, tr.denied, tr.based = b.approval, denied, seed != nil
 	ctx, queued := withSink(withClientTools(withInstructions(ctx, b.instructions.of(in)), tools))
-	w := &wire{out: out, rec: &recorder{}}
+	tr.sink = queued
+	w := &wire{out: out, rec: &recorder{prior: slices.Clone(messages)}}
 	queued.live = w.live
 	runErr := b.drive(ctx, r, userID, in.ThreadID, tail, tr, queued, w)
 	// Whatever the run opened is closed before it ends, so a failed run still
@@ -166,20 +190,20 @@ func (b *bridge) Run(ctx context.Context, in aguix.RunInput, out *aguix.Stream) 
 		runErr = closeErr
 	}
 	if runErr != nil {
-		return runErr
+		return nil, runErr
 	}
-	if err := b.saveThread(ctx, userID, in.ThreadID, messages, w.rec); err != nil {
-		return err
+	if err := b.saveThread(ctx, userID, in.ThreadID, w.rec); err != nil {
+		return nil, err
 	}
 	// A gated call outranks a browser call of the same step: the client answers
 	// the browser call as not finished when it resumes.
 	if len(tr.interrupts) > 0 {
-		return out.Finish(aguix.Interrupted(tr.interrupts...))
+		return tr.interrupts, out.Finish(aguix.Interrupted(tr.interrupts...))
 	}
 	if pending := tr.pending(); len(pending) > 0 {
-		return out.Finish(aguix.Success(pending...))
+		return nil, out.Finish(aguix.Success(pending...))
 	}
-	return nil
+	return nil, b.remember(ctx, svc, userID, in.ThreadID)
 }
 
 // seedState decodes the client's state into the session's initial state, keeping
@@ -210,28 +234,29 @@ func (b *bridge) user(ctx context.Context) (string, error) {
 }
 
 // prepare stores the replayed history in a session of its own, seeded with the
-// client's state, and returns a runner over it. The session id is the thread's,
-// so ADK and its telemetry name the conversation the client does.
+// client's state, and returns a runner over it and the session's service. The
+// session id is the thread's, so ADK and its telemetry name the conversation
+// the client does.
 func (b *bridge) prepare(
 	ctx context.Context, userID, threadID string, history []*session.Event, state map[string]any,
-) (*runner.Runner, error) {
+) (*runner.Runner, session.Service, error) {
 	svc := b.newService()
 	created, err := svc.Create(ctx, &session.CreateRequest{
 		AppName: appName, UserID: userID, SessionID: threadID, State: state,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("aguiadk: creating the run's session: %w", err)
+		return nil, nil, fmt.Errorf("aguiadk: creating the run's session: %w", err)
 	}
 	for _, ev := range history {
 		if err := svc.AppendEvent(ctx, created.Session, ev); err != nil {
-			return nil, fmt.Errorf("aguiadk: replaying the conversation: %w", err)
+			return nil, nil, fmt.Errorf("aguiadk: replaying the conversation: %w", err)
 		}
 	}
 	r, err := b.newRunner(svc)
 	if err != nil {
-		return nil, fmt.Errorf("aguiadk: %w", err)
+		return nil, nil, fmt.Errorf("aguiadk: %w", err)
 	}
-	return r, nil
+	return r, svc, nil
 }
 
 // drive runs the agent and streams what it yields.

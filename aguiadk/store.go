@@ -2,6 +2,7 @@ package aguiadk
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -24,6 +25,23 @@ type ThreadStore interface {
 	SaveThread(ctx context.Context, userID, threadID string, messages []aguix.Message) error
 }
 
+// RunStore is a ThreadStore that also records each thread's run status, so a
+// thread list can say which runs are going, failed, or parked on an approval,
+// and a parked approval is answered once. The aguistore module's stores are
+// one; WithThreadStore uses a store as one when it has these methods.
+//
+// The statuses are "idle", "running", "waiting" and "failed".
+type RunStore interface {
+	// StartRun marks the thread running under runID. With resumes, the
+	// interrupt ids the run answers, it is a claim that starts only while the
+	// thread waits on every one of them, and it reports false when it is lost;
+	// one that wins returns the interrupts it took, the bytes FinishRun stored.
+	StartRun(ctx context.Context, userID, threadID, runID string, resumes []string) (claimed json.RawMessage, won bool, err error)
+	// FinishRun records how runID ended: its status, why it failed, and the
+	// interrupts it parked on, the bytes RUN_FINISHED carries.
+	FinishRun(ctx context.Context, userID, threadID, runID, status, reason string, interrupts json.RawMessage) error
+}
+
 // WithThreadStore saves each run's conversation to store when the run ends, so
 // a thread outlives the page and the process, and reads it back to resume a
 // parked approval.
@@ -38,8 +56,17 @@ type ThreadStore interface {
 // does not hold is refused, as django-ag-ui refuses it.
 //
 // The message ids a resume names then come from the store, which also refuses
-// the same resume sent again once the first has finished; two sent at once can
-// still both run.
+// the same resume sent again once the first has finished. A store that is a
+// RunStore also records each run's status, and claims a resume before it runs,
+// so of two sent at once one is refused and the call runs once; with a store
+// that is not, two sent at once can still both run. A resume that ends before
+// it reaches a tool parks the thread on the interrupts it claimed again, so
+// the approval can be sent again; one that reached a tool does not, since the
+// call may have taken effect.
+//
+// Every run loads the stored thread: the client sends its history without
+// activities, so a run puts each stored activity back after the message it
+// followed, and a snapshot of a stored activity replaces it in place.
 //
 // The thread is saved when the run finishes, waiting on the browser or on an
 // approval included, and not when it fails or has nothing to answer. The save
@@ -52,17 +79,21 @@ func WithThreadStore(store ThreadStore) Option {
 			return
 		}
 		b.store = store
+		b.runs, _ = store.(RunStore)
 	}
 }
 
 // startingHistory returns the messages a run is rebuilt from.
 func (b *bridge) startingHistory(ctx context.Context, userID string, in aguix.RunInput) ([]aguix.Message, error) {
-	if b.store == nil || len(in.Resume) == 0 {
+	if b.store == nil {
 		return in.Messages, nil
 	}
 	stored, ok, err := b.store.LoadThread(ctx, userID, in.ThreadID)
 	if err != nil {
 		return nil, fmt.Errorf("aguiadk: loading the thread: %w", err)
+	}
+	if len(in.Resume) == 0 {
+		return withActivities(stored, in.Messages), nil
 	}
 	if !ok {
 		return nil, errNoStoredThread
@@ -74,7 +105,84 @@ func (b *bridge) startingHistory(ctx context.Context, userID string, in aguix.Ru
 	return slices.Concat(stored, openAnswers(stored, in.Messages, browser)), nil
 }
 
-var errNoStoredThread = errors.New("aguiadk: the thread to resume is not stored")
+// withActivities puts the stored thread's activities back into the client's
+// messages, each after the message it followed, since the client sends none.
+func withActivities(stored, client []aguix.Message) []aguix.Message {
+	sent := map[string]bool{}
+	for _, m := range client {
+		sent[m.ID] = true
+	}
+	after := map[string][]aguix.Message{}
+	anchor := ""
+	for _, m := range stored {
+		switch {
+		case m.Role != "activity":
+			anchor = m.ID
+		case !sent[m.ID]:
+			after[anchor] = append(after[anchor], m)
+		}
+	}
+	if len(after) == 0 {
+		return client
+	}
+	out := slices.Clone(after[""])
+	for _, m := range client {
+		out = append(append(out, m), after[m.ID]...)
+	}
+	return out
+}
+
+var (
+	errNoStoredThread = errors.New("aguiadk: the thread to resume is not stored")
+	errResumeTaken    = errors.New("aguiadk: the interrupts this run answers are no longer waiting")
+)
+
+// startRun records the run as running, claiming the interrupts it answers.
+func (b *bridge) startRun(ctx context.Context, userID string, in aguix.RunInput) (json.RawMessage, error) {
+	if b.runs == nil {
+		return nil, nil
+	}
+	var resumes []string
+	for _, entry := range in.Resume {
+		resumes = append(resumes, entry.InterruptID)
+	}
+	claimed, won, err := b.runs.StartRun(ctx, userID, in.ThreadID, in.RunID, resumes)
+	if err != nil {
+		return nil, fmt.Errorf("aguiadk: recording the run's start: %w", err)
+	}
+	if !won {
+		return nil, errResumeTaken
+	}
+	return claimed, nil
+}
+
+// endRun records how the run ended and returns its error, a failure to record
+// a run that succeeded among them. A cancelled run leaves the thread idle, and
+// a resume that ended before it ran a call it answers parks its claim again.
+func (b *bridge) endRun(
+	ctx context.Context, userID string, in aguix.RunInput, interrupts []aguix.Interrupt, runErr error, unrun json.RawMessage,
+) error {
+	if b.runs == nil {
+		return runErr
+	}
+	status, reason := "idle", ""
+	var parked json.RawMessage
+	switch {
+	case runErr != nil && unrun != nil:
+		status, parked = "waiting", unrun
+	case runErr != nil && ctx.Err() == nil:
+		status, reason = "failed", "error"
+	case runErr == nil && len(interrupts) > 0:
+		// Stream.Finish has accepted these, so they encode, as RUN_FINISHED does.
+		status = "waiting"
+		parked, _ = json.Marshal(interrupts)
+	}
+	err := b.runs.FinishRun(context.WithoutCancel(ctx), userID, in.ThreadID, in.RunID, status, reason, parked)
+	if runErr == nil && err != nil {
+		return fmt.Errorf("aguiadk: recording the run's end: %w", err)
+	}
+	return runErr
+}
 
 // openAnswers returns the client's trailing tool messages that answer a call
 // to a browser tool stored left open, each once.
@@ -103,11 +211,11 @@ func openAnswers(stored, client []aguix.Message, browser map[string]bool) []agui
 }
 
 // saveThread stores the run's starting history followed by what it sent.
-func (b *bridge) saveThread(ctx context.Context, userID, threadID string, prior []aguix.Message, run *recorder) error {
+func (b *bridge) saveThread(ctx context.Context, userID, threadID string, run *recorder) error {
 	if b.store == nil {
 		return nil
 	}
-	messages := slices.Concat(prior, run.messages())
+	messages := slices.Concat(run.prior, run.messages())
 	if err := b.store.SaveThread(context.WithoutCancel(ctx), userID, threadID, messages); err != nil {
 		return fmt.Errorf("aguiadk: saving the thread: %w", err)
 	}

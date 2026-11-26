@@ -25,14 +25,16 @@ func (brokenStream) Query([]driver.Value) (driver.Rows, error)    { return &brok
 
 type brokenRows struct{ sent bool }
 
-func (*brokenRows) Columns() []string { return []string{"thread_id", "title", "preview", "updated_at"} }
-func (*brokenRows) Close() error      { return nil }
+func (*brokenRows) Columns() []string {
+	return []string{"thread_id", "title", "preview", "updated_at", "status", "reason", "interrupts", "last_read_at"}
+}
+func (*brokenRows) Close() error { return nil }
 func (r *brokenRows) Next(dest []driver.Value) error {
 	if r.sent {
 		return io.ErrUnexpectedEOF
 	}
 	r.sent = true
-	copy(dest, []driver.Value{"th1", "t", "p", int64(0)})
+	copy(dest, []driver.Value{"th1", "t", "p", int64(0), "", "", "", nil})
 	return nil
 }
 

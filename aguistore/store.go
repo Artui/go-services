@@ -2,6 +2,7 @@ package aguistore
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -16,6 +17,14 @@ type Thread struct {
 	// Preview is the newest message with text, collapsed to one line.
 	Preview   string
 	UpdatedAt time.Time
+
+	// The run status a RunStore keeps: Status is empty when no run has
+	// started, Interrupts are a waiting run's as RUN_FINISHED sent them, and
+	// LastReadAt is zero until MarkRead.
+	Status     string
+	Reason     string
+	Interrupts json.RawMessage
+	LastReadAt time.Time
 }
 
 // Store keeps each user's threads. Every method is scoped to userID: a thread
@@ -42,7 +51,8 @@ type Store interface {
 type Option func(*config)
 
 type config struct {
-	now func() time.Time
+	now     func() time.Time
+	dialect Dialect
 }
 
 // WithClock sets the clock a store stamps each save with; the default is

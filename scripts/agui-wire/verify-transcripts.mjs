@@ -18,7 +18,7 @@
 // An aguiadk transcript must also have an entry in aguiadk/testdata/agui/messages.json,
 // the messages the bridge stores for the run, written by the Go test from the
 // frames. The client's own default applier, starting from no messages, must file
-// the same ones, activities aside: the bridge does not store those.
+// the same ones, activities included.
 //
 // A transcript is stored without the body's final blank line, which the
 // repository's end-of-file hook would strip; it is put back before splitting.
@@ -95,9 +95,7 @@ async function checkMessages(name, events) {
       toArray(),
     ),
   );
-  const got = (mutations.filter((m) => m.messages !== undefined).at(-1)?.messages ?? []).filter(
-    (m) => m.role !== "activity",
-  );
+  const got = mutations.filter((m) => m.messages !== undefined).at(-1)?.messages ?? [];
   if (!isDeepStrictEqual(JSON.parse(JSON.stringify(got)), stored[key])) {
     throw new Error(
       `the client files ${JSON.stringify(got)}, the bridge stores ${JSON.stringify(stored[key])}`,
