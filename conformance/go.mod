@@ -44,7 +44,7 @@ require (
 	github.com/google/jsonschema-go v0.4.3
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	google.golang.org/adk/v2 v2.8.0
-	google.golang.org/genai v1.77.0
+	google.golang.org/genai v1.79.1
 	modernc.org/sqlite v1.62.0
 )
 
